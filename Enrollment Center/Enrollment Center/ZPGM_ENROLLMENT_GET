@@ -1,0 +1,36 @@
+FUNCTION zpgm_enrollment_get.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_BP) TYPE  ZENRLBP
+*"     VALUE(IV_CA) TYPE  ZENRLCA
+*"     VALUE(IV_PGM_TYPE) TYPE  ZPGM_TYPE OPTIONAL
+*"  TABLES
+*"      ET_PGM_ENROLL STRUCTURE  ZTPGM_ENROLL
+*"----------------------------------------------------------------------
+
+  CHECK iv_bp IS NOT INITIAL AND
+        iv_ca IS NOT INITIAL.
+
+  IF iv_pgm_type IS INITIAL.
+    SELECT *
+      INTO TABLE et_pgm_enroll
+      FROM ztpgm_enroll
+    WHERE zenrlbp = iv_bp
+    AND   zenrlca = iv_ca
+    AND   zenrlstatus IN ( '001', '002' ).
+
+  ELSE.
+
+    SELECT *
+      INTO TABLE et_pgm_enroll
+      FROM ztpgm_enroll
+    WHERE zenrlbp = iv_bp
+    AND   zenrlca = iv_ca
+    AND   zpgm_type = iv_pgm_type
+    AND   zenrlstatus IN ( '001', '002' ).
+
+  ENDIF.
+
+ENDFUNCTION.
+

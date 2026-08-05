@@ -1,0 +1,126 @@
+*"----------------------------------------------------------------------
+* Name            : Method to Send Email for any error during Automation
+*                   Process for
+*                   Post Cutover Interval Billing.
+* Author          : Har Mayank Shrivastava
+* Date            : 22nd December 2014
+* Type of Program : Method
+* Purpose         : Post Cutover Interval Billing
+* Development Class : ZDM_FM
+* ----------------------------------------------------------------------
+*** Author      Date        Change Req#     Task #     Change Driver
+*** Har Mayank 01/12/14      Initial      E2DK935654
+***----------------------------------------------------------------------
+METHOD send_email.
+  DATA: send_request  TYPE REF TO cl_bcs,
+        text          TYPE bcsy_text,
+        document      TYPE REF TO cl_document_bcs,
+        sender        TYPE REF TO cl_sapuser_bcs,
+        recipient     TYPE REF TO if_recipient_bcs,
+        bcs_exception TYPE REF TO cx_bcs,
+        sent_to_all   TYPE os_boolean,
+        lwa_bapiret2  TYPE bapiret2,
+        lv_subject    TYPE so_obj_des,
+        lv_msg_string TYPE string,
+        ls_tvarvc     TYPE tvarvc,
+        lv_tabix_mail TYPE sy-tabix,
+        lv_address    TYPE ad_smtpadr.
+
+  TRY.
+*     -------- create persistent send request ------------------------
+      send_request = cl_bcs=>create_persistent( ).
+
+*     -------- create and set document -------------------------------
+      lwa_bapiret2-message = |Installation: { my_anlage }|.
+      APPEND lwa_bapiret2-message TO text.
+      CLEAR: lwa_bapiret2.
+
+      IF my_rate_cat_flg = abap_true.
+        lwa_bapiret2-message = |Old Rate Category: { my_old_tariftyp }|.
+        APPEND lwa_bapiret2-message TO text.
+        CLEAR: lwa_bapiret2.
+
+        lwa_bapiret2-message = |New Rate Category: { my_tariftyp }|.
+        APPEND lwa_bapiret2-message TO text.
+        CLEAR: lwa_bapiret2.
+      ENDIF.
+
+
+****Check if we have error with 17 read type estimation.If so update it as Partially updated
+      LOOP AT my_msg TRANSPORTING NO FIELDS WHERE TYPE = 'W'
+                                              AND ID = 'ZBILL'.
+
+      ENDLOOP.
+      IF SY-SUBRC EQ 0.
+        LOOP AT my_msg INTO lwa_bapiret2 WHERE ID = '>0'
+                                           AND TYPE = 'S'.
+          lv_tabix_mail = sy-tabix.
+          lwa_bapiret2-message = 'Partially Updated'.
+          MODIFY my_msg from lwa_bapiret2 INDEX lv_tabix_mail TRANSPORTING message.
+          exit.
+        ENDLOOP.
+      ENDIF.
+
+*     Create document from internal table with text
+*      READ TABLE my_msg INTO lwa_bapiret2 WITH KEY
+      LOOP AT my_msg INTO lwa_bapiret2.
+        APPEND lwa_bapiret2-message TO text.
+        APPEND cl_abap_char_utilities=>cr_lf TO text.
+      ENDLOOP.
+
+      lv_subject = text-017.
+      lv_subject = |{ sy-sysid }: { lv_subject }|.
+      document = cl_document_bcs=>create_document(
+                      i_type    = co_raw
+                      i_text    = text
+                      i_length  = co_len12
+                      i_subject = lv_subject ).
+
+*     add document to send request
+      CALL METHOD send_request->set_document( document ).
+
+*     --------- set sender -------------------------------------------
+*     note: this is necessary only if you want to set the sender
+*           different from actual user (SY-UNAME). Otherwise sender is
+*           set automatically with actual user.
+
+      sender = cl_sapuser_bcs=>create( sy-uname ).
+      CALL METHOD send_request->set_sender
+        EXPORTING
+          i_sender = sender.
+
+*     --------- add recipient (e-mail address) -----------------------
+*     create recipient - please replace e-mail address !!!
+      SELECT SINGLE *
+        FROM tvarvc
+        INTO ls_tvarvc
+        WHERE name = 'Z_DM_ENH_740_EMAIL'.
+
+      lv_address = ls_tvarvc-low.
+      recipient = cl_cam_address_bcs=>create_internet_address(
+                                        lv_address ).
+
+*     add recipient with its respective attributes to send request
+      CALL METHOD send_request->add_recipient
+        EXPORTING
+          i_recipient = recipient
+          i_express   = co_flag.
+
+*     ---------- send document ---------------------------------------
+      CALL METHOD send_request->send(
+        EXPORTING
+          i_with_error_screen = co_flag
+        RECEIVING
+          result              = sent_to_all ).
+      IF sent_to_all = co_flag.
+        COMMIT WORK.
+      ENDIF.
+
+    CATCH cx_bcs INTO bcs_exception.
+      lv_msg_string = bcs_exception->get_text( ).
+      populate_status_return space co_error lv_msg_string my_gernr space space space.
+
+  ENDTRY.
+
+
+ENDMETHOD.

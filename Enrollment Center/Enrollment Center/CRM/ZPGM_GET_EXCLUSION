@@ -1,0 +1,67 @@
+FUNCTION zpgm_get_exclusion.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_PARTNER) TYPE  BU_PARTNER
+*"     VALUE(IV_PGM_TYPE) TYPE  ZPGM_TYPE
+*"  TABLES
+*"      T_PGM_EXCLUSION STRUCTURE  ZSPGM_EXCLUSION
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM calls the BRF+ Function
+*               FUNC_PGM_VALIDATION_CHECK to check eligibility and
+*               returns error message if any
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  DATA: lt_excl   TYPE STANDARD TABLE OF ztdm_dla_excl,
+
+        lr_type   TYPE TABLE OF isu_ranges,
+        lr_status TYPE TABLE OF isu_ranges,
+        lr_devloc TYPE TABLE OF isu_ranges,
+        ls_line   TYPE isu_ranges.
+
+  FIELD-SYMBOLS : <fs_excl> TYPE ztdm_dla_excl.
+
+
+*  Get Exclude Program Type
+  SELECT *
+    INTO TABLE lt_excl
+    FROM ztdm_dla_excl
+  WHERE program_type = iv_pgm_type.
+
+* Check return code
+  CHECK sy-subrc = 0.
+
+  LOOP AT lt_excl ASSIGNING <fs_excl>.
+*   Populate BUTID
+    CLEAR ls_line.
+    ls_line-sign = 'I'.
+    ls_line-option = 'EQ'.
+    ls_line-low = <fs_excl>-type.
+    APPEND ls_line TO lr_type.
+
+  ENDLOOP.
+
+* Select BUTID
+  SELECT a~type b~text
+    INTO TABLE t_pgm_exclusion
+    FROM but0id AS a
+    INNER JOIN tb039b AS b
+    ON a~type = b~type
+  WHERE partner = iv_partner
+  AND   a~type IN lr_type
+  AND   valid_date_to >= sy-datum
+  AND   b~spras = sy-langu.
+
+ENDFUNCTION.

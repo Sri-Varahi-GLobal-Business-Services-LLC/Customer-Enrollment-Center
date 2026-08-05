@@ -1,0 +1,28 @@
+FUNCTION zisu_il_enroll_init .
+*"----------------------------------------------------------------------
+*"*"Global Interface:
+*"  IMPORTING
+*"     VALUE(IS_KEY) TYPE  ZSPGM_KEY
+*"  TABLES
+*"      ET_RETURN STRUCTURE  BAPIRET2 OPTIONAL
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM is created for DPP Enrollment
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  PERFORM enroll_buf_delete USING is_key.
+
+
+ENDFUNCTION.
+

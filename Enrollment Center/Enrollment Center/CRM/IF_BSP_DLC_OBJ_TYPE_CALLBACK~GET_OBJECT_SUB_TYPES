@@ -1,0 +1,37 @@
+METHOD if_bsp_dlc_obj_type_callback~get_object_sub_types.
+******************************************************************
+*  Method Name               : GET_OBJECT_SUB_TYPES
+*  Author                    : Vinay Gorrela
+*  Date                      : 04/07/2011
+*  FRICEW Id #               : CMENH200/CMENH300
+*  Original SAP Program Name : CL_CRM_IU_ADDR_OBJECT_DB
+*  SAP Transport Request #   : C3DK900384
+*----------------------------------------------------------------*
+*  Description: Add 'ZNEW' and 'ZEND' sub object types for
+* CM_ENH_200 & CM_ENH_300 object view configurations
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    : Firstname Lastname
+*  Modification Date         : MM/DD/YYYY
+*  Description               :
+******************************************************************
+
+  CASE iv_object_type.
+
+    WHEN co_ui_type_addr.
+      APPEND co_ui_sub_type_addr_short TO result.
+      APPEND co_ui_sub_type_addr_stdeur TO result.
+      APPEND co_ui_sub_type_addr_us TO result.
+      APPEND co_ui_sub_type_addr_ca TO result.
+      APPEND co_ui_sub_type_addr_jp TO result.
+* Adding sub object type for 'New contract address maintenance'
+      APPEND co_ui_sub_type_addr_znew TO result.
+* Adding sub object type for 'End contract address maintenance'
+      APPEND co_ui_sub_type_addr_zend TO result.
+
+  ENDCASE.
+
+ENDMETHOD.
+

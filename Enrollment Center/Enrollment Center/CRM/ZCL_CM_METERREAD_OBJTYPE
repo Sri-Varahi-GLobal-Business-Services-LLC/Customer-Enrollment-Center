@@ -1,0 +1,36 @@
+METHOD if_bsp_dlc_obj_type_callback~get_object_sub_types.
+******************************************************************
+*  Method Name               : GET_OBJECT_SUB_TYPES
+*  Author                    : Vinay Gorrela
+*  Date                      : 04/07/2011
+*  FRICEW Id #               : CMENH200/CMENH300
+*  Original SAP Program Name : CL_CRM_IU_ADDR_OBJECT_DB
+*  SAP Transport Request #   : C3DK900384
+*----------------------------------------------------------------*
+*  Description: Add 'ZNEW' and 'ZEND' sub object types for
+* CM_ENH_200 & CM_ENH_300 object view configurations
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    : Firstname Lastname
+*  Modification Date         : MM/DD/YYYY
+*  Description               :
+******************************************************************
+
+  DATA:   lv_sub_object TYPE bsp_dlc_object_sub_type.
+
+  IF iv_object_type = 'ZCM_MR_OBJTYP'.
+
+    lv_sub_object = 'CONTRACTVIEW'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'METERVIEW'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+  ENDIF.
+
+ENDMETHOD.
+

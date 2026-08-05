@@ -1,0 +1,84 @@
+FUNCTION zpgm_ec_getpgmid.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  TABLES
+*"      ET_PROGID STRUCTURE  ZSPGM_PROGID OPTIONAL
+*"      ET_PROGLINK STRUCTURE  ZSPGM_PROGLINK OPTIONAL
+*"----------------------------------------------------------------------
+  FIELD-SYMBOLS: <fs_proj> TYPE zspgm_progid.
+  DATA: ls_thead     TYPE thead,
+        lt_tline     TYPE TABLE OF tline,
+        lt_long_text TYPE TABLE OF zspgm_progid-longtext,
+        ls_tline     TYPE tline.
+
+  IF gt_progid[] IS INITIAL.
+
+* Get Program ID
+    SELECT
+      a~program_type program_uuid priority valid_from
+      valid_to history_mo description text
+      INTO TABLE gt_progid
+      FROM ztpgm_progid AS a
+      INNER JOIN ztpgm_progidt AS b
+      ON a~program_type = b~program_type
+    WHERE valid_from <= sy-datum
+    AND   valid_to >= sy-datum
+    AND   spras = sy-langu.
+
+    SORT gt_progid BY zpgm_type.
+
+*   Get Link
+    IF gt_progid[] IS NOT INITIAL.
+      SELECT program_type link_type link_id
+        INTO TABLE gt_proglink
+        FROM ztpgm_proglink
+        FOR ALL ENTRIES IN gt_progid
+      WHERE program_type = gt_progid-zpgm_type.
+    ENDIF.
+  ENDIF.
+
+  LOOP AT gt_progid ASSIGNING <fs_proj>.
+    CHECK <fs_proj>-text IS NOT INITIAL.
+    CLEAR: ls_thead.
+    ls_thead-tdid  = 'ST'.
+    ls_thead-tdspras = sy-langu.
+    ls_thead-tdname =  <fs_proj>-text.
+    ls_thead-tdobject = 'TEXT'.
+    REFRESH: lt_tline, lt_long_text.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+*       CLIENT                  = SY-MANDT
+        id                      = ls_thead-tdid
+        language                = ls_thead-tdspras
+        name                    = ls_thead-tdname
+        object                  = ls_thead-tdobject
+      TABLES
+        lines                   = lt_tline
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+
+*   Convert Text
+    CALL FUNCTION 'CONVERT_ITF_TO_STREAM_TEXT'
+      TABLES
+        itf_text    = lt_tline
+        text_stream = lt_long_text.
+
+    READ TABLE lt_long_text INTO <fs_proj>-longtext
+                            INDEX 1.
+  ENDLOOP.
+
+  et_progid[] = gt_progid[].
+  et_proglink[] = gt_proglink[].
+
+ENDFUNCTION.
+

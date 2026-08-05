@@ -1,0 +1,41 @@
+METHOD if_ui_link_parameter_class~create_parameter_object.
+
+  DATA lv_struct_ref      TYPE REF TO crmt_ui_ltx_value_node_attrib.
+  DATA lr_navbar_srv      TYPE REF TO cl_crm_ui_navbar_srv.
+  DATA ls_link_definition TYPE        crmt_ui_frame_link_info.
+
+  BREAK-POINT ID ltx_execution.
+
+* Create data structure to hold the launch transaction ID
+  CREATE DATA lv_struct_ref.
+
+* Set parameter
+  lv_struct_ref->*-ltx_id = iv_parameter.
+  TRANSLATE lv_struct_ref->*-ltx_id TO UPPER CASE.        "#EC SYNTCHAR
+
+* Set title and description
+  lr_navbar_srv = cl_crm_ui_navbar_srv=>get_instance( ).
+  ls_link_definition = lr_navbar_srv->get_link_definiton( iv_link_id = iv_link_id ).
+  lv_struct_ref->*-llink_title = ls_link_definition-title.
+  lv_struct_ref->*-llink_descr = ls_link_definition-description.
+
+
+* Create value node to transport the data
+  CREATE OBJECT rv_result
+    TYPE
+    cl_bsp_wd_value_node
+    EXPORTING
+      iv_data_ref = lv_struct_ref.
+
+* Set properties
+  rv_result->set_properties( lv_struct_ref->* ).
+
+  "DCE Updates to navigate to the Paymentus Dashboard.
+  IF iv_parameter = 'ZAUTO_PAY'.
+    zl_z_paymen_zpaymentlink_impl=>gv_entry_point = zl_z_paymen_zpaymentlink_impl=>c_entry_points-auto_pay.
+  ELSEIF iv_parameter = 'ZOTP_PAY'.
+    zl_z_paymen_zpaymentlink_impl=>gv_entry_point = zl_z_paymen_zpaymentlink_impl=>c_entry_points-one_time_payment.
+  ENDIF.
+
+ENDMETHOD.
+

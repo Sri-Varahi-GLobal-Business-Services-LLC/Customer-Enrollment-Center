@@ -1,0 +1,27 @@
+FUNCTION Z_AMR_CALL_CUTOVER_DIALOG.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(IS_INPUT) TYPE  ZSTDM_INPUT_FOR_CUTOVER_DATA OPTIONAL
+*"----------------------------------------------------------------------
+
+
+  gobj_appl = lcl_application=>select( is_input ).
+
+  IF gobj_appl->option NE 'RP'.
+
+    gobj_appl->prepare_alv( ).
+
+    CALL SCREEN 0100.
+  ELSE.
+    gobj_appl->prepare_detail_data( truck_num = ''
+                                 truck_cycle = '' ).
+
+    IF gobj_appl->context-t_detail[] IS INITIAL.
+      MESSAGE text-001 TYPE 'E'.
+      SET SCREEN 0.
+    ENDIF.
+    gobj_appl->prepare_alv_det( ).
+    CALL SCREEN 0200.
+  ENDIF.
+ENDFUNCTION.

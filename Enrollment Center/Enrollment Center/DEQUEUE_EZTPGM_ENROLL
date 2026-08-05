@@ -1,0 +1,90 @@
+FUNCTION DEQUEUE_EZTPGM_ENROLL.
+*"--------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(MODE_ZTPGM_ENROLL) TYPE  ENQMODE DEFAULT 'E'
+*"     VALUE(MANDT) TYPE  ZTPGM_ENROLL-MANDT DEFAULT SY-MANDT
+*"     VALUE(ZENRLBP) TYPE  ZTPGM_ENROLL-ZENRLBP OPTIONAL
+*"     VALUE(ZENRLCA) TYPE  ZTPGM_ENROLL-ZENRLCA OPTIONAL
+*"     VALUE(ZPGM_TYPE) TYPE  ZTPGM_ENROLL-ZPGM_TYPE OPTIONAL
+*"     VALUE(ZENRL_REQDAT) TYPE  ZTPGM_ENROLL-ZENRL_REQDAT OPTIONAL
+*"     VALUE(X_ZENRLBP) TYPE  DDENQXPAR DEFAULT SPACE
+*"     VALUE(X_ZENRLCA) TYPE  DDENQXPAR DEFAULT SPACE
+*"     VALUE(X_ZPGM_TYPE) TYPE  DDENQXPAR DEFAULT SPACE
+*"     VALUE(X_ZENRL_REQDAT) TYPE  DDENQXPAR DEFAULT SPACE
+*"     VALUE(_SCOPE) TYPE  DDENQSCOPE DEFAULT '3'
+*"     VALUE(_SYNCHRON) TYPE  DDENQSYNC DEFAULT SPACE
+*"     VALUE(_COLLECT) TYPE  DDENQCOLL DEFAULT ' '
+*"--------------------------------------------------------------------
+* Generated function module for lock object EZTPGM_ENROLL
+* Please do not modify or copy this function module
+* See ABAP Help for information on the SAP lock concept
+* for key word 'ENQUEUE'
+
+
+DATA: __seqta_tab TYPE SEQTA OCCURS 01 WITH HEADER LINE,
+      __scope TYPE DDENQSCOPE,
+      __synchron TYPE DDENQSYNC.
+__synchron = _synchron.
+__scope = _scope.
+
+
+DATA: BEGIN OF %a_ZTPGM_ENROLL,
+*       Lock argument for table ZTPGM_ENROLL
+            MANDT TYPE ZTPGM_ENROLL-MANDT,
+            ZENRLBP TYPE ZTPGM_ENROLL-ZENRLBP,
+            ZENRLCA TYPE ZTPGM_ENROLL-ZENRLCA,
+            ZPGM_TYPE TYPE ZTPGM_ENROLL-ZPGM_TYPE,
+            ZENRL_REQDAT TYPE ZTPGM_ENROLL-ZENRL_REQDAT,
+      END OF %a_ZTPGM_ENROLL.
+* Initialization of lock argument:
+CALL 'C_ENQ_WILDCARD' ID 'HEX0' FIELD %a_ZTPGM_ENROLL.
+
+
+* Assignment of lock parameters to lock fields:
+
+IF NOT MANDT IS INITIAL.
+   MOVE MANDT TO:
+        %a_ZTPGM_ENROLL-MANDT.
+ENDIF.
+
+IF NOT ZENRLBP IS INITIAL OR
+   NOT x_ZENRLBP IS INITIAL.
+   MOVE ZENRLBP TO:
+        %a_ZTPGM_ENROLL-ZENRLBP.
+ENDIF.
+
+IF NOT ZENRLCA IS INITIAL OR
+   NOT x_ZENRLCA IS INITIAL.
+   MOVE ZENRLCA TO:
+        %a_ZTPGM_ENROLL-ZENRLCA.
+ENDIF.
+
+IF NOT ZPGM_TYPE IS INITIAL OR
+   NOT x_ZPGM_TYPE IS INITIAL.
+   MOVE ZPGM_TYPE TO:
+        %a_ZTPGM_ENROLL-ZPGM_TYPE.
+ENDIF.
+
+IF NOT ZENRL_REQDAT IS INITIAL OR
+   NOT x_ZENRL_REQDAT IS INITIAL.
+   MOVE ZENRL_REQDAT TO:
+        %a_ZTPGM_ENROLL-ZENRL_REQDAT.
+ENDIF.
+
+
+* Fill the lock table:
+
+__seqta_tab-gname = 'ZTPGM_ENROLL'.
+__seqta_tab-gmode = MODE_ZTPGM_ENROLL.
+__seqta_tab-garg = %a_ZTPGM_ENROLL.
+APPEND __seqta_tab.
+
+
+* Lock assigned:
+PERFORM send_enqueue(saplsena)
+        TABLES __seqta_tab
+        USING '2' __scope ' ' __synchron 'EZTPGM_ENROLL' _collect.
+
+ENDFUNCTION.
+

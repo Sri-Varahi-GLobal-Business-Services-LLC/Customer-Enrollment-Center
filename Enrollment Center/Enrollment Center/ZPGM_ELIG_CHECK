@@ -1,0 +1,73 @@
+FUNCTION ZPGM_ELIG_CHECK.
+*"--------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_ELIGIBILITY) TYPE  ZSENRL_INT_STRUC
+*"  TABLES
+*"      ET_MESSAGES TYPE  BAPIRET2_T
+*"--------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 09/21/2015
+*----------------------------------------------------------------*
+*  Description: This FM calls the BRF+ Function
+*               FUNC_PGM_VALIDATION_CHECK to check eligibility and
+*               returns error message if any
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  CONSTANTS : lc_function_id TYPE if_fdt_types=>id VALUE '68B5999264261EE59797122063EB532A',
+              lc_input       TYPE char20 VALUE 'ZSENRL_INT_STRUC'.
+
+  DATA:   loref_context TYPE REF TO if_fdt_context,
+          loref_result  TYPE REF TO if_fdt_result,
+          loref_func    TYPE REF TO if_fdt_function,
+          lx_fdt        TYPE REF TO cx_fdt,
+          lwa_bapiret2  TYPE bapiret2.
+  FIELD-SYMBOLS : <fs_error_message> TYPE if_fdt_types=>s_message.
+
+  CLEAR: loref_context, loref_result, loref_func, lx_fdt, lwa_bapiret2.
+
+* Clear the Factory instance
+  cl_fdt_factory=>destruct_object( ).
+  cl_fdt_factory=>clear_buffers( ).
+
+
+* Get Instance of BRF Function
+  loref_func = cl_fdt_factory=>get_instance( )->get_function( lc_function_id ).
+  loref_context = loref_func->get_process_context( ).
+  loref_context->set_value( EXPORTING iv_name = lc_input
+                                      ia_value = iv_eligibility ).
+
+  TRY.
+*     Process the Rules
+      loref_func->process( EXPORTING io_context = loref_context
+                           IMPORTING eo_result  = loref_result ).
+
+*     Get Errors if any
+      loref_result->get_value( IMPORTING ea_value = et_messages ).
+
+    CATCH cx_fdt INTO lx_fdt.
+      LOOP AT lx_fdt->mt_message ASSIGNING <fs_error_message>.
+        MOVE :
+               <fs_error_message>-id            TO lwa_bapiret2-id,
+               <fs_error_message>-msgty         TO lwa_bapiret2-type,
+               <fs_error_message>-msgno         TO lwa_bapiret2-number,
+               <fs_error_message>-msgv1         TO lwa_bapiret2-message_v1,
+               <fs_error_message>-msgv2         TO lwa_bapiret2-message_v2,
+               <fs_error_message>-msgv3         TO lwa_bapiret2-message_v3,
+               <fs_error_message>-msgv4         TO lwa_bapiret2-message_v4.
+
+        APPEND lwa_bapiret2 TO et_messages.
+      ENDLOOP.
+  ENDTRY.
+
+ENDFUNCTION.
+

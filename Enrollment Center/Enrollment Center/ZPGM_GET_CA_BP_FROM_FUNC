@@ -1,0 +1,172 @@
+FUNCTION zpgm_get_ca_bp_from_func.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_DEVLOC) TYPE  DEVLOC
+*"     VALUE(IV_DATE) TYPE  SYDATUM
+*"  EXPORTING
+*"     VALUE(EV_BU_PARTNER) TYPE  BU_PARTNER
+*"     VALUE(EV_VKONT) TYPE  VKONT_KK
+*"     VALUE(EV_ANLAGE) TYPE  ANLAGE
+*"     VALUE(EV_ESMOPT_OUT) TYPE  CHAR1
+*"     REFERENCE(EV_KTOKL) TYPE  KTOKLASSE
+*"     REFERENCE(EV_PYPLT) TYPE  E_PYPLT
+*"     REFERENCE(EV_NOAIRDIV) TYPE  CHAR1
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 09/21/2015
+*----------------------------------------------------------------*
+*  Description: This FM is used to get Business Partner/ Contract
+*               Account/ Installation/ Payment Plan from the Device
+*               loacation
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+
+  CONSTANTS : lc_objtype_bp TYPE swo_objtyp VALUE 'ISUPARTNER',
+              lc_meter      TYPE kombinat VALUE 'Z', " ##NEEDED
+              lc_3          TYPE c VALUE '3',
+              lc_01(2)      TYPE c VALUE '01',
+              lc_maxbis     TYPE isu_timesl-ab VALUE '99991231'.
+
+  DATA:
+    lwa_efindpar      TYPE efindpar,
+    lwa_ewffndtrac    TYPE ewffndtrac,
+    lwa_egerh         TYPE egerh,
+    lwa_eastl         TYPE eastl,
+    lwa_ever          TYPE ever,
+    lwa_ettifn        TYPE ettifn,
+    lwa_fkkvkp        TYPE fkkvkp,
+    lwa_teami_amcgcap TYPE teami_amcgcap,
+    lit_ever          TYPE STANDARD TABLE OF ever,
+    lit_efindres      TYPE STANDARD TABLE OF efindres,
+    lit_ewffndtrac    TYPE STANDARD TABLE OF ewffndtrac.
+
+  CLEAR: lwa_efindpar, lwa_ewffndtrac, lwa_egerh, lwa_eastl,
+         lwa_ever, lwa_ettifn, lwa_fkkvkp, lwa_teami_amcgcap,
+         lit_ever, lit_efindres, lit_ewffndtrac.
+
+* Get the Objects linked to the Device location
+  lwa_efindpar-l_devloc = iv_devloc.
+  lwa_efindpar-x_date   = iv_date."sy-datum.
+  CALL FUNCTION 'ISU_FINDER'
+    EXPORTING
+      x_objtype                   = lc_objtype_bp
+      x_findpar                   = lwa_efindpar
+    TABLES
+      yt_result                   = lit_efindres
+      yt_trace                    = lit_ewffndtrac
+    EXCEPTIONS
+      insufficient_selection      = 1
+      objtype_not_supported       = 2
+      additional_selection_needed = 3
+      OTHERS                      = 4.
+  IF sy-subrc IS INITIAL.
+    CLEAR lwa_ewffndtrac.
+    READ TABLE lit_ewffndtrac
+      INTO lwa_ewffndtrac
+    WITH KEY objtype = lc_objtype_bp.
+    IF sy-subrc IS INITIAL.
+      ev_bu_partner = lwa_ewffndtrac-objkey."Business Partner
+    ENDIF.
+
+  ENDIF.
+
+* Get Device details
+  SELECT SINGLE *                  ##WARN_OK
+    FROM egerh
+    INTO lwa_egerh
+  WHERE devloc = iv_devloc
+  AND   kombinat = lc_meter
+  AND   bis      = lc_maxbis.
+
+* Check Return code
+  IF sy-subrc IS INITIAL.
+
+*   Get Installation Details
+    SELECT SINGLE *                ##WARN_OK
+      FROM eastl
+      INTO lwa_eastl
+    WHERE logiknr = lwa_egerh-logiknr
+    AND   bis     = lc_maxbis.
+
+*   Check Return code
+    CHECK sy-subrc IS INITIAL.
+
+*   Get Installation
+    ev_anlage = lwa_eastl-anlage.
+
+*   Get Contract
+    SELECT * FROM ever            ##WARN_OK
+      INTO TABLE lit_ever
+      WHERE anlage = lwa_eastl-anlage
+      AND   auszdat > sy-datum.
+*   Check Return code
+    CHECK sy-subrc IS INITIAL.
+
+*   Get the Recent Contract
+    SORT lit_ever BY auszdat DESCENDING.
+
+*   Get Contract account from contract
+    READ TABLE lit_ever INTO lwa_ever INDEX 1.
+    ev_vkont = lwa_ever-vkonto.
+
+*   Check for payment plan
+    IF ( lwa_ever-pyplt = 'BP'  OR
+         lwa_ever-pyplt = 'WPP' OR
+         lwa_ever-pyplt = 'SPP' ) AND
+         lwa_ever-pypls IS NOT INITIAL.
+      ev_pyplt = lwa_ever-pyplt.
+    ENDIF.
+
+*   Get Contract account details
+    SELECT SINGLE *               ##WARN_OK
+      INTO lwa_fkkvkp
+      FROM fkkvkp
+    WHERE vkont = lwa_ever-vkonto
+    AND   gpart = ev_bu_partner.
+    ev_ktokl = lwa_fkkvkp-ktokl.
+
+*   Get Electric Meter Opt out from installation Facts
+    CLEAR lwa_ettifn.
+    SELECT SINGLE *                ##WARN_OK
+      INTO lwa_ettifn
+      FROM ettifn
+    WHERE anlage = lwa_ever-anlage
+    AND operand = 'ESMOPT_OUT'
+    AND ab <= sy-datum
+    AND bis = lc_maxbis.
+    ev_esmopt_out = lwa_ettifn-string3.
+
+    IF lwa_ever-sparte = lc_01. " Electric
+
+*     Check Air Reading Capability
+      IF lwa_egerh-ams          EQ space OR
+         lwa_egerh-amcg_cap_grp EQ space.
+        ev_noairdiv = abap_true.
+
+      ELSE.
+        SELECT SINGLE *
+          INTO lwa_teami_amcgcap
+          FROM teami_amcgcap
+        WHERE amcg_cap_grp = lwa_egerh-amcg_cap_grp
+        AND   amcg_cap     = lc_3.
+        IF sy-subrc <> 0.
+          ev_noairdiv = abap_true.
+        ENDIF.
+
+      ENDIF.
+
+    ENDIF.
+  ENDIF.
+
+ENDFUNCTION.
+

@@ -1,0 +1,29 @@
+FUNCTION zpgm_check_email.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_EMAIL) TYPE  AD_SMTPADR
+*"  EXPORTING
+*"     VALUE(EV_EMAIL_INVALID) TYPE  CHAR1
+*"----------------------------------------------------------------------
+  DATA: ls_address TYPE sx_address.
+
+* Check for initial
+  CHECK iv_email IS NOT INITIAL.
+
+  ls_address-type = 'INT'.
+  ls_address-address = iv_email.
+
+  CALL FUNCTION 'SX_INTERNET_ADDRESS_TO_NORMAL'
+    EXPORTING
+      address_unstruct    = ls_address
+    EXCEPTIONS
+      error_address_type  = 1
+      error_address       = 2
+      error_group_address = 3
+      OTHERS              = 4.
+  IF sy-subrc <> 0.
+    ev_email_invalid = abap_true.
+  ENDIF.
+
+ENDFUNCTION.

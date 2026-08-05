@@ -1,0 +1,250 @@
+FUNCTION zdmdl_device_amcg_change .
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(IM_SERIAL_NUMBER) TYPE  GERNR
+*"     REFERENCE(IM_KEY_DATE) TYPE  STICHTAG
+*"     REFERENCE(IM_DEVICE_CATEGORY) TYPE  MATNR OPTIONAL
+*"     REFERENCE(IM_AMCG) TYPE  E_AMI_AMCG_CAP_GRP
+*"  EXPORTING
+*"     REFERENCE(EX_MESSAGE) TYPE  STRING
+*"  EXCEPTIONS
+*"      ERROR_EXISTS
+*"----------------------------------------------------------------------
+* Name              : Compare Route Set MRU from SAP and T01 table     *
+*                     FUNCTION 15                                      *
+* Author            : PDshind1 - Prachi Shinde                         *
+* Date              : 12/21/2012                                       *
+* FRICE ID          : DM_ENH_700                                       *
+* Type of Program   : Function Module                                  *
+* Development Class : ZEM_ENH                                          *
+*----------------------------------------------------------------------*
+* Modification Log                Place latest at top :                *
+*----------------------------------------------------------------------*
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------*
+* PDshind1   12/21/2012      E2DK921894    E2DK922108      Initial     *
+*----------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+  ##needed
+  DATA:
+  l_device      TYPE    reg42_interface-device,
+  l_matnr       TYPE    reg42_interface-matnr,
+  l_db_update   TYPE    regen-db_update,
+  l_auto        TYPE    isu42_devmod_auto,
+  l_message     TYPE    string,
+  l_obj         TYPE    isu42_devmod,
+  l_dev         TYPE    reg42_dev,
+  l_dev_flag    TYPE    reg42_dev_input_flag,
+  l_index1      TYPE    sy-tabix,
+  l_index2      TYPE    sy-tabix,
+  l_eablu       TYPE    eablu,
+  l_eabl        TYPE    reabld,
+  l_eabl_prev   TYPE    eabl,
+  l_mode        TYPE    regen-wmode,
+  lv_error_flag TYPE    char1.
+
+  CONSTANTS:
+  lc_zwtyp_bal_power   TYPE e_zwtyp  VALUE 2,
+  lc_zwtyp_bal_consum  TYPE e_zwtyp  VALUE 4.
+
+  CLEAR: l_message.
+
+  l_device = im_serial_number.
+  l_matnr  = im_device_category.
+
+  CALL FUNCTION 'ISU_O_DEVICEMOD_OPEN'
+    EXPORTING
+      x_device       = l_device
+      x_matnr        = l_matnr
+      x_keydate      = im_key_date
+      x_wmode        = '2'
+      x_prorate      = 'X'
+      x_upd_online   = 'X'
+      x_no_dialog    = 'X'
+    IMPORTING
+      y_obj          = l_obj
+      y_auto         = l_auto
+    EXCEPTIONS
+      not_found      = 1
+      invalid        = 2
+      foreign_lock   = 3
+      input_error    = 4
+      system_error   = 5
+      internal_error = 6
+      not_qualified  = 7
+      not_customized = 8
+      cancelled      = 9
+      OTHERS         = 10.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+    PERFORM get_mess USING l_obj CHANGING l_message.
+    MOVE: l_message     TO ex_message,
+          abap_true     TO lv_error_flag.
+    ##stmnt_exit
+   RAISE error_exists.
+    CLEAR: lv_error_flag.
+    RETURN.
+  ELSE.
+
+    l_obj-obj-disp_input = l_obj-obj-disp.
+    l_obj-obj-disp_input-amcg_cap_grp = im_amcg.
+    l_obj-obj-disp_input-umbaugr = '08'.
+*    l_obj-obj-disp_input-gerwechs = '08'.
+    l_obj-contr-check_level = '4'.
+
+    CALL FUNCTION 'ISU_O_DEVICEMOD_INPUT'
+      CHANGING
+        xy_obj      = l_obj
+      EXCEPTIONS
+        input_error = 1
+        OTHERS      = 2.
+    IF sy-subrc <> 0.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      PERFORM get_mess USING l_obj CHANGING l_message.
+      MOVE: l_message TO ex_message,
+            abap_true TO lv_error_flag.
+      ##stmnt_exit
+      RAISE error_exists.
+      CLEAR: lv_error_flag.
+      RETURN.
+* Implement suitable error handling here
+    ELSE.
+
+* Get the Last Meter Reading for AMCG change
+      LOOP AT l_obj-obj-integration-meter_doc-i_reabld INTO l_eabl.
+
+        l_index1 = sy-tabix.
+        CLEAR l_eabl_prev.
+
+        IF ( l_eabl-zwtyp EQ lc_zwtyp_bal_power   OR
+             l_eabl-zwtyp EQ lc_zwtyp_bal_consum ).
+          l_eabl-zwstand = 0.
+          l_eabl-v_zwstand = 0.
+          MODIFY l_obj-obj-integration-meter_doc-i_reabld FROM l_eabl INDEX l_index1.
+        ELSE.
+
+          CALL FUNCTION 'ISU_DETERM_LAST_EABL_FOR_VALID'
+            EXPORTING
+              x_equnr      = l_eabl-equnr
+              x_zwnummer   = l_eabl-zwnummer
+              x_adat       = im_key_date
+              x_atim       = '2359'
+              x_adatreal   = im_key_date
+              x_atimreal   = '2359'
+            IMPORTING
+              y_eabl_prev  = l_eabl_prev
+            EXCEPTIONS
+              system_error = 1
+              OTHERS       = 2.
+          IF sy-subrc <> 0.
+* Implement suitable error handling here
+            PERFORM get_mess USING l_obj CHANGING l_message.
+            MOVE: l_message TO ex_message,
+                  abap_true TO lv_error_flag.
+            ##stmnt_exit
+            RAISE error_exists.
+            CLEAR: lv_error_flag.
+            RETURN.
+          ENDIF.
+
+          l_eabl-zwstand = l_eabl_prev-v_zwstand.
+          l_eabl-v_zwstand = l_eabl_prev-v_zwstand.
+          MODIFY l_obj-obj-integration-meter_doc-i_reabld FROM l_eabl INDEX l_index1.
+        ENDIF.
+      ENDLOOP.
+
+      CALL FUNCTION 'ISU_O_METERREAD_INPUT'
+        EXPORTING
+          x_maxerror           = 1
+          x_correct            = ' '
+          x_only_formal_checks = ' '
+          x_valdep_partly      = ' '
+        TABLES
+          xyt_reabld           = l_obj-obj-integration-meter_doc-i_reabld
+        CHANGING
+          xy_obj               = l_obj-obj-integration-meter_doc
+        EXCEPTIONS
+          input_error          = 1
+          not_valid            = 2
+          plausi_error         = 3
+          plausi_error_nocor   = 4
+          system_error         = 5
+          not_complete         = 6
+          indep_implausible    = 7
+          not_authorized       = 8
+          OTHERS               = 9.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+        PERFORM get_mess USING l_obj CHANGING l_message.
+        MOVE: l_message TO ex_message,
+              abap_true TO lv_error_flag.
+        ##stmnt_exit
+      RAISE error_exists.
+        CLEAR: lv_error_flag.
+        RETURN.
+      ENDIF.
+
+      CALL FUNCTION 'ISU_O_DEVICEMOD_ACTION'
+        EXPORTING
+          x_okcode     = 'SAVE'
+        CHANGING
+          xy_obj       = l_obj
+        EXCEPTIONS
+          cancelled    = 1
+          input_error  = 2
+          system_error = 3
+          OTHERS       = 4.
+
+      IF sy-subrc <> 0.
+        PERFORM get_mess USING l_obj CHANGING l_message.
+        MOVE: l_message TO ex_message,
+              abap_true TO lv_error_flag.
+        ##stmnt_exit
+       RAISE error_exists.
+        CLEAR: lv_error_flag.
+        ##stmnt_exit
+      RETURN.
+
+* Implement suitable error handling here
+        CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+        PERFORM get_mess USING l_obj CHANGING l_message.
+        MOVE: l_message TO ex_message,
+              abap_true TO lv_error_flag.
+        RETURN.
+      ELSE.
+        CALL FUNCTION 'ISU_O_DEVICEMOD_CLOSE'
+          IMPORTING
+            y_db_update = l_db_update
+          CHANGING
+            xy_obj      = l_obj.
+        IF l_db_update EQ 'X'.
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+            EXPORTING
+              wait = 'X'.
+          CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+            EXPORTING
+              input  = l_device
+            IMPORTING
+              output = l_device.
+          CONCATENATE 'Device'(015) l_device 'AMI capability has been changed successfully'(016)
+          INTO l_message
+          SEPARATED BY space.
+          MOVE l_message TO ex_message.
+        ELSE.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+          PERFORM get_mess USING l_obj CHANGING l_message.
+          MOVE: l_message TO ex_message,
+                abap_true TO lv_error_flag.
+          ##stmnt_exit
+          RAISE error_exists.
+          CLEAR: lv_error_flag.
+          RETURN.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+ENDFUNCTION.
+

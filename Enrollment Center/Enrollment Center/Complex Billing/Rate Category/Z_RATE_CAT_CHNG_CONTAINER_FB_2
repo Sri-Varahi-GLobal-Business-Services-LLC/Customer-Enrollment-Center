@@ -1,0 +1,48 @@
+FUNCTION z_rate_cat_chng_container_fb_2.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(CHANGEDOCUMENT_HEADER) TYPE  CDHDR OPTIONAL
+*"     VALUE(OBJECT_POR) TYPE  SIBFLPORB OPTIONAL
+*"     VALUE(EVENT) TYPE  SWECDEXIT-EVENT OPTIONAL
+*"     VALUE(EVENT_CONTAINER) TYPE REF TO
+*"        IF_SWF_IFS_PARAMETER_CONTAINER OPTIONAL
+*"  TABLES
+*"      CHANGEDOCUMENT_POSITION STRUCTURE  CDPOS OPTIONAL
+*"----------------------------------------------------------------------
+
+* This is the template-FB to fill the event-container before raising
+* the event from a change-document.
+
+* This Template does replace the previous Interface of
+* SWE_CD_TEMPLATE_CONTAINER_FB to be able to handle BOR-References as
+* well as References of Business-classes
+
+* Use the interface of this template to implement the exit.
+
+  DATA:
+    lv_x      TYPE c,
+    lwa_cdpos TYPE cdpos.
+
+  DO.
+    IF lv_x = 'X'.
+      EXIT.
+    ENDIF.
+  ENDDO.
+
+  event_container = cl_swf_ifs_container_base=>create( ).
+
+  LOOP AT changedocument_position INTO lwa_cdpos WHERE objectclas = 'ISU_EANL'
+                                                   AND fname      = 'TARIFTYP'
+                                                   AND chngind    = 'U'.
+    event_container->set( name  = 'Old_RateCategory'        "#EC NOTEXT
+                          value = lwa_cdpos-value_old ).
+
+
+    event_container->set( name  =  'New_RateCategory'       "#EC NOTEXT
+                          value = lwa_cdpos-value_new ).
+
+    EXIT.
+  ENDLOOP.
+
+ENDFUNCTION.

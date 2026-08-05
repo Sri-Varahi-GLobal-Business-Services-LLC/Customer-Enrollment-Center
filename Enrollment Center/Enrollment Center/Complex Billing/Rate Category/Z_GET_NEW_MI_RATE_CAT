@@ -1,0 +1,75 @@
+FUNCTION z_get_new_mi_rate_cat.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(IM_CLASS) TYPE  ZTFO_DFLT_RATE-CLASS
+*"     REFERENCE(IM_LIKE_IND) TYPE  ZTFO_DFLT_RATE-LIKE_IND OPTIONAL
+*"     REFERENCE(IM_DIVISION) TYPE  ZTFO_DFLT_RATE-SPARTE
+*"     REFERENCE(IM_HOME_FUEL) TYPE  ZTFO_DFLT_RATE-HOME_FUEL OPTIONAL
+*"     REFERENCE(IM_CURRENT_RATE_CAT) TYPE  ZTFO_DFLT_RATE-SP_TARIFTYP
+*"  EXPORTING
+*"     REFERENCE(EX_NEW_RATE_CAT) TYPE  ZTFO_DFLT_RATE-NEW_TARIFTYP
+*"----------------------------------------------------------------------
+
+**********************************************************************
+* Programmer:  Michael Robosn
+* Date:        05/27/2009
+* SC Problem:  PM844409
+* Transport:   ECDK954607
+* Description: Created to find the new rate category based bill class,
+*              on rate questionnaire answers, and current rate
+*              category.
+*
+*              This was moved into a new function module, instead of
+*              making the changes directly in the PMI screen code so
+*              that it can be reused by a UCES move-in handler
+*              workflow.
+**********************************************************************
+
+  IF gi_rate_category[] IS INITIAL.
+    SELECT *
+      FROM ztfo_dflt_rate
+      INTO TABLE gi_rate_category.
+  ENDIF.
+
+* If a new default cannot be found, reuse the current one
+  ex_new_rate_cat = im_current_rate_cat.
+
+  CASE im_class.
+    WHEN c_res_class.
+*     The LIKE_IND and SP_TARIFTYP fields are used for the commercial class.
+*     The WATER_HEAT field is no longer retrieved from users.
+      READ TABLE gi_rate_category INTO gw_rate_category
+        WITH KEY class     = im_class
+                 sparte    = im_division
+                 home_fuel = im_home_fuel.
+
+      IF sy-subrc = 0.
+        ex_new_rate_cat = gw_rate_category-new_tariftyp.
+      ENDIF.
+    WHEN c_com_class.
+*     The HOME_HEAT and WATER_HEAT are for the residential class
+*     Look for a specific rate category translation
+      READ TABLE gi_rate_category INTO gw_rate_category
+        WITH KEY class       = im_class
+                 like_ind    = im_like_ind
+                 sparte      = im_division
+                 sp_tariftyp = im_current_rate_cat.
+
+      IF sy-subrc = 0.
+*       A translation for the current rate category is found
+        ex_new_rate_cat = gw_rate_category-new_tariftyp.
+      ELSE.
+*       Look for a catch all rate category
+        READ TABLE gi_rate_category INTO gw_rate_category
+          WITH KEY class       = im_class
+                   like_ind    = im_like_ind
+                   sparte      = im_division
+                   sp_tariftyp = space.
+
+        IF sy-subrc = 0.
+          ex_new_rate_cat = gw_rate_category-new_tariftyp.
+        ENDIF.
+      ENDIF.
+  ENDCASE.
+ENDFUNCTION.

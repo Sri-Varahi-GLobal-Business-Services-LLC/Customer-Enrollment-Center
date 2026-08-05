@@ -1,0 +1,17 @@
+METHOD is_device_exists.
+
+  CLEAR rv_error_flg.
+  SELECT SINGLE equnr devloc                                "#EC WARNOK
+  FROM v_eger
+  INTO (my_equnr , my_devloc)
+  WHERE geraet = my_gernr
+  AND  matnr = my_matnr
+  AND  bis    EQ co_date_infinite
+  AND  devloc <> space.
+
+  IF NOT sy-subrc IS INITIAL.
+    populate_status_return space co_error co_value_18 my_gernr my_anlage space space.
+    rv_error_flg = co_flag.
+  ENDIF.
+ENDMETHOD.
+

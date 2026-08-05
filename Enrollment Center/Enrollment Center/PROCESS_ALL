@@ -1,0 +1,118 @@
+*"----------------------------------------------------------------------
+* Name            : Method for Automation of AMCG Update,
+*                   Register Addition, Profile Creation,
+*                   Profile Allocation and Profile Synchronization for
+*                   Post Cutover Interval Billing.
+* Author          : Har Mayank Shrivastava
+* Date            : 22nd December 2014
+* Type of Program : Method
+* Purpose         : Post Cutover Interval Billing
+* Development Class : ZDM_FM
+* ----------------------------------------------------------------------
+*** Author      Date        Change Req#     Task #     Change Driver
+*** Har Mayank 01/12/14      Initial      E2DK935654
+***----------------------------------------------------------------------
+METHOD process_all.
+
+  DATA : lv_ratecategory TYPE tariftyp_anl,
+         lt_downgrade_return TYPE STANDARD TABLE OF BAPIRET2,
+         lv_noaction     TYPE boolean,
+         lwa_return      TYPE BAPIRET2,
+         lt_bilins_ele   TYPE ztt_bilins_elec,
+         ls_bilins_ele   TYPE ztcc_bilins_elec,
+         lv_profile      TYPE e_profile,
+         lv_tou_logikzw  TYPE t_register, "logikzw, added SE R5
+         lt_ezwg         TYPE ezwg_tab,
+         lit_dev_mod     TYPE ztt_mdmod_mass_devmod,
+         lv_prof_status  TYPE flag.
+
+  CLEAR :lv_ratecategory,
+         lt_bilins_ele,
+         lv_profile,
+         lv_tou_logikzw,
+         lv_prof_status.
+
+* Check if the meter is smart or not else dont proceed
+*  IF NOT me->is_smart_meter( ) IS INITIAL.
+  lv_ratecategory = me->get_rate_category( ).
+
+  lt_bilins_ele = me->get_billinst_data( iv_register_group  = me->get_register_group( )
+                                         iv_ratecategory    = lv_ratecategory ).
+  "Get custom Register data
+  IF NOT lt_bilins_ele IS INITIAL.
+    lt_ezwg = me->build_reg_final( it_bilinst = lt_bilins_ele ).
+    IF NOT lt_ezwg IS INITIAL.
+      me->prepare_dev_mod(
+        EXPORTING
+          it_reg_final    = lt_ezwg
+          it_bilinst      = lt_bilins_ele
+        IMPORTING
+          lit_mass_devmod = lit_dev_mod ).
+
+      IF lv_ratecategory EQ 'RS_1000'.
+*        DO. DATA lv_debug TYPE char1 VALUE 'X'. IF lv_debug IS INITIAL. EXIT. ENDIF. ENDDO.
+        CALL FUNCTION 'Z_UPDATE_RTYPE_FOR_DOWNGRADE'
+          EXPORTING
+            it_downgrade = lit_dev_mod
+            iv_tariftyp  = lv_ratecategory
+          IMPORTING
+            et_return    = lt_downgrade_return.
+      ENDIF.
+      CLEAR lv_noaction.
+      LOOP AT lt_downgrade_return INTO lwa_return.
+        IF ( lwa_return-type EQ 'E' OR lwa_return-type EQ 'A' OR lwa_return-type EQ 'X' ).
+            lv_noaction  = abap_true.
+        ELSEIF lwa_return-type = 'W'.
+
+        ENDIF.
+        populate_status_return lwa_return-id
+                               lwa_return-type
+                               lwa_return-number
+                               lwa_return-MESSAGE_V1
+                               lwa_return-MESSAGE_V2
+                               lwa_return-MESSAGE_V3
+                               lwa_return-MESSAGE_V4.
+      ENDLOOP.
+
+      CHECK lv_noaction is INITIAL.
+
+      IF NOT lit_dev_mod  IS INITIAL.
+        me->modify_device_register( lit_dev_mod ).
+      ENDIF.
+    ENDIF.
+  ELSE.
+    RETURN.
+  ENDIF.
+*  ELSE.
+*    RETURN.
+*  ENDIF.
+  "Assign EDM profile to TOU Register
+*  READ TABLE LT_BILINS_ELE WITH KEY RATE_FACT_GROUP = 'INTERVAL' TRANSPORTING NO FIELDS.
+  LOOP AT lt_bilins_ele INTO ls_bilins_ele WHERE ( rate_fact_group = 'INTERVAL' OR rate_fact_group = 'INTERVAL60' ).
+  ENDLOOP.
+  CHECK sy-subrc IS INITIAL.
+  lv_tou_logikzw = me->get_timeofuse_reg( ).
+  my_tou_logikzw = lv_tou_logikzw.
+  IF NOT lv_tou_logikzw IS INITIAL.
+    lv_profile =  me->get_allocated_profiles( lv_tou_logikzw-logikzw ).
+    IF lv_profile IS INITIAL.
+      lv_profile = me->get_unallocated_profile( ).
+      IF lv_profile IS INITIAL.
+        lv_profile = me->create_edm_profile( lv_tou_logikzw ).
+      ENDIF.
+      IF NOT lv_profile IS INITIAL.
+        me->assign_edm_profile(
+          EXPORTING
+            iv_profile_no = lv_profile
+            iv_logikzw    = lv_tou_logikzw-logikzw" lv_tou_logikzw added for SE R5
+          IMPORTING
+            rv_status     = lv_prof_status ).
+        IF NOT lv_prof_status IS INITIAL.
+          me->synchronize_interval_profile( lv_profile ).
+        ENDIF.
+      ENDIF.
+    ELSE.
+      me->synchronize_interval_profile( lv_profile ).
+    ENDIF.
+  ENDIF.
+ENDMETHOD.

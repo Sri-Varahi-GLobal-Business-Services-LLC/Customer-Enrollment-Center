@@ -1,0 +1,53 @@
+FUNCTION z_inst_last_bill_date.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(I_ANLAGE) TYPE  ANLAGE
+*"  EXPORTING
+*"     VALUE(E_LAST_ENDABRPE) TYPE  ENDABRPE
+*"     VALUE(E_VKONT) TYPE  VKONT_KK
+*"----------------------------------------------------------------------
+
+******************************************************************
+*  Function Name            : Z_INST_LAST_BILL_DATE
+*  Author                   : Aparna Chandra
+*  Date                     : 04/04/2012
+*  FRICEW Id #              : Change C000015963
+*  Original SAP Program Name: N/A
+*  SAP Transport Request #  : E2DK917505
+*----------------------------------------------------------------*
+*  Description              : To get the last bill date for
+*                             an installation
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #  :
+*  Author                   : Firstname Lastname
+*  Modification Date        : MM/DD/YYYY
+*  Description              :
+******************************************************************
+
+  DATA: lwa_prev_bill LIKE erch.
+
+  IF i_anlage IS NOT INITIAL.
+    CALL FUNCTION 'ISU_BILLING_DATES_FOR_INSTLN'
+      EXPORTING
+        x_anlage          = i_anlage
+      IMPORTING
+        y_last_endabrpe   = e_last_endabrpe
+        y_previous_bill   = lwa_prev_bill
+      EXCEPTIONS
+        no_contract_found = 1
+        general_fault     = 2
+        parameter_fault   = 3
+        OTHERS            = 4.
+    IF sy-subrc = 0.
+      IF lwa_prev_bill IS NOT INITIAL.
+        e_vkont = lwa_prev_bill-vkont.
+      ENDIF.
+    ENDIF.
+
+  ENDIF.
+
+ENDFUNCTION.
+

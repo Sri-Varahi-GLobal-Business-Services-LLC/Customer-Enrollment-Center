@@ -1,0 +1,14 @@
+METHOD is_date_infuture.
+  DATA :lv_msgv  TYPE sy-msgv1.
+
+  CLEAR : lv_msgv,
+          rv_error_flg.
+
+*  IF my_date GT sy-datum.
+*    lv_msgv = my_date.
+*    populate_status_return space co_error co_value_16 lv_msgv space space space.
+*    rv_error_flg = co_flag.
+*  ENDIF.
+
+ENDMETHOD.
+

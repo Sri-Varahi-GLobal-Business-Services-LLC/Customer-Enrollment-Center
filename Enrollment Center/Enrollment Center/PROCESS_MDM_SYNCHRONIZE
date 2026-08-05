@@ -1,0 +1,27 @@
+*"----------------------------------------------------------------------
+* Name            : Method for Automation of Profile Synchronization for
+*                   Post Cutover Interval Billing.
+* Author          : Har Mayank Shrivastava
+* Date            : 22nd December 2014
+* Type of Program : Method
+* Purpose         : Post Cutover Interval Billing
+* Development Class : ZDM_FM
+* ----------------------------------------------------------------------
+*** Author      Date        Change Req#     Task #     Change Driver
+*** Har Mayank 01/12/14      Initial      E2DK935654
+***----------------------------------------------------------------------
+METHOD process_mdm_synchronize.
+  DATA: lv_profile     TYPE e_profile,
+        lv_tou_logikzw TYPE t_register.
+*        lv_tou_logikzw       TYPE logikzw.
+
+  lv_tou_logikzw = me->get_timeofuse_reg( ).
+  my_tou_logikzw = lv_tou_logikzw.
+
+  IF NOT lv_tou_logikzw IS INITIAL.
+    lv_profile =  me->get_allocated_profiles( lv_tou_logikzw-logikzw ).
+    IF NOT lv_profile IS INITIAL.
+      me->synchronize_interval_profile( lv_profile ).
+    ENDIF.
+  ENDIF.
+ENDMETHOD.

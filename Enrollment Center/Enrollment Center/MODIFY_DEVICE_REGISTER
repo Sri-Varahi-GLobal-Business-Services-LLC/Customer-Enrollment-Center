@@ -1,0 +1,54 @@
+METHOD modify_device_register.
+  DATA:  loref_dev_modif TYPE REF TO zcl_device_modif_util,
+         lt_dev_mod_ret  TYPE ztt_mdmod_parallel_job_return,
+         lwa_dev_mod_ret TYPE zst_mdmod_parallel_job_return,
+         lwa_bapiret2    TYPE bapiret2,
+         lwa_mass_devmod TYPE zst_mdmod_mass_devmod.
+
+  CLEAR : loref_dev_modif,
+          lt_dev_mod_ret,
+          lwa_dev_mod_ret,
+          lwa_bapiret2.
+
+  READ TABLE it_dev_mod INTO lwa_mass_devmod INDEX 1.
+
+  IF NOT lwa_mass_devmod-data IS INITIAL.
+
+    CREATE OBJECT loref_dev_modif.
+
+    IF sy-batch NE abap_true.
+      zcl_device_modif_util=>v_called_from_bjob = abap_true.
+    ENDIF.
+
+    loref_dev_modif->perform_dev_chg_wrapper(
+      EXPORTING
+        it_import = it_dev_mod
+      IMPORTING
+        et_export = lt_dev_mod_ret ).
+    IF NOT lt_dev_mod_ret IS INITIAL.
+      CLEAR lwa_dev_mod_ret.
+      READ TABLE lt_dev_mod_ret INTO lwa_dev_mod_ret WITH KEY sernr = my_gernr
+                                                              matnr = my_matnr.
+      IF sy-subrc IS INITIAL.
+        LOOP AT lwa_dev_mod_ret-t_return
+             INTO lwa_bapiret2.
+
+          populate_status_return lwa_bapiret2-id
+                                 lwa_bapiret2-type
+                                 lwa_bapiret2-number
+                                 lwa_bapiret2-message_v1
+                                 lwa_bapiret2-message_v2
+                                 lwa_bapiret2-message_v3
+                                 lwa_bapiret2-message_v4.
+          CLEAR lwa_bapiret2.
+        ENDLOOP.
+      ENDIF.
+    ELSE.
+      populate_status_return space co_error co_value_05 my_anlage my_gernr space space.
+    ENDIF.
+  ELSE.
+    populate_status_return space co_warning co_value_33 my_gernr space space space.
+  ENDIF.
+
+ENDMETHOD.
+

@@ -1,0 +1,12 @@
+FUNCTION ZPGM_MOVE_DATA.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IS_INPUT) TYPE  ZSENRL_INT_STRUC
+*"  EXPORTING
+*"     VALUE(ES_RETURN) TYPE  ZSPGM_BRF_RETURN
+*"----------------------------------------------------------------------
+
+  MOVE-CORRESPONDING is_input TO es_return.
+
+ENDFUNCTION.

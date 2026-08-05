@@ -1,0 +1,567 @@
+*&---------------------------------------------------------------------*
+*& Report  Z_OPTOUTCHANGE
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+
+REPORT  z_optoutchange.
+
+*include for SWC
+INCLUDE <cntn01>.
+
+*some data declared here for use throughout forms
+DATA:
+      lt_changes  TYPE TABLE OF zsoptoutchange,
+      lv_string   TYPE string,
+      lt_output   TYPE TABLE OF zsoptoutchangerep WITH HEADER LINE,
+      gc_tab      TYPE c VALUE cl_bcs_convert=>gc_tab,
+      gc_crlf     TYPE c VALUE cl_bcs_convert=>gc_crlf,
+      i_fieldcat  TYPE slis_t_fieldcat_alv,
+      wa_fieldcat TYPE slis_fieldcat_alv.
+
+
+
+
+
+
+
+
+
+
+*********Selection Screen*********
+SELECTION-SCREEN BEGIN OF BLOCK 100 WITH FRAME TITLE text-100.
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN POSITION 1.
+PARAMETER p_frdate TYPE datum.
+SELECTION-SCREEN POSITION 20.
+PARAMETER p_todate  TYPE datum.
+SELECTION-SCREEN END OF LINE.
+SELECTION-SCREEN END OF BLOCK 100.
+
+SELECTION-SCREEN BEGIN OF BLOCK 200 WITH FRAME TITLE text-200.
+PARAMETERS: p_email AS CHECKBOX DEFAULT ' '.
+SELECT-OPTIONS: p_recip FOR (email) DEFAULT ' '.
+SELECTION-SCREEN END OF BLOCK 200.
+
+SELECTION-SCREEN BEGIN OF BLOCK 300 WITH FRAME TITLE text-300.
+PARAMETERS: p_bp     TYPE efindd-c_bupart DEFAULT ' ',
+            p_funloc TYPE efindd-l_devloc DEFAULT ' '.
+SELECTION-SCREEN END OF BLOCK 300.
+
+
+
+
+
+
+
+
+
+
+*********At Selection Screen*********
+*Basic validations to avoid misprocessing before the report is executed
+*we expect either a date range, a business partner or a device location to be input
+AT SELECTION-SCREEN.
+
+*default the dates if only one is populated
+   IF p_frdate IS NOT INITIAL AND p_todate IS INITIAL.
+    p_todate = p_frdate.
+  ENDIF.
+
+*default the dates if only one is populated
+  IF p_todate IS NOT INITIAL AND p_frdate IS INITIAL.
+    p_frdate = p_todate.
+  ENDIF.
+
+  IF p_todate < p_frdate.
+    MESSAGE 'From Date exceeds To Date'(001) TYPE 'E'.
+  ENDIF.
+
+  IF p_recip-low IS NOT INITIAL AND p_email IS INITIAL.
+    MESSAGE 'You must check E-mail if you want to e-mail report'(004) TYPE 'E'.
+  ENDIF.
+
+*Several more validations prior to execution
+  IF p_frdate IS INITIAL AND p_todate IS INITIAL AND p_email IS INITIAL AND p_bp IS INITIAL AND p_funloc IS INITIAL.
+    MESSAGE 'Please enter selection criteria'(005) TYPE 'E'.
+    EXIT.
+  ENDIF.
+
+*email validations
+  IF p_email IS NOT INITIAL.
+    IF p_recip-low IS INITIAL.
+      MESSAGE 'You must enter at least one e-mail address'(002) TYPE 'E'.
+      EXIT.
+    ENDIF.
+  ENDIF.
+
+
+
+
+
+
+
+
+
+
+*********Start Of Selection*********
+START-OF-SELECTION.
+
+*begin processing
+*get data to output/email
+  PERFORM gather_data.
+
+*don't proceed if we have no data selected
+  CHECK lt_changes IS NOT INITIAL.
+
+*If E-mail is requested and we have data
+  IF p_email IS NOT INITIAL.
+
+    "Add headers to the data for Excel
+    PERFORM create_header_line.
+
+    "Create and Send email
+    PERFORM send_email.
+
+*Otherwise display output in ALV Grid if we have data
+  ELSE.
+
+    "prep for the ALV_Display
+    PERFORM form100_main_fieldcat.
+
+    "call the ALV_Display
+    PERFORM form200_alv_display.
+
+  ENDIF.
+
+
+
+
+
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  gather_data
+*&---------------------------------------------------------------------*
+* Retrieve data from ZCS_OPTOUTCHANGE and format for display or email
+*----------------------------------------------------------------------*
+FORM gather_data.
+  DATA: lv_selinst TYPE anlage,
+        ls_output  TYPE zsoptoutchangerep,
+        lv_inst    TYPE anlage,
+        lo_instln  TYPE swc_object,
+        lo_premise TYPE swc_object,
+        lv_premise TYPE vstelle,
+        ls_findpar TYPE efindpar,
+        lt_result  TYPE STANDARD TABLE OF efindres,
+        ls_result  TYPE efindres,
+        lo_devices TYPE swc_object,
+        lv_meter   TYPE geraet.
+
+  FIELD-SYMBOLS: <changes> TYPE zsoptoutchange.
+
+
+
+
+*If the functional location parameter is populated then select data accordingly
+  IF p_funloc IS NOT INITIAL.
+    "Set parameter for ISU_FINDER
+    ls_findpar-l_devloc = p_funloc.
+    CALL FUNCTION 'ISU_FINDER'
+      EXPORTING
+        x_objtype                   = 'INSTLN'
+        x_findpar                   = ls_findpar
+      TABLES
+        yt_result                   = lt_result
+      EXCEPTIONS
+        insufficient_selection      = 1
+        objtype_not_supported       = 2
+        additional_selection_needed = 3
+        OTHERS                      = 4.
+    IF sy-subrc = 0.
+      "If we have a result we should only have one
+      READ TABLE lt_result INTO ls_result INDEX 1.
+      lv_selinst = ls_result-objkey.
+    ENDIF.
+
+    SELECT * FROM zcs_optoutchange APPENDING TABLE lt_changes WHERE installation = lv_selinst.
+
+  "filter results if BP was input
+    IF p_bp IS NOT INITIAL.
+      DELETE lt_changes WHERE bp <> p_bp.
+    ENDIF.
+
+  "filter results if dates were input
+    IF p_frdate IS NOT INITIAL AND p_todate IS NOT INITIAL.
+      DELETE lt_changes WHERE changedate > p_todate OR changedate < p_frdate.
+    ENDIF.
+
+
+*If the BP parameter is populated then select data accordingly
+    ELSEIF p_bp IS NOT INITIAL.
+      SELECT * FROM zcs_optoutchange APPENDING TABLE lt_changes WHERE  bp = p_bp.
+
+    "filter results if dates were input
+      IF p_frdate IS NOT INITIAL AND p_todate IS NOT INITIAL.
+        DELETE lt_changes WHERE changedate > p_todate OR changedate < p_frdate.
+      ENDIF.
+
+*Otherwise we expect the date parameters to be populated
+    ELSE.
+      SELECT * FROM zcs_optoutchange APPENDING TABLE lt_changes
+             WHERE  changedate  >= p_frdate
+             AND    changedate <= p_todate.
+    ENDIF.
+
+*Do not proceed if we have no data
+    IF lt_changes IS INITIAL.
+      MESSAGE 'No Data Selected for Date Range'(010) TYPE 'S'.
+      EXIT.
+*We have data so proceed
+    ELSE.
+      CLEAR: ls_findpar, lt_result, ls_result.
+
+      LOOP AT lt_changes ASSIGNING <changes>.
+
+*Business Partner
+        ls_output-bp = <changes>-bp.
+
+*Premise
+        lv_inst = <changes>-installation.
+        "create instance of Instln
+        swc_create_object lo_instln  'INSTLN' lv_inst.
+        "traverse to Premises
+        swc_get_property lo_instln 'Premises' lo_premise.
+        "get premise number
+        swc_get_property lo_premise 'Number' lv_premise.
+
+        ls_output-premise = lv_premise.
+
+*Functional Location
+        "Set parameter for ISU_FINDER
+        ls_findpar-i_anlage = <changes>-installation.
+        CALL FUNCTION 'ISU_FINDER'
+          EXPORTING
+            x_objtype                   = 'DEVLOC'
+            x_findpar                   = ls_findpar
+          TABLES
+            yt_result                   = lt_result
+          EXCEPTIONS
+            insufficient_selection      = 1
+            objtype_not_supported       = 2
+            additional_selection_needed = 3
+            OTHERS                      = 4.
+        IF sy-subrc = 0.
+          "If we have a result we should only have one
+          READ TABLE lt_result INTO ls_result INDEX 1.
+          ls_output-funcloc = ls_result-objkey.
+        ENDIF.
+
+*Meter
+        "traverse to Current Devices from existing Instln object
+        swc_get_property lo_instln 'CurrentDevices' lo_devices.
+        "Get serial number of meter
+        swc_get_property lo_devices 'SerialNumber' lv_meter.
+
+        ls_output-meter = lv_meter.
+
+*Operand
+        ls_output-operand = <changes>-operand.
+
+*Change Date
+        WRITE <changes>-changedate TO ls_output-changedate MM/DD/YYYY.
+
+*Change Reason
+        ls_output-reason = <changes>-reason.
+
+*Move Out Date
+        IF <changes>-moveoutdate IS INITIAL.
+          CLEAR ls_output-moveoutdate.
+        ELSE.
+          WRITE <changes>-moveoutdate TO ls_output-moveoutdate MM/DD/YYYY.
+        ENDIF.
+
+*Type of change
+        ls_output-type = <changes>-type.
+
+*If an E-Mail is requested we need to format a string
+        IF p_email IS NOT INITIAL.
+          CONCATENATE lv_string
+                      ls_output-bp gc_tab
+                      ls_output-premise gc_tab
+                      ls_output-funcloc gc_tab
+                      ls_output-meter gc_tab
+                      ls_output-operand gc_tab
+                      ls_output-changedate gc_tab
+                      ls_output-reason gc_tab
+                      ls_output-moveoutdate gc_tab
+                      ls_output-type gc_crlf
+                      INTO lv_string.
+
+*Otherwise we build the table for ALV_Display
+        ELSE.
+          APPEND ls_output TO lt_output.
+        ENDIF.
+        CLEAR ls_output.
+      ENDLOOP.
+    ENDIF.
+
+  ENDFORM.                    "gather_data
+
+
+
+
+
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  form100_MAIN_FIELDCAT
+*&---------------------------------------------------------------------*
+* Build table layout for ALV_Display
+*----------------------------------------------------------------------*
+FORM form100_main_fieldcat .
+
+
+* Fieldcatalog for BP
+  wa_fieldcat-fieldname = 'BP'.
+  wa_fieldcat-ref_fieldname = 'BP'.
+  wa_fieldcat-tabname   = 'LT_OUTPUT'.
+  wa_fieldcat-seltext_l = 'Business Partner'.
+  wa_fieldcat-outputlen = 14.
+  APPEND wa_fieldcat TO i_fieldcat.
+  CLEAR wa_fieldcat.
+
+* Fieldcatalog for Premise
+  wa_fieldcat-fieldname = 'PREMISE'.
+  wa_fieldcat-ref_fieldname = 'PREMISE'.
+  wa_fieldcat-tabname   = 'LT_OUTPUT'.
+  wa_fieldcat-seltext_l = 'Premise'.
+  APPEND wa_fieldcat TO i_fieldcat.
+  CLEAR wa_fieldcat.
+
+* Fieldcatalog for Functional Location
+  wa_fieldcat-fieldname = 'FUNCLOC'.
+  wa_fieldcat-ref_fieldname = 'FUNCLOC'.
+  wa_fieldcat-tabname   = 'LT_OUTPUT'.
+  wa_fieldcat-seltext_l = 'Functional Location'.
+  wa_fieldcat-outputlen = 15.
+  APPEND wa_fieldcat TO i_fieldcat.
+  CLEAR wa_fieldcat.
+
+* Fieldcatalog for Meter
+  wa_fieldcat-fieldname = 'METER'.
+  wa_fieldcat-ref_fieldname = 'METER'.
+  wa_fieldcat-tabname   = 'LT_OUTPUT'.
+  wa_fieldcat-seltext_l = 'Meter'.
+  wa_fieldcat-no_zero = 'X'.
+  wa_fieldcat-outputlen = 8.
+  APPEND wa_fieldcat TO i_fieldcat.
+  CLEAR wa_fieldcat.
+
+* Fieldcatalog for Operand
+  wa_fieldcat-fieldname = 'OPERAND'.
+  wa_fieldcat-ref_fieldname = 'OPERAND'.
+  wa_fieldcat-tabname   = 'LT_OUTPUT'.
+  wa_fieldcat-seltext_l = 'Operand'.
+  wa_fieldcat-outputlen = 12.
+  APPEND wa_fieldcat TO i_fieldcat.
+  CLEAR wa_fieldcat.
+
+* Fieldcatalog for Change Date
+  wa_fieldcat-fieldname = 'CHANGEDATE'.
+  wa_fieldcat-ref_fieldname = 'CHANGEDATE'.
+  wa_fieldcat-tabname   = 'LT_OUTPUT'.
+  wa_fieldcat-seltext_l = 'Change Date'.
+  wa_fieldcat-outputlen = 10.
+  APPEND wa_fieldcat TO i_fieldcat.
+  CLEAR wa_fieldcat.
+
+*Fieldcatalog for Reason
+  wa_fieldcat-fieldname = 'REASON'.
+  wa_fieldcat-ref_fieldname = 'REASON'.
+  wa_fieldcat-tabname   = 'LT_OUTPUT'.
+  wa_fieldcat-seltext_l = 'Reason'.
+  APPEND wa_fieldcat TO i_fieldcat.
+  CLEAR wa_fieldcat.
+
+*Fieldcatalog for Move Out Date
+  wa_fieldcat-fieldname = 'MOVEOUTDATE'.
+  wa_fieldcat-ref_fieldname = 'MOVEOUTDATE'.
+  wa_fieldcat-tabname   = 'LT_OUTPUT'.
+  wa_fieldcat-seltext_l = 'Move Out Date'.
+  wa_fieldcat-outputlen = 11.
+  APPEND wa_fieldcat TO i_fieldcat.
+  CLEAR wa_fieldcat.
+
+*Fieldcatalog for Type of Change
+  wa_fieldcat-fieldname = 'TYPE'.
+  wa_fieldcat-ref_fieldname = 'TYPE'.
+  wa_fieldcat-tabname   = 'LT_OUTPUT'.
+  wa_fieldcat-seltext_l = 'Type'.
+  wa_fieldcat-outputlen = 10.
+  APPEND wa_fieldcat TO i_fieldcat.
+  CLEAR wa_fieldcat.
+
+ENDFORM.                    " MAIN_FIELDCAT
+
+
+
+
+
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  form200_ALV_DISPLAY
+*&---------------------------------------------------------------------*
+* Call the ALV_Display with out output data
+*----------------------------------------------------------------------*
+FORM form200_alv_display .
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-repid
+      it_fieldcat        = i_fieldcat
+    TABLES
+      t_outtab           = lt_output
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+ENDFORM.                    " ALV_DISPLAY
+
+
+
+
+
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  create_header_line
+*&---------------------------------------------------------------------*
+* Add headers to output data for Excel attachment for E-Mail
+*----------------------------------------------------------------------*
+FORM create_header_line.
+  CONCATENATE 'Business Partner' gc_tab
+              'Premise' gc_tab
+              'Functional Location' gc_tab
+              'Meter' gc_tab
+              'Operand' gc_tab
+              'Change Date' gc_tab
+              'Change Reason' gc_tab
+              'Move Out Date' gc_tab
+              'Type' gc_crlf
+              lv_string
+              INTO lv_string.
+ENDFORM.                    "create_header_line
+
+
+
+
+
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  send_email
+*&---------------------------------------------------------------------*
+* Create and Send Email
+*----------------------------------------------------------------------*
+FORM send_email.
+  DATA:
+    send_request    TYPE REF TO cl_bcs,
+    binary_content  TYPE solix_tab,
+    size            TYPE so_obj_len,
+    lv_from         TYPE char10,
+    lv_to           TYPE char10,
+    lv_body         TYPE soli,
+    main_text       TYPE bcsy_text,
+    document        TYPE REF TO cl_document_bcs,
+    lv_recip        TYPE adr6-smtp_addr,
+    recipient       TYPE REF TO if_recipient_bcs,
+    sent_to_all     TYPE os_boolean,
+    bcs_exception   TYPE REF TO cx_bcs.
+
+  TRY.
+*     -------- create persistent send request ------------------------
+      send_request = cl_bcs=>create_persistent( ).
+
+      TRY.
+          cl_bcs_convert=>string_to_solix(
+            EXPORTING
+              iv_string   = lv_string
+              iv_codepage = '4103'  "suitable for MS Excel, leave empty
+              iv_add_bom  = 'X'     "for other doc types
+            IMPORTING
+              et_solix  = binary_content
+              ev_size   = size ).
+        CATCH cx_bcs.
+          MESSAGE e445(so).
+      ENDTRY.
+
+      WRITE p_frdate TO lv_from MM/DD/YYYY.
+      WRITE p_todate TO lv_to MM/DD/YYYY.
+      IF p_todate <> p_frdate.
+        CONCATENATE 'Opt-Out Flag was changed between' lv_from 'and' lv_to INTO lv_body SEPARATED BY space.
+      ELSE.
+        CONCATENATE 'Opt-Out Flag was changed on' lv_from INTO lv_body SEPARATED BY space.
+      ENDIF.
+      APPEND lv_body TO main_text.                          "#EC NOTEXT
+
+      document = cl_document_bcs=>create_document(
+        i_type    = 'RAW'
+        i_text    = main_text
+        i_subject = 'Opt Out Flag Changed - Alert' ).       "#EC NOTEXT
+
+*     add the spread sheet as attachment to document object
+      document->add_attachment(
+        i_attachment_type    = 'csv'                        "#EC NOTEXT
+        i_attachment_subject = 'Opt Out Flag Changes'       "#EC NOTEXT
+        i_attachment_size    = size
+        i_att_content_hex    = binary_content ).
+
+      send_request->set_document( document ).
+
+      LOOP AT p_recip.
+
+        lv_recip = p_recip-low.
+
+        recipient = cl_cam_address_bcs=>create_internet_address( lv_recip ).
+
+        send_request->add_recipient( recipient ).
+      ENDLOOP.
+
+      sent_to_all = send_request->send( i_with_error_screen = 'X' ).
+
+      IF sent_to_all IS NOT INITIAL.
+
+        COMMIT WORK.
+
+        WRITE: 'E-Mail Sent Successfully'.
+
+      ENDIF.
+
+    CATCH cx_bcs INTO bcs_exception.
+      MESSAGE i865(so) WITH bcs_exception->error_type.
+  ENDTRY.
+
+ENDFORM.                    "send_email
+

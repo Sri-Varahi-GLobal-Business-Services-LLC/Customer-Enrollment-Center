@@ -1,0 +1,105 @@
+FUNCTION Z_ELIG_EARP_RATES.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(CONTRACT_ACCOUNT) TYPE  VKONT_KK
+*"     REFERENCE(INSTALLATION) TYPE  ISU_ANLAGE_TAB
+*"     REFERENCE(SOURCE_SYSTEM) TYPE  ZELIG_SOURCE_SYSTEM
+*"     REFERENCE(CATEGORY) TYPE  ZELIG_CATEGORY
+*"  EXPORTING
+*"     REFERENCE(ELIGIBLE_FLG) TYPE  BOOLEAN_FLG
+*"     REFERENCE(ERROR_MESSAGE) TYPE  STRING
+*"----------------------------------------------------------------------
+*
+*
+*  Meg's directions:
+*  The rule name for budget plan eligibility category
+*  (ZELIG_RULES-ZELIG_CATEGORY) will be BB and is already defined as
+*  a category in the table.  The rule name of RT_CATEGORY_EARP can be used
+*  in FM Z_ELIG_EARP_RATES.
+*
+
+  TYPES : BEGIN OF t_unmetered,
+           tariftyp TYPE eanlh-tariftyp,
+          END OF t_unmetered,
+          BEGIN OF t_anlage,
+           anlage TYPE anlage,
+          END OF t_anlage.
+  DATA: i_anlage TYPE STANDARD TABLE OF t_anlage,
+        wa_installation LIKE LINE OF i_anlage.
+  .
+
+  DATA: l_unmetered TYPE STANDARD TABLE OF t_unmetered.
+  DATA: l_installation      TYPE anlage.
+
+  TRY.
+
+      REFRESH : i_zelig_rules.
+
+
+
+* Call the Z_ELIG_TABLE_LOOKUP module to get the corresponding values
+* for rule RATE CATEGORY
+*      CALL FUNCTION 'Z_ELIG_TABLE_LOOKUP'
+*        EXPORTING
+*          pi_source_system = source_system
+*          pi_category      = category
+*          pi_rule_name     = c_rule_rt_cat_earp
+*        IMPORTING
+*          pe_values        = i_zelig_rules.
+
+*     If values returned
+      IF i_zelig_rules IS NOT INITIAL.
+
+        APPEND LINES OF i_zelig_rules TO l_unmetered.
+        LOOP AT installation INTO wa_installation.
+          SELECT SINGLE anlage
+            INTO l_installation
+            FROM ever
+           WHERE vkonto = contract_account
+             AND anlage = wa_installation-anlage.
+          IF sy-subrc <> 0.
+            CONCATENATE text-e30 c_fm_unmeter
+                   INTO error_message.
+            CLEAR eligible_flg.
+            RETURN.
+          ENDIF.
+*Get the intstallation details - the Rate Category - from the table EANLH for
+*the installation
+* X_EVER-ANLAGE.
+
+          SELECT tariftyp
+            FROM eanlh
+            UP TO 1 ROWS
+          INTO v_tariftyp
+            FOR ALL ENTRIES IN l_unmetered
+            WHERE anlage = l_installation
+            AND tariftyp = l_unmetered-tariftyp
+            AND   ab LE sy-datum
+            AND   bis GE sy-datum.
+          ENDSELECT.
+*     Don't continue if this check failed - when the return code is zero.
+          IF sy-subrc = 0.
+*     Clear variables
+            CLEAR eligible_flg.
+            error_message = text-e32.
+            CLEAR : wa_zelig_rules,v_tariftyp, l_unmetered.
+            REFRESH : i_zelig_rules.
+            RETURN.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+
+*** The only thing left to do is pass back the
+*** Eligible Flag.
+      eligible_flg = c_set_x.
+
+    CATCH cx_root INTO v_err_obj.
+      CONCATENATE text-e16 c_fm_unmeter INTO error_message.
+      eligible_flg = space.
+      CLEAR v_err_obj.
+
+  ENDTRY.
+
+ENDFUNCTION.
+

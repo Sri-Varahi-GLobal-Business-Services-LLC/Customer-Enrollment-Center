@@ -1,0 +1,28 @@
+METHOD GET_INSTALLATION.
+  CONSTANTS:
+    lc_instln TYPE efindres-objtype VALUE 'INSTLN'.
+  DATA:
+    ls_findpar TYPE efindpar,
+    lt_result  TYPE STANDARD TABLE OF efindres,
+    ls_result  TYPE efindres.
+
+  CLEAR ev_anlage.
+  ls_findpar-d_equnr = iv_equnr.
+  ls_findpar-x_date = sy-datum.
+
+  CALL FUNCTION 'ISU_FINDER'
+    EXPORTING
+      x_objtype = lc_instln
+      x_findpar = ls_findpar
+    TABLES
+      yt_result = lt_result
+    EXCEPTIONS
+      OTHERS    = 0.
+
+ LOOP AT lt_result INTO ls_result
+                   WHERE NOT objkey IS INITIAL.
+    EXIT.
+ ENDLOOP.
+ ev_anlage = ls_result-objkey.
+ENDMETHOD.
+

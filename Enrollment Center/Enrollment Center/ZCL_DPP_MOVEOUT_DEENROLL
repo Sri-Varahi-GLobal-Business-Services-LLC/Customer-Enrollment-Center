@@ -1,0 +1,983 @@
+class ZCL_DPP_MOVEOUT_DEENROLL definition
+  public
+  final
+  create public .
+
+public section.
+
+  interfaces BI_OBJECT .
+  interfaces BI_PERSISTENT .
+  interfaces IF_WORKFLOW .
+
+  type-pools ABAP .
+  class-methods CHECK_DPP
+    importing
+      value(IV_BP) type ZENRLBP
+      value(IV_CA) type ZENRLCA
+    exporting
+      value(EV_ERROR) type ABAP_BOOL .
+  class-methods CHECK_ELECTRIC
+    importing
+      value(IV_AUSZBELEG) type AUSZBELEG
+    exporting
+      value(EV_ERROR) type ABAP_BOOL .
+  class-methods PROCESS_MOVEIN
+    importing
+      value(IV_EINZBELEG) type EINZBELEG
+      value(IV_BP) type ZENRLBP
+      value(IV_CA) type ZENRLCA
+      value(IV_EVT_NAME) type HR_S_EVENT optional
+      value(IV_MICANCELLED) type ABAP_BOOL optional .
+  class-methods PROCESS_MOVEOUT
+    importing
+      value(IV_AUSZBELEG) type AUSZBELEG
+      value(IV_EVT_NAME) type HR_S_EVENT optional
+      value(IV_MOCANCELLED) type ABAP_BOOL optional
+      value(IV_MOFORCED) type ABAP_BOOL optional
+      value(IV_MODATE) type AUSZDAT optional
+      value(IV_BP) type ZENRLBP
+      value(IV_CA) type ZENRLCA .
+  class-methods PROCESS_RMOVEOUT
+    importing
+      value(IV_AUSZBELEG) type AUSZBELEG
+      value(IV_EVT_NAME) type HR_S_EVENT optional
+      value(IV_MOCANCELLED) type ABAP_BOOL optional
+      value(IV_MOFORCED) type ABAP_BOOL optional
+      value(IV_MODATE) type AUSZDAT optional
+      value(IV_BP) type ZENRLBP
+      value(IV_CA) type ZENRLCA .
+  class-methods CHECK_DPP_BDPROCESS
+    importing
+      value(IV_BP) type ZENRLBP
+      value(IV_CA) type ZENRLCA
+      value(IV_SPARTE) type SPARTE optional
+      value(IV_NEW_RATE) type TARIFTYP_ANL optional
+      value(IV_OLD_RATE) type TARIFTYP_ANL optional
+    changing
+      value(EV_DPP) type FLAG optional .
+  class-methods CHECK_DPP_EXIST
+    importing
+      value(IV_AUSZBELEG) type AUSZBELEG
+      value(IV_EVT_NAME) type HR_S_EVENT optional
+      value(IV_MOCANCELLED) type ABAP_BOOL optional
+      value(IV_MOFORCED) type ABAP_BOOL optional
+      value(IV_MODATE) type AUSZDAT optional
+      value(IV_BP) type ZENRLBP
+      value(IV_CA) type ZENRLCA
+    changing
+      value(EV_DPP) type FLAG .
+  class-methods MOVEOUT_DEENROLL
+    importing
+      value(IV_AUSZBELEG) type AUSZBELEG
+      value(IV_EVT_NAME) type HR_S_EVENT optional
+      value(IV_MOCANCELLED) type ABAP_BOOL optional
+      value(IV_MOFORCED) type ABAP_BOOL optional
+      value(IV_MODATE) type AUSZDAT optional
+      value(IV_BP) type ZENRLBP
+      value(IV_CA) type ZENRLCA .
+  class-methods UPDATE_IR
+    importing
+      value(X_INPUT) type ZSDPP_INT_DATA .
+  class-methods UPDATE_ENROLLMENT
+    importing
+      value(X_INPUT) type ZSDPP_INT_DATA .
+  class-methods PROCESS_BD_INSTUPDATE
+    importing
+      value(IV_BP) type ZENRLBP
+      value(IV_CA) type ZENRLCA
+      value(IV_EVT_NAME) type HR_S_EVENT optional
+      value(IV_SPARTE) type SPARTE optional
+      value(IV_OLD_RATE) type TARIFTYP_ANL optional
+      value(IV_NEW_RATE) type TARIFTYP_ANL optional
+      value(IV_DEVLOC) type DEVLOC optional .
+  class-methods PROCESS_BD_UPDATE
+    importing
+      value(IV_BP) type ZENRLBP
+      value(IV_CA) type ZENRLCA
+      value(IV_EVT_NAME) type HR_S_EVENT optional
+      value(IV_SPARTE) type SPARTE optional
+      value(IV_OLD_RATE) type TARIFTYP_ANL optional
+      value(IV_NEW_RATE) type TARIFTYP_ANL optional
+      value(IV_DEVLOC) type DEVLOC optional .
+protected section.
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_DPP_MOVEOUT_DEENROLL IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_DPP_MOVEOUT_DEENROLL->BI_OBJECT~DEFAULT_ATTRIBUTE_VALUE
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] RESULT                         TYPE REF TO DATA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method BI_OBJECT~DEFAULT_ATTRIBUTE_VALUE.
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_DPP_MOVEOUT_DEENROLL->BI_OBJECT~EXECUTE_DEFAULT_METHOD
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method BI_OBJECT~EXECUTE_DEFAULT_METHOD.
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_DPP_MOVEOUT_DEENROLL->BI_OBJECT~RELEASE
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method BI_OBJECT~RELEASE.
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>BI_PERSISTENT~FIND_BY_LPOR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] LPOR                           TYPE        SIBFLPOR
+* | [<-()] RESULT                         TYPE REF TO BI_PERSISTENT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method BI_PERSISTENT~FIND_BY_LPOR.
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_DPP_MOVEOUT_DEENROLL->BI_PERSISTENT~LPOR
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] RESULT                         TYPE        SIBFLPOR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method BI_PERSISTENT~LPOR.
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_DPP_MOVEOUT_DEENROLL->BI_PERSISTENT~REFRESH
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method BI_PERSISTENT~REFRESH.
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>CHECK_DPP
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_BP                          TYPE        ZENRLBP
+* | [--->] IV_CA                          TYPE        ZENRLCA
+* | [<---] EV_ERROR                       TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD check_dpp.
+    DATA: ls_enroll     TYPE ztpgm_enroll.
+
+*   Set Error
+    ev_error = abap_true.
+
+*   Check DPP enrollment exist
+    SELECT SINGLE *
+      INTO ls_enroll
+      FROM ztpgm_enroll
+    WHERE zenrlbp = iv_bp
+    AND   zenrlca = iv_ca
+    AND   zpgm_type IN ( 'CPP', 'PTR' ).
+
+*   Check return code
+    CHECK sy-subrc = 0.
+    CLEAR ev_error.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>CHECK_DPP_BDPROCESS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_BP                          TYPE        ZENRLBP
+* | [--->] IV_CA                          TYPE        ZENRLCA
+* | [--->] IV_SPARTE                      TYPE        SPARTE(optional)
+* | [--->] IV_NEW_RATE                    TYPE        TARIFTYP_ANL(optional)
+* | [--->] IV_OLD_RATE                    TYPE        TARIFTYP_ANL(optional)
+* | [<-->] EV_DPP                         TYPE        FLAG(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD check_dpp_bdprocess.
+    DATA: lv_error  TYPE boolean,
+          ls_progid TYPE ztpgm_progid.
+
+*   Check Electric
+    CHECK iv_sparte = '01'.
+
+*   Check CPP or PTR
+    SELECT SINGLE *
+      FROM ztpgm_progid
+      INTO ls_progid
+    WHERE program_type IN ( 'CPP', 'PTR' )
+    AND   tariftyp IN ( iv_new_rate, iv_old_rate ).
+
+*   Check return code
+    CHECK sy-subrc = 0.
+
+*   Check for DPP Enrollment
+    check_dpp(
+      EXPORTING
+        iv_bp    = iv_bp    " Enrollment Business Partner Number
+        iv_ca    = iv_ca    " Enrollment Contract Account Number
+      IMPORTING
+        ev_error = lv_error
+    ).
+
+*   Proceed if no errors
+    CHECK lv_error = abap_false.
+    ev_dpp = abap_true.
+
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>CHECK_DPP_EXIST
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_AUSZBELEG                   TYPE        AUSZBELEG
+* | [--->] IV_EVT_NAME                    TYPE        HR_S_EVENT(optional)
+* | [--->] IV_MOCANCELLED                 TYPE        ABAP_BOOL(optional)
+* | [--->] IV_MOFORCED                    TYPE        ABAP_BOOL(optional)
+* | [--->] IV_MODATE                      TYPE        AUSZDAT(optional)
+* | [--->] IV_BP                          TYPE        ZENRLBP
+* | [--->] IV_CA                          TYPE        ZENRLCA
+* | [<-->] EV_DPP                         TYPE        FLAG
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD CHECK_DPP_EXIST.
+    DATA: lv_error      TYPE boolean.
+
+*   Check for DPP Enrollment
+    check_dpp(
+      EXPORTING
+        iv_bp    = iv_bp    " Enrollment Business Partner Number
+        iv_ca    = iv_ca    " Enrollment Contract Account Number
+      IMPORTING
+        ev_error = lv_error
+    ).
+
+*   Proceed if no errors
+    CHECK lv_error = abap_false.
+
+*   Check Electric Contract
+    check_electric(
+      EXPORTING
+        iv_auszbeleg = iv_auszbeleg " Consecutive number of move-out document
+      IMPORTING
+        ev_error     = lv_error
+    ).
+
+*   Proceed if no errors
+    CHECK lv_error = abap_false.
+    ev_dpp = abap_true.
+
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>CHECK_ELECTRIC
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_AUSZBELEG                   TYPE        AUSZBELEG
+* | [<---] EV_ERROR                       TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD check_electric.
+    DATA: lv_vertrag    TYPE vertrag.
+
+    ev_error = abap_true.
+
+*   Check Electric contract
+    SELECT SINGLE b~vertrag
+      INTO lv_vertrag
+      FROM eausv AS a
+      INNER JOIN ever AS b
+      ON a~vertrag = b~vertrag
+    WHERE auszbeleg = iv_auszbeleg
+    AND   sparte = '01'.
+
+*   Check return code
+    CHECK sy-subrc = 0.
+    CLEAR ev_error.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>MOVEOUT_DEENROLL
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_AUSZBELEG                   TYPE        AUSZBELEG
+* | [--->] IV_EVT_NAME                    TYPE        HR_S_EVENT(optional)
+* | [--->] IV_MOCANCELLED                 TYPE        ABAP_BOOL(optional)
+* | [--->] IV_MOFORCED                    TYPE        ABAP_BOOL(optional)
+* | [--->] IV_MODATE                      TYPE        AUSZDAT(optional)
+* | [--->] IV_BP                          TYPE        ZENRLBP
+* | [--->] IV_CA                          TYPE        ZENRLCA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD moveout_deenroll.
+    DATA: lv_error      TYPE boolean.
+
+*   Check for DPP Enrollment
+    check_dpp(
+      EXPORTING
+        iv_bp    = iv_bp    " Enrollment Business Partner Number
+        iv_ca    = iv_ca    " Enrollment Contract Account Number
+      IMPORTING
+        ev_error = lv_error
+    ).
+
+*   Proceed if no errors
+    CHECK lv_error = abap_false.
+
+*   Check Electric Contract
+    check_electric(
+      EXPORTING
+        iv_auszbeleg = iv_auszbeleg " Consecutive number of move-out document
+      IMPORTING
+        ev_error     = lv_error
+    ).
+
+*   Proceed if no errors
+    CHECK lv_error = abap_false.
+
+*   Process Move-out
+    process_moveout(
+      EXPORTING
+        iv_auszbeleg   =  iv_auszbeleg   " Consecutive number of move-out document
+        iv_evt_name    = iv_evt_name
+        iv_mocancelled = iv_mocancelled
+        iv_moforced    = iv_moforced
+        iv_modate      = iv_modate
+        iv_bp          = iv_bp    " Enrollment Business Partner Number
+        iv_ca          = iv_ca   " Enrollment Contract Account Number
+    ).
+
+*   Process Reverse-Moveout
+    process_rmoveout(
+      EXPORTING
+        iv_auszbeleg   =  iv_auszbeleg   " Consecutive number of move-out document
+        iv_evt_name    = iv_evt_name
+        iv_mocancelled = iv_mocancelled
+        iv_moforced    = iv_moforced
+        iv_modate      = iv_modate
+        iv_bp          = iv_bp    " Enrollment Business Partner Number
+        iv_ca          = iv_ca   " Enrollment Contract Account Number
+    ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>PROCESS_BD_INSTUPDATE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_BP                          TYPE        ZENRLBP
+* | [--->] IV_CA                          TYPE        ZENRLCA
+* | [--->] IV_EVT_NAME                    TYPE        HR_S_EVENT(optional)
+* | [--->] IV_SPARTE                      TYPE        SPARTE(optional)
+* | [--->] IV_OLD_RATE                    TYPE        TARIFTYP_ANL(optional)
+* | [--->] IV_NEW_RATE                    TYPE        TARIFTYP_ANL(optional)
+* | [--->] IV_DEVLOC                      TYPE        DEVLOC(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD process_bd_instupdate.
+    DATA: lv_error  TYPE boolean,
+          lv_status TYPE zenstatus,
+          lt_enroll TYPE STANDARD TABLE OF ztpgm_enroll,
+          ls_enroll TYPE ztpgm_enroll,
+          lv_bdps   TYPE zenrl_bdps,
+          ls_input  TYPE zsdpp_int_data.
+
+    DATA: lr_range TYPE RANGE OF ztpgm_enroll-zenrlstatus,
+          lr_line  LIKE LINE OF lr_range.
+
+    IF iv_new_rate = 'RS_1000'.
+
+      lr_line-sign = 'I'.
+      lr_line-option = 'EQ'.
+      lr_line-low = '004'.
+      APPEND lr_line TO lr_range.
+      lv_status = '004'.
+    ELSE.
+      lr_line-sign = 'I'.
+      lr_line-option = 'EQ'.
+      lr_line-low = '002'.
+      APPEND lr_line TO lr_range.
+
+      lr_line-sign = 'I'.
+      lr_line-option = 'EQ'.
+      lr_line-low = '004'.
+      APPEND lr_line TO lr_range.
+
+    ENDIF.
+
+*   Get Open enrollment
+    SELECT *
+      INTO TABLE lt_enroll
+      FROM ztpgm_enroll
+    WHERE zenrlbp = iv_bp
+    AND   zenrlca = iv_ca
+    AND   zpgm_type IN ( 'CPP', 'PTR' )
+    AND   zenrlstatus IN lr_range.
+
+*   Check return code
+    CHECK sy-subrc = 0.
+    SORT lt_enroll BY zcrtdat zcrttm DESCENDING.
+
+    IF lv_status IS NOT INITIAL.
+      READ TABLE lt_enroll
+        INTO ls_enroll
+      WITH KEY zenrlstatus = lv_status.
+    ELSE.
+      READ TABLE lt_enroll
+        INTO ls_enroll
+      WITH KEY zenrlstatus = '002'.
+
+      IF sy-subrc <> 0.
+        READ TABLE lt_enroll
+          INTO ls_enroll
+        WITH KEY zenrlstatus = lv_status.
+      ENDIF.
+    ENDIF.
+
+    CHECK sy-subrc = 0.
+    ls_input-pgm_enroll = ls_enroll.
+
+*   Check Event Name
+    IF iv_evt_name = 'FO_RATECATEGORY_CHANGE'.
+      lv_bdps = '02'.
+    ELSE.
+      lv_bdps = '03'.
+    ENDIF.
+
+    IF iv_new_rate = 'RS_1000'.
+      ls_input-pgm_enroll-zdenrl_bdps = lv_bdps.
+    ELSE.
+      ls_input-pgm_enroll-zenrl_bdps = lv_bdps.
+    ENDIF.
+
+
+*   Get interface data
+    SELECT SINGLE *
+      INTO ls_input-pgm_int_data
+      FROM ztpgm_int_data
+    WHERE zenrlbp      = ls_input-pgm_enroll-zenrlbp
+    AND   zenrlca      = ls_input-pgm_enroll-zenrlca
+    AND   zpgm_type    = ls_input-pgm_enroll-zpgm_type
+    AND   zenrl_date = ls_input-pgm_enroll-zenrl_reqdat.
+
+*   Check return code
+    CHECK sy-subrc = 0.
+*   Check Event Name
+    IF iv_evt_name = 'FO_RATECATEGORY_CHANGE'.
+      ls_input-pgm_int_data-zenrlnote = 'Installation Rate Changed'.
+
+    ELSE.
+      ls_input-pgm_int_data-zenrlnote = 'Register Update Completed'.
+
+    ENDIF.
+
+*   Update Enrollment
+    update_enrollment( ls_input ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>PROCESS_BD_UPDATE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_BP                          TYPE        ZENRLBP
+* | [--->] IV_CA                          TYPE        ZENRLCA
+* | [--->] IV_EVT_NAME                    TYPE        HR_S_EVENT(optional)
+* | [--->] IV_SPARTE                      TYPE        SPARTE(optional)
+* | [--->] IV_OLD_RATE                    TYPE        TARIFTYP_ANL(optional)
+* | [--->] IV_NEW_RATE                    TYPE        TARIFTYP_ANL(optional)
+* | [--->] IV_DEVLOC                      TYPE        DEVLOC(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method PROCESS_BD_UPDATE.
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>PROCESS_MOVEIN
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_EINZBELEG                   TYPE        EINZBELEG
+* | [--->] IV_BP                          TYPE        ZENRLBP
+* | [--->] IV_CA                          TYPE        ZENRLCA
+* | [--->] IV_EVT_NAME                    TYPE        HR_S_EVENT(optional)
+* | [--->] IV_MICANCELLED                 TYPE        ABAP_BOOL(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD process_movein.
+    DATA: lv_error TYPE boolean,
+          ls_input TYPE zsdpp_int_data,
+          lr_dimpl TYPE REF TO zcl_isu_se_impl_dpp_drms.
+
+*   Check Event Name
+    CHECK iv_evt_name = 'CANCELLED'.
+
+*   Get Open enrollment
+    SELECT SINGLE *
+      INTO ls_input-pgm_enroll
+      FROM ztpgm_enroll
+    WHERE zenrlbp = iv_bp
+    AND   zenrlca = iv_ca
+    AND   zpgm_type IN ( 'CPP', 'PTR' )
+    AND   zenrlstatus IN ( '001', '002' ).
+
+*   Check return code
+    CHECK sy-subrc = 0.
+    IF ls_input-pgm_enroll-zenrlstatus = '001'.
+      ls_input-pgm_enroll-zenrlstatus = '003'.
+    ELSEIF ls_input-pgm_enroll-zenrlstatus = '002'.
+      ls_input-pgm_enroll-zenrlstatus = '004'.
+    ENDIF.
+    ls_input-pgm_enroll-zenrl_dedat = sy-datum."iv_modate.
+
+*   Get interface data
+    SELECT SINGLE *
+      INTO ls_input-pgm_int_data
+      FROM ztpgm_int_data
+    WHERE zenrlbp      = ls_input-pgm_enroll-zenrlbp
+    AND   zenrlca      = ls_input-pgm_enroll-zenrlca
+    AND   zpgm_type    = ls_input-pgm_enroll-zpgm_type
+    AND   zenrl_date = ls_input-pgm_enroll-zenrl_reqdat.
+
+*   Check return code
+    CHECK sy-subrc = 0.
+    CONCATENATE iv_einzbeleg ': Movein Reversed'
+      INTO ls_input-pgm_int_data-zenrlnote
+    SEPARATED BY space.
+
+*   Update Enrollment
+    update_enrollment( ls_input ).
+
+*   Create IR
+    update_ir( ls_input ).
+
+*   Create Object
+    CREATE OBJECT: lr_dimpl.
+
+*   Get Error
+    lv_error =  lr_dimpl->process_outbound_proxy( CHANGING x_input = ls_input ). "Call DRMS Enrollment Request Outbound
+
+    IF lv_error = abap_true.
+      ls_input-pgm_enroll-zenrldrms_stat = '5'.
+      ls_input-pgm_enroll-zdrms_dat = sy-datum.
+    ELSE.
+      IF ls_input-pgm_enroll-zenrlstatus = '004'.
+        ls_input-pgm_enroll-zenrldrms_stat = '4'.
+        ls_input-pgm_enroll-zdrms_dat = sy-datum.
+        ls_input-pgm_enroll-zenrl_msg = 'Account De-Enrolled Successfully'(001).
+
+      ELSE.
+        CLEAR: ls_input-pgm_enroll-zenrldrms_stat,
+               ls_input-pgm_enroll-zdrms_dat.
+        ls_input-pgm_enroll-zenrl_msg = 'Account Enrolled Cancelled Successfully'(001).
+
+      ENDIF.
+    ENDIF.
+    ls_input-pgm_enroll-zenrl_msgtyp = 'S'.
+
+*   Update Enrollment
+    update_enrollment( ls_input ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>PROCESS_MOVEOUT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_AUSZBELEG                   TYPE        AUSZBELEG
+* | [--->] IV_EVT_NAME                    TYPE        HR_S_EVENT(optional)
+* | [--->] IV_MOCANCELLED                 TYPE        ABAP_BOOL(optional)
+* | [--->] IV_MOFORCED                    TYPE        ABAP_BOOL(optional)
+* | [--->] IV_MODATE                      TYPE        AUSZDAT(optional)
+* | [--->] IV_BP                          TYPE        ZENRLBP
+* | [--->] IV_CA                          TYPE        ZENRLCA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD process_moveout.
+    DATA: lv_error TYPE boolean,
+          ls_input TYPE zsdpp_int_data,
+          lr_dimpl TYPE REF TO zcl_isu_se_impl_dpp_drms.
+
+*   Check Event Name
+    CHECK iv_evt_name = 'CREATED' OR
+          iv_evt_name = 'MODATECHANGED'.
+
+*   Get Open enrollment
+    SELECT SINGLE *
+      INTO ls_input-pgm_enroll
+      FROM ztpgm_enroll
+    WHERE zenrlbp = iv_bp
+    AND   zenrlca = iv_ca
+    AND   zpgm_type IN ( 'CPP', 'PTR' )
+    AND   zenrlstatus IN ( '001', '002' ).
+
+*   Check return code
+    CHECK sy-subrc = 0.
+    IF ls_input-pgm_enroll-zenrlstatus = '001'.
+      ls_input-pgm_enroll-zenrlstatus = '003'.
+    ELSEIF ls_input-pgm_enroll-zenrlstatus = '002'.
+      ls_input-pgm_enroll-zenrlstatus = '004'.
+    ENDIF.
+    ls_input-pgm_enroll-zenrl_dedat = iv_modate.
+
+*   Get interface data
+    SELECT SINGLE *
+      INTO ls_input-pgm_int_data
+      FROM ztpgm_int_data
+    WHERE zenrlbp      = ls_input-pgm_enroll-zenrlbp
+    AND   zenrlca      = ls_input-pgm_enroll-zenrlca
+    AND   zpgm_type    = ls_input-pgm_enroll-zpgm_type
+    AND   zenrl_date = ls_input-pgm_enroll-zenrl_reqdat.
+
+*   Check return code
+    CHECK sy-subrc = 0.
+*    ls_input-pgm_int_data-zenrlnote = iv_auszbeleg.
+    CONCATENATE iv_auszbeleg ': Moveout Created'
+      INTO ls_input-pgm_int_data-zenrlnote
+    SEPARATED BY space.
+
+*   Update Enrollment
+    update_enrollment( ls_input ).
+
+*   Create IR
+    update_ir( ls_input ).
+
+*   Create Object
+    CREATE OBJECT: lr_dimpl.
+
+*   Get Error
+    lv_error =  lr_dimpl->process_outbound_proxy( CHANGING x_input = ls_input ). "Call DRMS Enrollment Request Outbound
+
+    IF lv_error = abap_true.
+      ls_input-pgm_enroll-zenrldrms_stat = '5'.
+      ls_input-pgm_enroll-zdrms_dat = sy-datum.
+    ELSE.
+      IF ls_input-pgm_enroll-zenrlstatus = '004'.
+        ls_input-pgm_enroll-zenrldrms_stat = '4'.
+        ls_input-pgm_enroll-zdrms_dat = sy-datum.
+        ls_input-pgm_enroll-zenrl_msg = 'Account De-Enrolled Successfully'(001).
+
+      ELSE.
+        CLEAR: ls_input-pgm_enroll-zenrldrms_stat,
+               ls_input-pgm_enroll-zdrms_dat.
+        ls_input-pgm_enroll-zenrl_msg = 'Account Enrolled Cancelled Successfully'(001).
+
+      ENDIF.
+    ENDIF.
+    ls_input-pgm_enroll-zenrl_msgtyp = 'S'.
+
+*   Update Enrollment
+    update_enrollment( ls_input ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>PROCESS_RMOVEOUT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_AUSZBELEG                   TYPE        AUSZBELEG
+* | [--->] IV_EVT_NAME                    TYPE        HR_S_EVENT(optional)
+* | [--->] IV_MOCANCELLED                 TYPE        ABAP_BOOL(optional)
+* | [--->] IV_MOFORCED                    TYPE        ABAP_BOOL(optional)
+* | [--->] IV_MODATE                      TYPE        AUSZDAT(optional)
+* | [--->] IV_BP                          TYPE        ZENRLBP
+* | [--->] IV_CA                          TYPE        ZENRLCA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD process_rmoveout.
+    DATA: lv_error  TYPE boolean,
+          ls_input  TYPE zsdpp_int_data,
+          ls_eaus   TYPE eaus,
+          lt_enroll TYPE STANDARD TABLE OF ztpgm_enroll,
+          lr_dimpl  TYPE REF TO zcl_isu_se_impl_dpp_drms.
+
+*   Check Event Name
+    CHECK iv_evt_name = 'CANCELLED'.
+
+*   Get Moveout date
+    SELECT SINGLE *
+      INTO ls_eaus
+      FROM eaus
+    WHERE auszbeleg = iv_auszbeleg.
+
+*   Check return code
+    CHECK sy-subrc = 0.
+    IF ls_eaus-departuredate IS INITIAL.
+      SELECT *
+        INTO TABLE lt_enroll "ls_input-pgm_enroll
+        FROM ztpgm_enroll
+      WHERE zenrlbp = iv_bp
+      AND   zenrlca = iv_ca
+      AND   zpgm_type IN ( 'CPP', 'PTR' )
+      AND   zenrlstatus IN ( '003', '004' ).
+*      AND   zenrl_dedat = ls_eaus-departuredate."iv_modate.
+
+
+    ELSE.
+*     Get Open enrollment
+      SELECT *
+        INTO TABLE lt_enroll "ls_input-pgm_enroll
+        FROM ztpgm_enroll
+      WHERE zenrlbp = iv_bp
+      AND   zenrlca = iv_ca
+      AND   zpgm_type IN ( 'CPP', 'PTR' )
+      AND   zenrlstatus IN ( '003', '004' )
+      AND   zenrl_dedat = ls_eaus-departuredate."iv_modate.
+
+    ENDIF.
+*   Check return code
+    CHECK sy-subrc = 0.
+    SORT lt_enroll BY zcrtdat zcrttm DESCENDING.
+    READ TABLE lt_enroll
+      INTO ls_input-pgm_enroll
+    INDEX 1.
+
+    IF ls_input-pgm_enroll-zenrlstatus = '003'.
+      ls_input-pgm_enroll-zenrlstatus = '001'.
+    ELSEIF ls_input-pgm_enroll-zenrlstatus = '004'.
+      ls_input-pgm_enroll-zenrlstatus = '002'.
+    ENDIF.
+    CLEAR ls_input-pgm_enroll-zenrl_dedat.
+*     ls_input-pgm_enroll-zenrl_dedat = iv_modate.
+
+*   Get interface data
+    SELECT SINGLE *
+      INTO ls_input-pgm_int_data
+      FROM ztpgm_int_data
+    WHERE zenrlbp      = ls_input-pgm_enroll-zenrlbp
+    AND   zenrlca      = ls_input-pgm_enroll-zenrlca
+    AND   zpgm_type    = ls_input-pgm_enroll-zpgm_type
+    AND   zenrl_date = ls_input-pgm_enroll-zenrl_reqdat.
+
+*   Check return code
+    CHECK sy-subrc = 0.
+    CONCATENATE iv_auszbeleg ': Moveout Reversed'
+      INTO ls_input-pgm_int_data-zenrlnote
+    SEPARATED BY space.
+*    ls_input-pgm_int_data-zenrlnote = iv_auszbeleg.
+
+*   Update Enrollment
+    update_enrollment( ls_input ).
+
+*   Create IR
+    update_ir( ls_input ).
+
+*   Create Object
+    CREATE OBJECT: lr_dimpl.
+
+*   Get Error
+    lv_error =  lr_dimpl->process_outbound_proxy_rmout( CHANGING x_input = ls_input ). "Call DRMS Enrollment Request Outbound
+
+    IF lv_error = abap_true.
+      ls_input-pgm_enroll-zenrldrms_stat = '5'.
+      ls_input-pgm_enroll-zdrms_dat = sy-datum.
+    ELSE.
+
+      IF ls_input-pgm_enroll-zenrlstatus = '002'.
+        ls_input-pgm_enroll-zenrldrms_stat = '3'.
+        ls_input-pgm_enroll-zdrms_dat = sy-datum.
+      ELSE.
+        CLEAR : ls_input-pgm_enroll-zenrldrms_stat,
+                ls_input-pgm_enroll-zdrms_dat.
+      ENDIF.
+    ENDIF.
+    ls_input-pgm_enroll-zenrl_msgtyp = 'S'.
+    ls_input-pgm_enroll-zenrl_msg = 'Account Re-Enrolled Successfully'(001).
+
+*   Update Enrollment
+    update_enrollment( ls_input ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>UPDATE_ENROLLMENT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] X_INPUT                        TYPE        ZSDPP_INT_DATA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD update_enrollment.
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 12/05/2015
+*----------------------------------------------------------------*
+*  Description: This Method handles the Enrollment Request from
+*               Enrollment Vendor
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+    DATA: lt_pgm_data     TYPE STANDARD TABLE OF ztpgm_enroll,
+          lt_pgm_int_data TYPE STANDARD TABLE OF ztpgm_int_data.
+
+    REFRESH: lt_pgm_data, lt_pgm_int_data.
+
+    APPEND: x_input-pgm_enroll TO lt_pgm_data,
+            x_input-pgm_int_data TO lt_pgm_int_data.
+
+*   Insert Enrollment and interface data
+    CALL FUNCTION 'ZTPGM_ENROLL_API'
+      TABLES
+        it_pgm_upd     = lt_pgm_data
+        it_pgm_int_upd = lt_pgm_int_data
+      EXCEPTIONS
+        error_occured  = 1
+        OTHERS         = 2.
+    IF sy-subrc <> 0 ##NEEDED.
+*   Implement suitable error handling here
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_DPP_MOVEOUT_DEENROLL=>UPDATE_IR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] X_INPUT                        TYPE        ZSDPP_INT_DATA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD update_ir.
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 12/05/2015
+*----------------------------------------------------------------*
+*  Description: This Method handles the Enrollment Request from
+*               Enrollment Vendor
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+    DATA: lt_pgm_data     TYPE STANDARD TABLE OF ztpgm_enroll,
+          lt_pgm_int_data TYPE STANDARD TABLE OF ztpgm_int_data,
+          lv_contract     TYPE vertrag,
+          lv_appid        TYPE char20,
+          lv_msg          TYPE zexmsg,
+          lv_created      TYPE boolean,
+          lv_number       TYPE crmt_object_id_db,
+          lv_text         TYPE string.
+    DATA: lr_impl TYPE REF TO zcl_isu_se_impl_dpp.
+    CREATE OBJECT lr_impl.
+    lv_contract = lr_impl->get_contract( x_input-pgm_enroll-zenrlsdp ).
+
+*   Create Interaction record
+    IF x_input-pgm_enroll-zpgm_type = 'CPP'.
+      CASE x_input-pgm_enroll-zenrlstatus.
+        WHEN '001'.
+          lv_appid = 'SE_DPP_CPP_PENDING'.
+          CONCATENATE 'Enroll pending to' x_input-pgm_enroll-zpgm_type 'for' 'Contract' lv_contract 'from caller'
+          x_input-pgm_int_data-zcallername INTO lv_text SEPARATED BY space.
+
+        WHEN '002'.
+          lv_appid = 'SE_DPP_CPP_ENROLLED'.
+          CONCATENATE 'Enrollment completed to' 'CPP' 'for' 'Contract' lv_contract 'from caller' x_input-pgm_int_data-zcallername INTO lv_text SEPARATED BY space.
+
+        WHEN '003' OR '004'.
+          lv_appid = 'SE_DPP_CPP_DEENROLL'.
+          CONCATENATE 'De-Enrollment completed from' 'CPP' 'for' 'Contract' lv_contract INTO lv_text SEPARATED BY space.
+
+      ENDCASE.
+
+    ELSEIF x_input-pgm_enroll-zpgm_type = 'PTR'.
+      CASE x_input-pgm_enroll-zenrlstatus.
+        WHEN '001'.
+          lv_appid = 'SE_DPP_PTR_PENDING'.
+          CONCATENATE 'Enroll pending to' x_input-pgm_enroll-zpgm_type 'for' 'Contract' lv_contract 'from caller'
+          x_input-pgm_int_data-zcallername INTO lv_text SEPARATED BY space.
+
+        WHEN '002'.
+          lv_appid = 'SE_DPP_PTR_ENROLLED'.
+          CONCATENATE 'Enrollment completed to' 'PTR' 'for' 'Contract' lv_contract 'from caller' x_input-pgm_int_data-zcallername INTO lv_text SEPARATED BY space.
+
+        WHEN '003' OR '004'.
+          lv_appid = 'SE_DPP_PTR_DEENROLL'.
+          CONCATENATE 'De-Enrollment completed from' 'PTR' 'for' 'Contract' lv_contract INTO lv_text SEPARATED BY space.
+
+      ENDCASE.
+    ENDIF.
+*
+*
+*    CONCATENATE 'Enroll pending to' x_input-pgm_enroll-zpgm_type 'for' 'Contract' lv_contract 'from caller'
+*    x_input-pgm_int_data-zcallername INTO lv_text SEPARATED BY space.
+
+    CLEAR: lv_created, lv_number, lv_msg.
+    CALL METHOD lr_impl->create_ir_record
+      EXPORTING
+        iv_bp                 = x_input-pgm_enroll-zenrlbp
+        iv_app_id             = lv_appid
+        iv_text               = lv_text
+        iv_buag               = x_input-pgm_enroll-zenrlca
+      IMPORTING
+        er_created            = lv_created
+        er_number             = lv_number
+      EXCEPTIONS
+        ir_not_created        = 1
+        no_bp_passed          = 2
+        no_business_agreement = 3
+        no_confirmed_bp       = 4
+        no_application_id     = 5
+        bus_agr_rel_error     = 6
+        bus_agr_set_notfound  = 7
+        system_error          = 8
+        OTHERS                = 9.
+    CASE sy-subrc.
+      WHEN 1.
+        CONCATENATE 'IR creation failed'
+        'IR_NOT_CREATED' INTO lv_msg
+        SEPARATED BY space.
+      WHEN 2.
+        CONCATENATE 'IR creation failed'
+        'NO_BP_PASSED' INTO lv_msg
+        SEPARATED BY space.
+      WHEN 3.
+        CONCATENATE 'IR creation failed'
+        'NO_BUSINESS_AGREEMENT' INTO lv_msg
+        SEPARATED BY space.
+      WHEN 4.
+        CONCATENATE 'IR creation failed'
+        'NO_CONFIRMED_BP' INTO lv_msg
+        SEPARATED BY space.
+      WHEN 5.
+        CONCATENATE 'IR creation failed'
+        'NO_APPLICATION_ID' INTO lv_msg
+        SEPARATED BY space.
+
+      WHEN 6.
+        CONCATENATE 'IR creation failed'
+        'BUS_AGR_REL_ERROR' INTO lv_msg
+        SEPARATED BY space.
+      WHEN 7.
+        CONCATENATE 'IR creation failed'
+        'BUS_AGR_SET_NOTFOUND' INTO lv_msg
+        SEPARATED BY space.
+      WHEN 0.
+        CONCATENATE 'IR created :'
+        lv_number INTO lv_msg
+        SEPARATED BY space.
+      WHEN 8.
+        CONCATENATE 'IR creation failed'
+        'SYSTEM_ERROR' INTO lv_msg
+        SEPARATED BY space.
+
+      WHEN OTHERS.
+        CONCATENATE 'IR creation failed'
+        ' ' INTO lv_msg
+        SEPARATED BY space.
+    ENDCASE.
+*     Implement suitable error handling here
+    CALL METHOD lr_impl->update_ir_msg
+      EXPORTING
+        x_msgtype = 'I'
+        x_msg     = lv_msg
+      CHANGING
+        x_input   = x_input.
+
+  ENDMETHOD.
+ENDCLASS.

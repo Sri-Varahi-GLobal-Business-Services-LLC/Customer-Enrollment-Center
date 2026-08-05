@@ -1,0 +1,59 @@
+FUNCTION z_calc_date.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(INPUT_DATE) TYPE  SY-DATUM
+*"     REFERENCE(INPUT_VALUE) TYPE  CHAR8
+*"     REFERENCE(INPUT_TYPE) TYPE  CHAR1
+*"  EXPORTING
+*"     REFERENCE(OUTPUT_DATE) TYPE  SY-DATUM
+*"----------------------------------------------------------------------
+
+************************************************************************
+* Project            : CEA CMS Energy
+* Program name       : Z_CALC_DATE
+* Summary            : Increment or decrement a date value based on a
+*                      numeric value and a type of D, M, or Y.
+* Author             : Blong Thao
+* Date               : 05/22/2006
+*
+* Description:
+*  This program will take a date value and increment or decrement the
+*  day, month, or year value.  The input values are the original date,
+*  the numeric value to modify by, and the type of D(day), M(month), or
+*  Y(year).  The returned value is the modified date.
+***********************************************************************
+
+  IF input_type = 'D'.
+    output_date = input_date + input_value.
+
+  ELSEIF input_type = 'M'.
+
+    CALL FUNCTION '/BEV4/PLPS__ADD_MONTH_TO_DATE'
+      EXPORTING
+        months  = input_value
+        olddate = input_date
+      IMPORTING
+        newdate = output_date.
+
+  ELSEIF input_type = 'Y'.
+
+    DATA: tmp_day TYPE string,
+          tmp_month(2) TYPE c,
+          tmp_year(4) TYPE c.
+
+    CALL FUNCTION 'CACS_DATE_GET_YEAR_MONTH'
+      EXPORTING
+        i_date  = input_date
+      IMPORTING
+        e_month = tmp_month
+        e_year  = tmp_year.
+
+    tmp_year = tmp_year + input_value.
+    tmp_day = input_date.
+    tmp_day = tmp_day+6(2).
+    CONCATENATE tmp_year tmp_month tmp_day INTO output_date.
+
+  ENDIF.
+
+ENDFUNCTION.

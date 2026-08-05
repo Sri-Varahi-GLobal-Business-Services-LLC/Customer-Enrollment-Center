@@ -1,0 +1,825 @@
+CLASS zcl_crm_isu_il_pgenrl DEFINITION
+  PUBLIC
+  INHERITING FROM cl_crm_iu_il_abstr_root
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    TYPES:
+      BEGIN OF ty_prog,
+        zpgm_type    TYPE zpgm_type,
+        program_uuid TYPE char40,
+        priority     TYPE zpriort,
+        valid_from   TYPE sydatum,
+        valid_to     TYPE sydatum,
+        history_mo   TYPE numc2,
+        description  TYPE crmt_bl_description,
+        text         TYPE tdobname,
+        longtext     TYPE char3000,
+      END OF ty_prog .
+    TYPES:
+      BEGIN OF ty_proglink,
+        zpgm_type TYPE zpgm_type,
+        link_type TYPE numc2,
+        link_id   TYPE crmt_ui_logical_link_id,
+      END OF ty_proglink .
+
+    CLASS-DATA gv_rfcdest TYPE rfcdest .
+    CLASS-DATA:
+      gt_prog_id     TYPE STANDARD TABLE OF ty_prog .
+    CLASS-DATA:
+      gt_prog_link   TYPE STANDARD TABLE OF ty_proglink .
+    CLASS-DATA gs_prog_id TYPE ty_prog .
+    CLASS-DATA gs_prog_link TYPE ty_proglink .
+    CLASS-DATA:
+      gt_pgenroll TYPE STANDARD TABLE OF zspgmen_attr .
+    CLASS-DATA:
+      gt_enroll TYPE STANDARD TABLE OF zspgm_enroll .
+    CLASS-DATA:
+      gt_enroll_his TYPE STANDARD TABLE OF zspgm_enroll .
+    CLASS-DATA gt_messages TYPE zspgmmessage_attr_tt .
+    CONSTANTS gc_pgmenroll TYPE crmt_ext_obj_name VALUE 'ProgramEnroll'. "#EC NOTEXT
+
+    METHODS get_available
+      IMPORTING
+        !iv_object         TYPE REF TO if_genil_container_object
+        !iv_child_template TYPE REF TO if_genil_container_object
+        !iv_child_name     TYPE crmt_ext_obj_name
+        !iv_relation_name  TYPE crmt_relation_name
+        !iv_filter         TYPE REF TO if_genil_relation_filter OPTIONAL
+        !is_param          TYPE genilt_relation_request_params OPTIONAL .
+    METHODS get_message
+      IMPORTING
+        !iv_object         TYPE REF TO if_genil_container_object
+        !iv_child_template TYPE REF TO if_genil_container_object
+        !iv_child_name     TYPE crmt_ext_obj_name
+        !iv_relation_name  TYPE crmt_relation_name
+        !iv_filter         TYPE REF TO if_genil_relation_filter OPTIONAL
+        !is_param          TYPE genilt_relation_request_params OPTIONAL .
+    METHODS get_history
+      IMPORTING
+        !iv_object         TYPE REF TO if_genil_container_object
+        !iv_child_template TYPE REF TO if_genil_container_object
+        !iv_child_name     TYPE crmt_ext_obj_name
+        !iv_relation_name  TYPE crmt_relation_name
+        !iv_filter         TYPE REF TO if_genil_relation_filter OPTIONAL
+        !is_param          TYPE genilt_relation_request_params OPTIONAL .
+    METHODS get_enrolled
+      IMPORTING
+        !iv_object         TYPE REF TO if_genil_container_object
+        !iv_child_template TYPE REF TO if_genil_container_object
+        !iv_child_name     TYPE crmt_ext_obj_name
+        !iv_relation_name  TYPE crmt_relation_name
+        !iv_filter         TYPE REF TO if_genil_relation_filter OPTIONAL
+        !is_param          TYPE genilt_relation_request_params OPTIONAL .
+    CLASS-METHODS class_constructor .
+
+    METHODS if_crm_iu_il_abstr_nroot~execute
+         REDEFINITION .
+    METHODS if_crm_iu_il_abstr_nroot~modify
+         REDEFINITION .
+    METHODS if_crm_iu_il_abstr_nroot~read_attr
+         REDEFINITION .
+    METHODS if_crm_iu_il_abstr_nroot~read_dependent_rel
+         REDEFINITION .
+    METHODS if_crm_iu_il_abstr_root~init
+         REDEFINITION .
+    METHODS if_crm_iu_il_abstr_root~lock
+         REDEFINITION .
+    METHODS if_crm_iu_il_abstr~reset
+         REDEFINITION .
+protected section.
+PRIVATE SECTION.
+
+  TYPES:
+    BEGIN OF ty_msg,
+      key TYPE zspgmen_key,
+      msg TYPE REF TO cl_crm_genil_bapi_mess_cont,
+    END OF ty_msg .
+
+  DATA gr_gmsg TYPE REF TO cl_crm_genil_global_mess_cont .
+  DATA: gt_msg TYPE STANDARD TABLE OF ty_msg.
+  TYPE-POOLS abap .
+  DATA is_locked TYPE abap_bool .
+  DATA gv_create_called TYPE abap_bool .
+ENDCLASS.
+
+
+
+CLASS ZCL_CRM_ISU_IL_PGENRL IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CRM_ISU_IL_PGENRL=>CLASS_CONSTRUCTOR
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD class_constructor.
+*   check for initial
+    CHECK gt_prog_id[] IS INITIAL.
+
+* Check Backend FM exist or not
+    cl_crm_isu_il_tools=>get_backend_dest(
+      EXPORTING
+        iv_check_avlbl    = abap_true
+      IMPORTING
+        ev_backend_dest   = gv_rfcdest
+      EXCEPTIONS
+        no_backend_dest   = 1
+        OTHERS            = 2 ).
+    IF sy-subrc <> 0.
+*    clear result.
+    ENDIF.
+
+    IF cl_crm_isu_il_tools=>check_backend_func_available(
+             iv_function  = 'ZPGM_EC_GETPGMID'
+             iv_rfc_dest  = gv_rfcdest ) = abap_true.
+*     Get Program ID
+      CALL FUNCTION 'ZPGM_EC_GETPGMID'
+        DESTINATION gv_rfcdest
+        TABLES
+          et_progid             = gt_prog_id
+          et_proglink           = gt_prog_link
+        EXCEPTIONS
+          communication_failure = 1
+          system_failure        = 2.
+      IF sy-subrc = 0.
+
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->GET_AVAILABLE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_TEMPLATE              TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_NAME                  TYPE        CRMT_EXT_OBJ_NAME
+* | [--->] IV_RELATION_NAME               TYPE        CRMT_RELATION_NAME
+* | [--->] IV_FILTER                      TYPE REF TO IF_GENIL_RELATION_FILTER(optional)
+* | [--->] IS_PARAM                       TYPE        GENILT_RELATION_REQUEST_PARAMS(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_available.
+    DATA: lv_child         TYPE REF TO if_genil_container_object,
+          ls_pg_key        TYPE zspgmen_key,
+          ls_pg_attr       TYPE zspgmen_attr,
+          lv_relation_name TYPE crmt_relation_name,
+          ls_pgav_key      TYPE zspgmavail_key,
+          ls_pgav_attr     TYPE zspgmavail_attr,
+          lv_tabix         TYPE sytabix,
+          ls_messages      LIKE LINE OF gt_messages,
+          lv_root          TYPE REF TO if_genil_cont_root_object.
+
+    FIELD-SYMBOLS:<fs_enroll> TYPE zspgm_enroll.
+
+*   object key
+    CALL METHOD iv_object->get_key
+      IMPORTING
+        es_key = ls_pg_key.
+
+    LOOP AT gt_prog_id
+            INTO gs_prog_id.
+      CLEAR: ls_pgav_key, ls_pgav_attr.
+      READ TABLE gt_enroll
+        ASSIGNING <fs_enroll>
+      WITH KEY zenrlbp = ls_pg_key-zenrlbp
+               zenrlca = ls_pg_key-zenrlca
+               zpgm_type = gs_prog_id-zpgm_type.
+      CHECK sy-subrc <> 0.
+      lv_tabix = lv_tabix + 1.
+      ls_pgav_key-zpgm_type = gs_prog_id-zpgm_type.
+      ls_pgav_key-zenrlbp = ls_pg_key-zenrlbp.
+      ls_pgav_key-zenrlca = ls_pg_key-zenrlca.
+      MOVE-CORRESPONDING ls_pgav_key TO ls_pgav_attr.
+      ls_pgav_attr-priority = gs_prog_id-priority.
+      ls_pgav_attr-description  = gs_prog_id-description .
+      ls_pgav_attr-longtext  = gs_prog_id-longtext .
+
+*     Get Logical Link
+      READ TABLE gt_prog_link
+        INTO gs_prog_link
+      WITH KEY zpgm_type = gs_prog_id-zpgm_type
+               link_type  = 01.
+      IF sy-subrc = 0.
+        ls_pgav_attr-link_id = gs_prog_link-link_id.
+      ENDIF.
+
+*     Read Error
+*      READ TABLE gt_messages
+*        WITH KEY zenrlbp = ls_pg_key-zenrlbp
+*                     zenrlca = ls_pg_key-zenrlca
+*                     zpgm_type = gs_prog_id-zpgm_type
+*      TRANSPORTING NO FIELDS.
+      LOOP AT gt_messages INTO ls_messages
+        WHERE zenrlbp = ls_pg_key-zenrlbp
+        AND   zenrlca = ls_pg_key-zenrlca
+        AND   zpgm_type = gs_prog_id-zpgm_type
+        AND ( type = 'E' OR type = 'A' OR type = 'X' ).
+      ENDLOOP.
+      IF sy-subrc <> 0.
+        ls_pgav_attr-eligibile = abap_true.
+      ENDIF.
+
+
+      IF lv_tabix = 1.
+        lv_child = iv_child_template.
+      ELSE.
+        lv_child = iv_child_template->copy_self_with_structure( iv_relation_name = lv_relation_name ).
+      ENDIF.
+
+*     Set Key and Attribute
+      lv_child->set_key( ls_pgav_key ).
+      lv_child->set_attributes( ls_pgav_attr ).
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->GET_ENROLLED
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_TEMPLATE              TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_NAME                  TYPE        CRMT_EXT_OBJ_NAME
+* | [--->] IV_RELATION_NAME               TYPE        CRMT_RELATION_NAME
+* | [--->] IV_FILTER                      TYPE REF TO IF_GENIL_RELATION_FILTER(optional)
+* | [--->] IS_PARAM                       TYPE        GENILT_RELATION_REQUEST_PARAMS(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_enrolled.
+    DATA: lv_child         TYPE REF TO if_genil_container_object,
+          ls_pg_key        TYPE zspgmen_key,
+          ls_pg_attr       TYPE zspgmen_attr,
+          lv_relation_name TYPE crmt_relation_name,
+          ls_pgen_key      TYPE zspgmenrolled_key,
+          ls_pgen_attr     TYPE zspgmenrolled_attr,
+          lv_tabix         TYPE sytabix,
+          lv_root          TYPE REF TO if_genil_cont_root_object,
+          lv_struct_descr  TYPE REF TO cl_abap_structdescr.
+
+    FIELD-SYMBOLS:<fs_enroll> TYPE zspgm_enroll.
+
+* object key
+    CALL METHOD iv_object->get_key
+      IMPORTING
+        es_key = ls_pg_key.
+
+    LOOP AT gt_enroll ASSIGNING <fs_enroll>
+    WHERE zenrlbp = ls_pg_key-zenrlbp
+    AND   zenrlca = ls_pg_key-zenrlca.
+      CLEAR: ls_pgen_key, ls_pgen_attr.
+      MOVE-CORRESPONDING <fs_enroll> TO: ls_pgen_key, ls_pgen_attr.
+      lv_tabix = lv_tabix + 1.
+*     Get Logical Link
+      READ TABLE gt_prog_link
+        INTO gs_prog_link
+      WITH KEY zpgm_type = <fs_enroll>-zpgm_type
+               link_type  = 02.
+      IF sy-subrc = 0.
+        ls_pgen_attr-link_id = gs_prog_link-link_id.
+      ENDIF.
+
+*   Get Program ID Details
+      READ TABLE gt_prog_id
+        INTO gs_prog_id
+      WITH KEY zpgm_type = <fs_enroll>-zpgm_type.
+      IF sy-subrc = 0.
+        ls_pgen_attr-priority = gs_prog_id-priority.
+        ls_pgen_attr-description  = gs_prog_id-description .
+        ls_pgen_attr-longtext  = gs_prog_id-longtext .
+      ENDIF.
+
+      IF lv_tabix = 1.
+        lv_child = iv_child_template.
+      ELSE.
+        lv_child = iv_child_template->copy_self_with_structure( iv_relation_name = lv_relation_name ).
+      ENDIF.
+
+*     Set Key and Attribute
+      lv_child->set_key( ls_pgen_key ).
+      lv_child->set_attributes( ls_pgen_attr ).
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->GET_HISTORY
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_TEMPLATE              TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_NAME                  TYPE        CRMT_EXT_OBJ_NAME
+* | [--->] IV_RELATION_NAME               TYPE        CRMT_RELATION_NAME
+* | [--->] IV_FILTER                      TYPE REF TO IF_GENIL_RELATION_FILTER(optional)
+* | [--->] IS_PARAM                       TYPE        GENILT_RELATION_REQUEST_PARAMS(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_history.
+    DATA: lv_child         TYPE REF TO if_genil_container_object,
+          ls_pg_key        TYPE zspgmen_key,
+          ls_pg_attr       TYPE zspgmen_attr,
+          lv_relation_name TYPE crmt_relation_name,
+          ls_pghis_key     TYPE zspgmhis_key,
+          ls_pghis_attr    TYPE zspgmhis_attr,
+          lv_tabix         TYPE sytabix,
+          lv_root          TYPE REF TO if_genil_cont_root_object,
+          lv_struct_descr  TYPE REF TO cl_abap_structdescr.
+
+    FIELD-SYMBOLS:<fs_enroll> TYPE zspgm_enroll.
+
+*   object key
+    CALL METHOD iv_object->get_key
+      IMPORTING
+        es_key = ls_pg_key.
+
+    LOOP AT gt_enroll_his ASSIGNING <fs_enroll>
+    WHERE zenrlbp = ls_pg_key-zenrlbp
+    AND   zenrlca = ls_pg_key-zenrlca.
+      CLEAR: ls_pghis_key, ls_pghis_attr.
+      MOVE-CORRESPONDING <fs_enroll> TO: ls_pghis_key, ls_pghis_attr.
+      lv_tabix = lv_tabix + 1.
+      ls_pghis_attr-index =
+      ls_pghis_key-index = lv_tabix.
+
+*     Get Program ID Details
+      READ TABLE gt_prog_id
+        INTO gs_prog_id
+      WITH KEY zpgm_type = <fs_enroll>-zpgm_type.
+      IF sy-subrc = 0.
+        ls_pghis_attr-priority = gs_prog_id-priority.
+        ls_pghis_attr-description  = gs_prog_id-description .
+      ENDIF.
+
+      IF lv_tabix = 1.
+        lv_child = iv_child_template.
+      ELSE.
+        lv_child = iv_child_template->copy_self_with_structure( iv_relation_name = lv_relation_name ).
+      ENDIF.
+
+*     Set Key and Attribute
+      lv_child->set_key( ls_pghis_key ).
+      lv_child->set_attributes( ls_pghis_attr ).
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->GET_MESSAGE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_TEMPLATE              TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_NAME                  TYPE        CRMT_EXT_OBJ_NAME
+* | [--->] IV_RELATION_NAME               TYPE        CRMT_RELATION_NAME
+* | [--->] IV_FILTER                      TYPE REF TO IF_GENIL_RELATION_FILTER(optional)
+* | [--->] IS_PARAM                       TYPE        GENILT_RELATION_REQUEST_PARAMS(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_message.
+    DATA: lv_child         TYPE REF TO if_genil_container_object,
+          ls_pgval_key     TYPE zspgmavail_key,
+          ls_pgval_attr    TYPE zspgmavail_attr,
+          lv_relation_name TYPE crmt_relation_name,
+          ls_pgmsg_key     TYPE zspgmmsg_key,
+          ls_pgmsg_attr    TYPE zspgmmsg_attr,
+          lv_tabix         TYPE sytabix,
+          lv_root          TYPE REF TO if_genil_cont_root_object,
+          lv_struct_descr  TYPE REF TO cl_abap_structdescr.
+
+    FIELD-SYMBOLS:<fs_msg> TYPE zspgmmessage_attr.
+
+*   object key
+    CALL METHOD iv_object->get_key
+      IMPORTING
+        es_key = ls_pgval_key.
+
+    LOOP AT gt_messages ASSIGNING <fs_msg>
+    WHERE zenrlbp = ls_pgval_key-zenrlbp
+    AND   zenrlca = ls_pgval_key-zenrlca
+    AND   zpgm_type = ls_pgval_key-zpgm_type.
+      CLEAR: ls_pgmsg_key, ls_pgmsg_attr.
+      MOVE-CORRESPONDING <fs_msg> TO: ls_pgmsg_key, ls_pgmsg_attr.
+      lv_tabix = lv_tabix + 1.
+      ls_pgmsg_attr-index =
+      ls_pgmsg_key-index = lv_tabix.
+
+*     Get Program ID Details
+      READ TABLE gt_prog_id
+        INTO gs_prog_id
+      WITH KEY zpgm_type = <fs_msg>-zpgm_type.
+      IF sy-subrc = 0.
+        ls_pgmsg_attr-priority = gs_prog_id-priority.
+*        ls_pghis_attr-description  = gs_prog_id-description .
+      ENDIF.
+
+      IF lv_tabix = 1.
+        lv_child = iv_child_template.
+      ELSE.
+        lv_child = iv_child_template->copy_self_with_structure( iv_relation_name = lv_relation_name ).
+      ENDIF.
+
+*     Set Key and Attribute
+      lv_child->set_key( ls_pgmsg_key ).
+      lv_child->set_attributes( ls_pgmsg_attr ).
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->IF_CRM_IU_IL_ABSTR_NROOT~EXECUTE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        ANY
+* | [--->] IV_ID                          TYPE        CRMT_GENIL_OBJECT_ID
+* | [--->] IV_METHOD_NAME                 TYPE        CRMT_OBJ_METHOD_NAME
+* | [--->] IT_PARAMETERS                  TYPE        CRMT_NAME_VALUE_PAIR_TAB
+* | [--->] IV_ROOTLIST                    TYPE REF TO IF_GENIL_CONT_ROOT_OBJECTLIST
+* | [--->] IV_MSG_SERVICE_ACCESS          TYPE REF TO IF_GENIL_MSG_SERVICE_ACCESS
+* | [<---] ET_CHANGED_OBJECTS             TYPE        CRMT_GENIL_OBJ_INSTANCE_TAB
+* | [<---] EV_SUCCESS                     TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_nroot~execute.
+    DATA: lv_key            TYPE zspgmen_key,
+          lt_return         TYPE bapiret2_t,
+          ls_attr           TYPE zspgmen_attr,
+          lv_root           TYPE REF TO if_genil_cont_root_object,
+          ls_msg            TYPE ty_msg,
+          lt_all_msg        TYPE bapiret2_t,
+          lv_methodnotfound TYPE abap_bool.
+
+    FIELD-SYMBOLS: <line>  TYPE crmt_name_value_pair,
+                   <value> TYPE data.
+
+    ev_success = abap_true.
+
+    CHECK  rfc_dest IS NOT INITIAL.
+
+* Get the order no. from the root object. Not from parameter structure!
+    lv_key = iv_key.
+    CHECK lv_key IS NOT INITIAL.
+
+* get order attributes from parameters
+    CALL METHOD cl_crm_isu_il_tools=>fill_struct_from_nvp_tab
+      EXPORTING
+        it_parameters = it_parameters
+      CHANGING
+        cs_parameter  = ls_attr.
+
+    CASE iv_method_name.
+
+*     Execute Eligibility Check
+      WHEN 'ExecuteEligibilityCheck'.
+        REFRESH gt_messages.
+        IF cl_crm_isu_il_tools=>check_backend_func_available(
+             iv_function  = 'ZPGM_EC_ELIGIBILITYCHECK'
+             iv_rfc_dest  = rfc_dest ) = abap_true.
+
+          CALL FUNCTION 'ZPGM_EC_ELIGIBILITYCHECK'
+            DESTINATION rfc_dest
+            EXPORTING
+              is_attr               = ls_attr
+            TABLES
+              et_return             = lt_return
+              et_msg                = gt_messages
+            EXCEPTIONS
+              communication_failure = 1
+              system_failure        = 2.
+
+        ENDIF.
+
+*     Get Enrollment
+      WHEN 'ExecuteGetEnrollment'.
+        REFRESH: gt_enroll.
+        IF cl_crm_isu_il_tools=>check_backend_func_available(
+             iv_function  = 'ZPGM_EC_GETENROLLMENT'
+             iv_rfc_dest  = rfc_dest ) = abap_true.
+
+          CALL FUNCTION 'ZPGM_EC_GETENROLLMENT'
+            DESTINATION rfc_dest
+            EXPORTING
+              is_attr               = ls_attr
+            TABLES
+              et_return             = lt_return
+              et_enroll             = gt_enroll
+              et_enroll_his         = gt_enroll_his
+            EXCEPTIONS
+              communication_failure = 1
+              system_failure        = 2.
+
+        ENDIF.
+
+      WHEN OTHERS.
+*      Method was not found, set flag to false
+*      Execute2 should then be called
+        ev_success = abap_false.
+        lv_methodnotfound  = abap_true.
+
+    ENDCASE.
+
+* * report success, error to framework
+    lt_all_msg = zcl_crm_isu_il_pgenrl_comp=>get_messages(
+     is_system_message = sy
+     it_message = lt_return
+     ).
+
+    IF zcl_crm_isu_il_pgenrl_comp=>error_messages_exist( lt_all_msg ) = abap_false AND
+      lv_methodnotfound = abap_false.
+
+      DATA: ls_changed_object       LIKE LINE OF et_changed_objects.
+
+      ls_changed_object-object_name = gc_pgmenroll.
+      ls_changed_object-object_id   = iv_id.
+      APPEND ls_changed_object TO et_changed_objects.
+
+    ELSE. " report error
+      ev_success = abap_false.
+*      add_msg(
+*       iv_obj_name = gc_pgmenroll
+*       iv_order_no = lv_key
+*       it_msg      = lt_all_msg ).
+
+    ENDIF.
+
+*  if execute failed AND entity was not locked externally (or explicitly).
+    IF ev_success = abap_false AND is_locked = abap_false.
+
+*    release any lock made by the execute method internally in the backend.
+      if_crm_iu_il_abstr_root~init(
+        iv_key                = lv_key
+        iv_id                 = iv_id
+        iv_msg_service_access = iv_msg_service_access ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->IF_CRM_IU_IL_ABSTR_NROOT~MODIFY
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_DELTA                       TYPE        CRMT_DELTA
+* | [--->] IO_OBJECT_LIST                 TYPE REF TO IF_GENIL_CONT_OBJECT_LIST_BASE
+* | [<---] EO_NEXT_OBJECT                 TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [<-->] CT_CHANGED_OBJECTS             TYPE        CRMT_GENIL_OBJ_INSTANCE_TAB
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_nroot~modify.
+    DATA: ls_pg_key         TYPE zspgmen_key,
+          lt_result         TYPE crmt_attr_name_tab,
+          lv_changed_field  TYPE REF TO name_komp,
+          ls_pg_attr        TYPE zspgmen_attr,
+          ls_changed_object LIKE LINE OF ct_changed_objects.
+
+    FIELD-SYMBOLS: <previous_value> TYPE any,
+                   <changed_value>  TYPE any,
+                   <ls_pg_attr_old> TYPE zspgmen_attr.
+
+* order object key and attributes
+    iv_object->get_key( IMPORTING es_key = ls_pg_key ).
+    iv_object->get_attributes( IMPORTING es_attributes = ls_pg_attr ) .
+
+* Get Attribute Value
+    READ TABLE zcl_crm_isu_il_pgenrl=>gt_pgenroll[]
+      ASSIGNING <ls_pg_attr_old>
+    WITH KEY zenrlbp = ls_pg_key-zenrlbp
+             zenrlca = ls_pg_key-zenrlca.
+
+
+    CHECK iv_delta = 'M'.
+*    We get the fields that can be changed. These fields which
+*    can be changed are specified in
+*    IF_CRM_IU_IL_ABSTR_NROOT~READ_ATTR.
+    lt_result = get_changed_fields( iv_object ).
+
+* Check for initial
+    CHECK NOT lt_result IS INITIAL.
+
+    LOOP AT lt_result REFERENCE INTO lv_changed_field.
+
+      ASSIGN COMPONENT lv_changed_field->*
+                       OF STRUCTURE ls_pg_attr TO <changed_value>.
+
+      IF sy-subrc = 0 .
+        IF <changed_value> IS ASSIGNED.
+
+          ASSIGN COMPONENT lv_changed_field->*
+                           OF STRUCTURE <ls_pg_attr_old> TO <previous_value>.
+
+*            - If the new value is different from the buffer value
+*                    store the new value in the buffer
+          IF sy-subrc = 0     .
+            IF <previous_value> IS ASSIGNED .
+
+              IF <changed_value> <> <previous_value>.
+
+                <previous_value> = <changed_value>.
+              ENDIF.
+
+            ENDIF.
+*
+          ENDIF.
+
+
+        ENDIF.
+      ENDIF.
+    ENDLOOP.
+
+* Add Changed Object
+    ls_changed_object-object_name = iv_object->get_name( ).
+    ls_changed_object-object_id   = iv_object->get_object_id( ).
+    APPEND ls_changed_object TO ct_changed_objects.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->IF_CRM_IU_IL_ABSTR_NROOT~READ_ATTR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IT_REQUESTED_ATTR              TYPE        CRMT_ATTR_NAME_TAB(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_nroot~read_attr.
+    DATA: ls_pg_key           TYPE zspgmen_key,
+          ls_pg_attr          TYPE zspgmen_attr,
+          lt_dd03             TYPE STANDARD TABLE OF dd03p,
+          le_dd03             TYPE dd03p,
+          lt_changeable_field TYPE crm_isu_fieldname_tab,
+          ls_changeable_field TYPE fieldname,
+          lv_root             TYPE REF TO if_genil_cont_root_object.
+
+* object key
+    CALL METHOD iv_object->get_key
+      IMPORTING
+        es_key = ls_pg_key.
+
+* Get Attribute Value
+    READ TABLE zcl_crm_isu_il_pgenrl=>gt_pgenroll[]
+      INTO ls_pg_attr
+    WITH KEY zenrlbp = ls_pg_key-zenrlbp
+             zenrlca = ls_pg_key-zenrlca.
+
+* Get Custom Fields
+  CALL FUNCTION 'DD_TABD_GET'
+    EXPORTING
+      tabl_name      = 'ZSPGMEN_ATTR'
+    TABLES
+      dd03p_tab_a    = lt_dd03
+    EXCEPTIONS
+      access_failure = 1
+      OTHERS         = 2.
+  IF sy-subrc <> 0.
+    EXIT.
+  ENDIF.
+
+
+  LOOP AT lt_dd03 INTO le_dd03
+    WHERE fieldname <> 'ZENRLBP'
+    and   fieldname <> 'ZENRLCA'.
+
+*   definition of changeable fields
+    ls_changeable_field = le_dd03-fieldname.
+    APPEND ls_changeable_field TO lt_changeable_field.
+
+  ENDLOOP.
+
+* conveying to the framework the fields which should be changeable
+  set_field_properties(
+    iv_object    = iv_object
+    iv_property  = if_genil_obj_attr_properties=>changeable
+    it_fieldname = lt_changeable_field ).
+
+* providing the data to the framework
+  iv_object->set_attributes( ls_pg_attr ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->IF_CRM_IU_IL_ABSTR_NROOT~READ_DEPENDENT_REL
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_TEMPLATE              TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_CHILD_NAME                  TYPE        CRMT_EXT_OBJ_NAME
+* | [--->] IV_RELATION_NAME               TYPE        CRMT_RELATION_NAME
+* | [--->] IV_FILTER                      TYPE REF TO IF_GENIL_RELATION_FILTER(optional)
+* | [--->] IS_PARAM                       TYPE        GENILT_RELATION_REQUEST_PARAMS(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_nroot~read_dependent_rel.
+    DATA:
+      lv_child         TYPE REF TO if_genil_container_object,
+      lv_relation_name TYPE crmt_relation_name,
+      lv_root          TYPE REF TO if_genil_cont_root_object.
+
+* Get Child Template
+    iv_child_template->get_parent_relation( IMPORTING ev_relation_name = lv_relation_name ).
+
+    CASE lv_relation_name.
+      WHEN 'ProgramEnrolledRel'.
+
+*       Get Eligible Enrollement
+        CALL METHOD get_enrolled
+          EXPORTING
+            iv_object         = iv_object
+            iv_child_template = iv_child_template
+            iv_child_name     = iv_child_name
+            iv_relation_name  = iv_relation_name
+            iv_filter         = iv_filter
+            is_param          = is_param.
+
+      WHEN 'ProgramAvailableRel'.
+
+*       Get Available Rel
+        CALL METHOD get_available
+          EXPORTING
+            iv_object         = iv_object
+            iv_child_template = iv_child_template
+            iv_child_name     = iv_child_name
+            iv_relation_name  = iv_relation_name
+            iv_filter         = iv_filter
+            is_param          = is_param.
+
+      WHEN 'ProgramMessageRel'.
+
+*       Get Message Rel
+        CALL METHOD get_message
+          EXPORTING
+            iv_object         = iv_object
+            iv_child_template = iv_child_template
+            iv_child_name     = iv_child_name
+            iv_relation_name  = iv_relation_name
+            iv_filter         = iv_filter
+            is_param          = is_param.
+
+      WHEN 'ProgramHistoryRel'.
+
+*       Get History Rel
+        CALL METHOD get_history
+          EXPORTING
+            iv_object         = iv_object
+            iv_child_template = iv_child_template
+            iv_child_name     = iv_child_name
+            iv_relation_name  = iv_relation_name
+            iv_filter         = iv_filter
+            is_param          = is_param.
+
+
+    ENDCASE.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->IF_CRM_IU_IL_ABSTR_ROOT~INIT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        ANY
+* | [--->] IV_ID                          TYPE        CRMT_GENIL_OBJECT_ID
+* | [--->] IV_MSG_SERVICE_ACCESS          TYPE REF TO IF_GENIL_MSG_SERVICE_ACCESS
+* | [<---] ET_ADDITIONAL_OBJ              TYPE        CRMT_GENIL_OBJ_INST_LINE_TAB
+* | [<---] RV_SUCCESS                     TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_root~init.
+    CALL METHOD super->if_crm_iu_il_abstr_root~init
+      EXPORTING
+        iv_key                = iv_key
+        iv_id                 = iv_id
+        iv_msg_service_access = iv_msg_service_access
+      IMPORTING
+        et_additional_obj     = et_additional_obj
+        rv_success            = rv_success.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->IF_CRM_IU_IL_ABSTR_ROOT~LOCK
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        ANY
+* | [--->] IV_ID                          TYPE        CRMT_GENIL_OBJECT_ID
+* | [--->] IV_MSG_SERVICE_ACCESS          TYPE REF TO IF_GENIL_MSG_SERVICE_ACCESS
+* | [<---] ET_ADDITIONAL_OBJ              TYPE        CRMT_GENIL_OBJ_INST_LINE_TAB
+* | [<---] RV_SUCCESS                     TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_root~lock.
+*CALL METHOD SUPER->IF_CRM_IU_IL_ABSTR_ROOT~LOCK
+*  EXPORTING
+*    IV_KEY                =
+*    IV_ID                 =
+*    IV_MSG_SERVICE_ACCESS =
+**  IMPORTING
+**    et_additional_obj     =
+**    rv_success            =
+*    .
+
+    rv_success = abap_true.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_PGENRL->IF_CRM_IU_IL_ABSTR~RESET
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr~reset.
+    CALL METHOD super->if_crm_iu_il_abstr~reset.
+  ENDMETHOD.
+ENDCLASS.

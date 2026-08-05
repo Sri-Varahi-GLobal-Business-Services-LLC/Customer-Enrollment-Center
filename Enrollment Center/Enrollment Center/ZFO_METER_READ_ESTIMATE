@@ -1,0 +1,202 @@
+FUNCTION zfo_meter_read_estimate.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(X_ANLAGE) TYPE  ANLAGE
+*"     REFERENCE(X_DATE) TYPE  ADATSOLL
+*"     REFERENCE(X_MRREASON) TYPE  ABLESGRE
+*"     REFERENCE(X_NODIALOG) TYPE  E_DARK OPTIONAL
+*"     REFERENCE(X_COMMIT) TYPE  KENNZX OPTIONAL
+*"  EXPORTING
+*"     REFERENCE(YT_EABL) TYPE  EABL_TAB
+*"     REFERENCE(Y_OBJ) TYPE  ISU17_METERREAD
+*"  EXCEPTIONS
+*"      GENERAL_ERROR
+*"      NO_MRREL_REGISTERS
+*"----------------------------------------------------------------------
+
+*----------------------------------------------------------------------*
+* Modification Log                Place latest at top :                *
+*----------------------------------------------------------------------*
+* Author       Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------*
+* Haritha D   10/22/2014         E2DK934877    Initial    CS_WF_RTF_002*
+*----------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+
+  DATA : lv_obj TYPE isu17_meterread,
+##needed lv_auto TYPE  isu17_meterread_auto,
+         lv_dbupdate TYPE regen-db_update,
+         lv_has_smart_meter TYPE flag.
+  CONSTANTS : co_flag TYPE c VALUE 'X'.
+
+** Begin of Object ID CS_WF_RTF_002 changes
+* RDR block Meter estimation for smart meter Move-Out/Move-In Scenarios
+IF x_mrreason = '03' or
+   x_mrreason = '06'.
+  lv_has_smart_meter = zcl_cs_ami_utility=>is_installation_smartmeter( iv_installation = x_anlage ).
+
+  IF lv_has_smart_meter = co_flag.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+##fm_raise_ok RAISING has_smart_meter.
+  ENDIF.
+ENDIF.
+*-- End of object Id CS_WF_RTF_002 changes
+  CALL FUNCTION 'ISU_O_METERREAD_OPEN'
+    EXPORTING
+      x_anlage              = x_anlage
+      x_adatsoll            = x_date
+      x_ablesgr             = x_mrreason
+      x_wmode               = co_change
+      x_no_dialog           = x_nodialog
+      x_select2             = '1'
+      x_ebene               = co_ebene_instln
+    IMPORTING
+      y_obj                 = lv_obj
+      y_auto                = lv_auto
+    EXCEPTIONS
+      not_found             = 1
+      foreign_lock          = 2
+      internal_error        = 3
+      input_error           = 4
+      existing              = 5
+      number_error          = 6
+      general_fault         = 7
+      system_error          = 8
+      manual_abort          = 9
+      gasdat_not_found      = 10
+      no_mrrel_registers    = 11
+      internal_warning      = 12
+      not_authorized        = 13
+      not_qualified         = 14
+      anpstorno_not_allowed = 15
+      already_billed        = 16
+      OTHERS                = 17.
+
+  CASE sy-subrc.
+    WHEN 0.
+    WHEN 11.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+          WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+          RAISING no_mrrel_registers.
+    WHEN OTHERS.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+              RAISING general_error.
+  ENDCASE.
+
+  CALL FUNCTION 'ISU_O_METERREAD_OPEN_SUBOBJ'
+    CHANGING
+      xy_obj         = lv_obj
+    EXCEPTIONS
+      not_found      = 1
+      foreign_lock   = 2
+      internal_error = 3
+      input_error    = 4
+      existing       = 5
+      number_error   = 6
+      general_fault  = 7
+      system_error   = 8
+      manual_abort   = 9
+      OTHERS         = 10.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+
+
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_okcode     = co_mark_all
+      x_no_message = x_nodialog
+    CHANGING
+      xy_obj       = lv_obj
+    EXCEPTIONS
+      OTHERS       = 99.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_okcode     = co_estim_all
+      x_no_message = x_nodialog
+    CHANGING
+      xy_obj       = lv_obj
+    EXCEPTIONS
+      OTHERS       = 99.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_okcode     = co_prep_save
+      x_no_message = x_nodialog
+    CHANGING
+      xy_obj       = lv_obj
+    EXCEPTIONS
+      OTHERS       = 99.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_okcode     = co_save
+      x_no_message = x_nodialog
+    IMPORTING
+      y_db_update  = lv_dbupdate
+    CHANGING
+      xy_obj       = lv_obj
+    EXCEPTIONS
+      failed       = 1.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+  IF lv_dbupdate EQ co_flag       "Changed 'X' to a constant variable.
+   AND yt_eabl IS REQUESTED.
+    yt_eabl[] = lv_obj-ieabl[].
+  ENDIF.
+
+  IF NOT y_obj IS REQUESTED.
+    CALL FUNCTION 'ISU_O_METERREAD_CLOSE' ##arg_ok
+      EXPORTING
+        x_no_dialog = x_nodialog
+      CHANGING
+        xy_obj      = lv_obj
+      EXCEPTIONS
+        other       = 99.
+  ELSE.
+    y_obj = lv_obj.
+  ENDIF.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+  IF x_commit = co_flag.
+    COMMIT WORK.
+  ENDIF.
+ENDFUNCTION.
+

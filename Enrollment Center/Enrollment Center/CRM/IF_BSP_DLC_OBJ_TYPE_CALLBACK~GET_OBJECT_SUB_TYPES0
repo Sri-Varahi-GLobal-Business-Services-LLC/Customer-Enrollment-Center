@@ -1,0 +1,35 @@
+******************************************************************
+*  Method Name               : IF_BSP_DLC_OBJ_TYPE_CALLBACK~GET_OBJECT_SUB_TYPES
+*  Author                    : Rakhee Raj Bharamaraj
+*  Date                      : 05/09/2011
+*  FRICEW Id #               : CMENH1010
+*  Original SAP Program Name : N/A
+*  SAP Transport Request #   : C3DK901218
+*----------------------------------------------------------------*
+*  Description: The subobjects are maintained in this class
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    : Firstname Lastname
+*  Modification Date         : MM/DD/YYYY
+*  Description               :
+******************************************************************
+
+METHOD if_bsp_dlc_obj_type_callback~get_object_sub_types.
+
+  DATA:   lv_sub_object TYPE bsp_dlc_object_sub_type.
+
+  IF iv_object_type = 'ZCMSUMMQA'.
+
+    lv_sub_object = 'ZYESF'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'ZNOF'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+  ENDIF.
+ENDMETHOD.
+

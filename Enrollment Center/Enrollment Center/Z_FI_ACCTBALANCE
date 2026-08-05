@@ -1,0 +1,117 @@
+FUNCTION z_fi_acctbalance.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(I_PARTNER) TYPE  GPART_KK
+*"     REFERENCE(I_ACCOUNT) TYPE  VKONT_KK
+*"  EXPORTING
+*"     REFERENCE(E_TOTAL) TYPE  BETRW_KK
+*"     REFERENCE(E_CURRENT) TYPE  BETRW_KK
+*"     REFERENCE(E_PASTDUE) TYPE  BETRW_KK
+*"     REFERENCE(E_FUTURE) TYPE  BETRW_KK
+*"     REFERENCE(E_UNAPPLIEDCREDITS) TYPE  BETRW_KK
+*"     REFERENCE(E_UTILBAL) TYPE  BETRW_KK
+*"     REFERENCE(E_UTILPASTDUE) TYPE  BETRW_KK
+*"     REFERENCE(E_TOTALUTILBAL) TYPE  BETRW_KK
+*"     REFERENCE(E_TOTAL_NOFUTURE) TYPE  BETRW_KK
+*"     REFERENCE(E_IPBAL) TYPE  BETRW_KK
+*"     REFERENCE(E_UADAPASTDUE) TYPE  BETRW_KK
+*"     REFERENCE(E_CARE_IPBAL) TYPE  BETRW_KK
+*"  TABLES
+*"      ET_FKKOP STRUCTURE  FKKOP OPTIONAL
+*"  EXCEPTIONS
+*"      NO_OPEN_ITEMS
+*"      MISSING_IMPORT_PARAMETER
+*"      UNKNOWN_ERROR
+*"----------------------------------------------------------------------
+* Created by  : Gilbert Chong
+* Created on  : 01/25/2005
+* Description : Returns account balance related values
+* Tech spec   : <MTEMC shared network drive - probably S:>
+*               \3_Realization\Development\Technical Specifications
+*               \Customer Overview (80% Screen) Technical Design.doc
+*-----------------------------------------------------------------------
+* Version     :
+* Date        : 12/6/05
+* Name        : S beeman
+* Ch. Req.    : --
+* SAP corr.   : --
+* Description : Change call to say its okay to have no items
+*-----------------------------------------------------------------------
+* Version     :
+* Date        : 05/23/07
+* Name        : SABUDDAR
+* Ch. Req.    : --
+* SAP corr.   : --
+* Description : Add 2 exporting params
+*-----------------------------------------------------------------------
+* Date        : 01/28/2008
+* Name        : GCHONG
+* Ch. Req.    : ECDK941012
+* Description : CMS Defect 11502 - add levelised billing items as well
+*-----------------------------------------------------------------------
+* Date        : 11/25/2008
+* Name        : C. Essenmacher
+* Ch. Req.    : ECDK954870    PM818540
+* Description : Exclude the people care main/subs as they are causing the
+*             : balances to be wrong.
+*-----------------------------------------------------------------------
+
+* Declaration
+  DATA: lr_main_trans TYPE tt_hvorg_range,
+        lr_accounts   TYPE ranges_vkonto.
+  DATA: lv_start_position TYPE i VALUE 1.
+
+* Initialisation
+  CLEAR   et_fkkop.
+  REFRESH et_fkkop.
+  CLEAR: e_total,
+         e_current,
+         e_pastdue,
+         e_future,
+         e_unappliedcredits,
+         e_utilbal,
+         e_utilpastdue,
+         e_totalutilbal,
+         e_total_nofuture,
+         e_ipbal,
+         e_uadapastdue,
+         e_care_ipbal.
+
+* Ensure that business partner and contract account are provided
+  IF i_partner IS INITIAL OR i_account IS INITIAL.
+    RAISE missing_import_parameter.
+  ENDIF.
+
+  zcl_range_utility=>simple_range_from_fields(
+    EXPORTING
+      im_low   = i_account
+    CHANGING
+      ch_range = lr_accounts[] ).
+
+  PERFORM get_open_items
+    USING    i_partner
+             lr_accounts[]
+    CHANGING et_fkkop[].
+
+  PERFORM get_utility_charges CHANGING lr_main_trans[].
+
+  PERFORM calculate_account_balance
+    USING    i_account
+             et_fkkop[]
+             lr_main_trans[]
+    CHANGING lv_start_position
+             e_total
+             e_current
+             e_pastdue
+             e_future
+             e_unappliedcredits
+             e_utilbal
+             e_utilpastdue
+             e_totalutilbal
+             e_total_nofuture
+             e_ipbal
+             e_uadapastdue
+             e_care_ipbal.
+ENDFUNCTION.
+

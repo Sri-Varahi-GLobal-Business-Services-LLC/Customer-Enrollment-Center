@@ -1,0 +1,1275 @@
+*&---------------------------------------------------------------------*
+*& Report  ZDMBL_CARS_CHANGE_AMCG
+*&
+*&---------------------------------------------------------------------*
+* Name              : Compare Route Set MRU from SAP and T01 table     *
+*                     FUNCTION 15                                      *
+* Author            : PDshind1 - Prachi Shinde                         *
+* Date              : 12/21/2012                                       *
+* FRICE ID          : DM_ENH_700                                       *
+* Type of Program   : Report                                           *
+* Development Class : ZEM_ENH                                          *
+*----------------------------------------------------------------------*
+* Modification Log                Place latest at top :                *
+*----------------------------------------------------------------------*
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------*
+* PDshind1   12/21/2012      E2DK921894    E2DK922108      Initial     *
+*----------------------------------------------------------------------*
+* HShrivas   12/22/2014     POST-020     E2DK935654 Addition of Interval*
+*                                                  register,EDM Profile*
+*                                                  Allocation during   *
+*                                                  Cutover to OTA      *
+*&---------------------------------------------------------------------*
+
+REPORT  zdmbl_cars_change_amcg.
+
+##incl_ok
+INCLUDE <cntn01>.
+TABLES: etyp.
+*----------------------------------------------------------------------*
+*       T Y P E S  D E C L A R A T I O N
+*----------------------------------------------------------------------*
+
+TYPES: BEGIN OF ty_equi,
+         equnr TYPE equnr,      " Equipment Number
+         matnr TYPE matnr,      " Material (Device category)
+         SPARTE TYPE SPARTE,    " Division
+       END   OF ty_equi.
+
+TYPES: BEGIN OF ty_error,
+         zdevloc TYPE devloc,     " Device Location
+         zsernr  TYPE gernr,      " Serial Number
+         zequnr  TYPE equnr,      " Equipment Number
+         date    TYPE sy-datum,   " Date of Change,
+         error   TYPE string,     " Error Message,
+         keydate TYPE sy-datum,
+       END  OF ty_error.
+
+TYPES: tt_equi           TYPE STANDARD TABLE OF ty_equi.
+
+*----------------------------------------------------------------------*
+*      D A T A  D E C L A R A T I O N
+*----------------------------------------------------------------------*
+##needed
+DATA: i_error            TYPE STANDARD TABLE OF ty_error,         " Internal table for error records
+      i_final_error_data TYPE STANDARD TABLE OF ty_error,         " final internal table for error records
+      i_input            TYPE STANDARD TABLE OF ztdm_se_car_t02,  " Internal table for holding data from T02 table
+      i_validated_dloc   TYPE STANDARD TABLE OF ztdm_se_car_t02.  " Internal tabke for holding validated device locations
+
+##needed
+DATA: v_sp_log           TYPE ztuk_int_log.
+##needed
+DATA: o_err_handler      TYPE REF TO zcl_int_err_handler.
+
+*----------------------------------------------------------------------*
+*      S E L E C T I O N     S C R E E N
+*----------------------------------------------------------------------*
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
+
+PARAMETERS:
+  p_route TYPE ztdm_se_car_t04-zrtset NO-DISPLAY,                " Route Set
+  p_guid  TYPE guid_22 NO-DISPLAY,                             " UUID in compressed form
+  p_dguid TYPE guid_22 NO-DISPLAY.                             " UUID in compressed form
+PARAMETERS:
+  p_runid TYPE zrunid NO-DISPLAY,                              " Job Run ID
+  p_name  TYPE btcjob NO-DISPLAY,                              " Jobname
+  p_count TYPE btcjobcnt NO-DISPLAY,                           " Job count
+  p_last  TYPE boolean NO-DISPLAY,                             " Indicator of last job
+  p_final TYPE boolean NO-DISPLAY,                             " Last Variant indicator
+* p_div   TYPE sparte NO-DISPLAY,
+  p_tot   TYPE i NO-DISPLAY,
+  p_nocut TYPE i NO-DISPLAY.
+
+SELECT-OPTIONS: s_div FOR etyp-sparte.                         "Division
+SELECTION-SCREEN END OF BLOCK b1.
+
+*---------------------------------------------------------------------*
+*    S T A R T  O F  S E L E C T I O N                                *
+*---------------------------------------------------------------------*
+START-OF-SELECTION.
+* Import the ITAB dataset which should be processed by this particular
+* Child job from the cluster table.
+  PERFORM import_itab.
+
+  PERFORM change_amcg_switch.
+
+* Export the final downloadable data selected by this Child job to a
+* Cluster table with a unique GUID so that it can be retrieved in the
+* last Child job and download a file.
+  PERFORM export_itab.
+
+**---------------------------------------------------------------------*
+**    E N D  O F  S E L E C T I O N                                    *
+**---------------------------------------------------------------------*
+*END-OF-SELECTION.
+*
+* For the last Child job
+  IF p_last IS NOT INITIAL.
+* Check if all the child jobs are complete or not.
+    PERFORM check_all_complete.
+*
+* Retrieve the final datasets from the cluster table which were exported by
+* all child jobs after all the child jobs are complete and cumulate them.
+    PERFORM get_all_data.
+
+***   Build spool log
+    PERFORM build_spool_log.
+*
+    CREATE OBJECT o_err_handler.
+    o_err_handler->get_interface_details('DM_ENH_700').
+*
+    o_err_handler->spool_line_size = 200.
+    o_err_handler->spool_page_layout = 'X_65_200'.
+    o_err_handler->start_spool( ).
+*
+    PERFORM write_spool.
+*
+    PERFORM update_zbi_opt_out_table.
+*****End the Spool
+    o_err_handler->end_spool( CHANGING spool_log =  v_sp_log ).
+
+*--- Send mail to the SAP inbox of user who submitted this job
+* Added on 01/17/13
+    PERFORM send_email_to_sap.
+* Added on 01/17/13
+
+* Update T01, T04 and T05 tables
+    PERFORM data_update.
+  ENDIF.
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_ALL_COMPLETE
+*&---------------------------------------------------------------------*
+*       Check if all the child jobs are complete and have been closed
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM check_all_complete .
+
+  DATA : lswc_job    TYPE swc_object,
+         li_guid     TYPE STANDARD TABLE OF ztca_cs_edsintf,
+         lwa_guid    TYPE ztca_cs_edsintf,
+         lv_status   TYPE char20,
+         lv_key      TYPE char40,
+         lv_expected TYPE sy-tfill.
+
+  DO.
+    REFRESH li_guid.
+    SELECT *
+      FROM ztca_cs_edsintf
+      INTO TABLE li_guid
+      WHERE runid       = p_runid.
+    lv_expected = p_name+26(4).
+    DESCRIBE TABLE li_guid LINES sy-tfill.
+    IF lv_expected GT sy-tfill.
+      WAIT UP TO 2 SECONDS.
+    ELSE.
+      EXIT.
+    ENDIF.
+  ENDDO.
+
+  LOOP AT li_guid INTO lwa_guid.
+    CLEAR lv_key.
+
+* Skip loop pass for current job or else it will go into
+* an infinite loop
+    IF lwa_guid-runid    = p_runid AND
+       lwa_guid-jobname  = p_name  AND
+       lwa_guid-jobcount = p_count.
+      CONTINUE.
+    ENDIF.
+
+    DO.
+      CONCATENATE lwa_guid-jobname
+                  lwa_guid-jobcount
+           INTO lv_key
+           RESPECTING BLANKS.
+
+      swc_create_object lswc_job
+                        'BPJOB_SMAN'
+                        lv_key.
+
+      CLEAR lv_status.
+
+      ##fm_subrc_ok
+      swc_get_property lswc_job
+                       'State'
+                       lv_status.
+      IF lv_status EQ 'FINISHED' OR
+         lv_status EQ 'ABORTED'.
+        EXIT.
+      ENDIF.
+
+*--- Initialise the local variables
+      CLEAR : lv_key , lswc_job.
+    ENDDO.
+
+  ENDLOOP.
+
+ENDFORM.                    " CHECK_ALL_COMPLETE
+*
+*
+*
+*&---------------------------------------------------------------------*
+*&      Form  IMPORT_ITAB
+*&---------------------------------------------------------------------*
+*       Import the internal table from memory and delete the GUID
+*       from memory after importing.
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM import_itab .
+
+*--- Local work area declaration
+  DATA:lwa_guid   TYPE  ztca_cs_edsintf.
+
+*--- Initialise the internal table
+  REFRESH:i_input.
+* Import the data from Memoryand delete the Guid data from memory after importing.
+**this data has been exported in the Submit Program 'ZDMMRU_ROUTESET_MRU_VALIDATION'
+  IMPORT tab = i_input
+     FROM DATABASE ztdm_import_clst(ar)
+     ID p_guid.
+
+****Once the data is imported delete the data from Cluster Table
+  DELETE FROM DATABASE ztdm_import_clst(ar)
+                    ID p_guid.
+
+  lwa_guid-runid    = p_runid.
+  lwa_guid-jobname  = p_name.
+  lwa_guid-jobcount = p_count.
+  lwa_guid-uname    = sy-uname.
+  lwa_guid-udate    = sy-datum.
+  lwa_guid-utime    = sy-uzeit.
+
+  MODIFY ztca_cs_edsintf FROM lwa_guid.
+  COMMIT WORK AND WAIT.
+ENDFORM.                    " IMPORT_ITAB
+*
+*
+*&---------------------------------------------------------------------*
+*&      Form  EXPORT_ITAB
+*&---------------------------------------------------------------------*
+*       Export the error log table to memory
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM export_itab .
+
+  DATA: lwa_guid   TYPE  ztca_cs_edsintf.
+
+  IF i_error IS NOT INITIAL.
+
+    lwa_guid-runid    = p_runid.
+    lwa_guid-jobname  = p_name.
+    lwa_guid-jobcount = p_count.
+    lwa_guid-uname    = sy-uname.
+    lwa_guid-udate    = sy-datum.
+    lwa_guid-utime    = sy-uzeit.
+
+    CALL FUNCTION 'GUID_CREATE' ##fm_olded
+      IMPORTING
+        ev_guid_22 = lwa_guid-data_guid.
+
+****Exporting the error log table to memory
+***we will import this in final job thread for spool and
+***other process
+    EXPORT tab = i_error
+       TO DATABASE ztdm_import_clst(ar)
+       ID lwa_guid-data_guid.
+
+    MODIFY ztca_cs_edsintf FROM lwa_guid.
+    COMMIT WORK AND WAIT.
+
+  ENDIF.
+
+ENDFORM.                    " EXPORT_ITAB
+*
+*&---------------------------------------------------------------------*
+*&      Form  GET_ALL_DATA
+*&---------------------------------------------------------------------*
+*       Fetch required data into the final internal table and populate
+*       the final error table
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM get_all_data .
+
+*--- Local internal tables declaration
+  DATA: li_final TYPE STANDARD TABLE OF ty_error,
+        li_guid  TYPE STANDARD TABLE OF ztca_cs_edsintf.
+
+*--- Local work areas declaration
+  DATA: lwa_guid TYPE  ztca_cs_edsintf.
+
+*--- Initialize the Internal table
+  REFRESH: i_validated_dloc.
+
+* Import the data and delete the Guid.
+  IMPORT tab = i_validated_dloc
+     FROM DATABASE ztdm_import_clst(ar)
+     ID p_dguid.
+
+  DELETE FROM DATABASE ztdm_import_clst(ar)
+                    ID p_dguid.
+
+  SELECT *
+    FROM ztca_cs_edsintf
+    INTO TABLE li_guid
+   WHERE runid = p_runid.
+
+  LOOP AT li_guid INTO lwa_guid.
+
+    REFRESH li_final.
+
+*   Get actual data
+    IMPORT tab = li_final
+    FROM DATABASE ztdm_import_clst(ar)
+    ID lwa_guid-data_guid.
+
+    DELETE FROM DATABASE ztdm_import_clst(ar)
+                      ID lwa_guid-data_guid.
+
+
+    APPEND LINES OF li_final TO i_final_error_data.
+
+  ENDLOOP.
+
+ENDFORM.                    " GET_ALL_DATA
+*
+**&---------------------------------------------------------------------*
+**&      Form  BUILD_SPOOL_LOG
+**&---------------------------------------------------------------------*
+**       Pass success data to the spool
+**----------------------------------------------------------------------*
+**  -->  p1        text
+**  <--  p2        text
+**----------------------------------------------------------------------*
+FORM build_spool_log.
+  v_sp_log-objid     = 'DM_ENH_700'(021).
+  v_sp_log-rdate     = sy-datum.
+  v_sp_log-rtime     = sy-uzeit.
+  v_sp_log-spool     = sy-spono.
+  v_sp_log-aedat     = sy-datum.
+  v_sp_log-aenam     = sy-uname.
+  v_sp_log-total_luw = 1.
+  v_sp_log-mstat     = 'S'.
+  v_sp_log-succ_luw  = 1.
+*
+ENDFORM.                    " BUILD_SPOOL_LOG
+**&---------------------------------------------------------------------*
+**&      Form  WRITE_SPOOL
+**&---------------------------------------------------------------------*
+**       Print the error records via the spool
+**----------------------------------------------------------------------*
+**  -->  p1        text
+**  <--  p2        text
+**----------------------------------------------------------------------*
+FORM write_spool .
+
+*--- Local variables declaration
+  DATA: lv_total  TYPE i,
+        lv_sucess TYPE i,
+        lv_error  TYPE i.
+
+*--- Local work areas declaration
+  DATA: lwa_error_data LIKE LINE OF i_final_error_data.
+
+  DESCRIBE TABLE i_validated_dloc LINES lv_total.
+
+  DESCRIBE TABLE i_final_error_data LINES lv_error.
+
+  lv_sucess = lv_total - lv_error.
+
+  WRITE:/2 'Routeset Selected for Cutover'(015), 60 p_route.
+
+  WRITE:/2  'Total Validated Device Locations in the Routeset'(020), 60 p_tot.
+
+  WRITE:/2 'Total Device Locations that do not need AMCG Change'(019), 60 p_nocut.
+
+  SKIP 2.
+
+  WRITE:/2 'Total Device Locations that need AMCG Change'(001), 60 lv_total.
+
+  WRITE:/2 'Sucessfully Switched Device Locations to AMCG'(002), 60 lv_sucess.
+
+  WRITE:/2 'Total Error Records'(003), 60 lv_error.
+
+
+  SKIP 1.
+
+  IF i_final_error_data IS NOT INITIAL.
+    WRITE:/ sy-uline.
+    WRITE:/2 'Error Records with reasons as below'(004).
+    WRITE:/ sy-uline.
+    WRITE:/2 'Device Location'(005),
+          20 'Serial Number'(006),
+          38 'Equipment'(007),
+          60 'Key Date',
+          72 'Error'(008).
+
+    LOOP AT i_final_error_data INTO lwa_error_data.
+
+      WRITE:/2   lwa_error_data-zdevloc," Device Location
+             20  lwa_error_data-zsernr, " Serial Number
+             38  lwa_error_data-zequnr, " Equipment Number
+             60  lwa_error_data-keydate, " Key Date
+             72  lwa_error_data-error.  " Error Message,
+
+    ENDLOOP.
+  ENDIF.
+
+ENDFORM.                    " WRITE_SPOOL
+*&---------------------------------------------------------------------*
+*&      Form  CHAGE_AMCG_SWITCH
+*&---------------------------------------------------------------------*
+*       Change the value of the AMCG field by calling the FM
+*       ZDMDL_DEVICE_AMCG_CHANGE
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM change_amcg_switch.
+
+*  DATA: lv_flag TYPE c.
+*  DO.
+*    IF lv_flag EQ 'X'.
+*      EXIT.
+*    ENDIF.
+*  ENDDO.
+
+*--- Local internal tables declaration
+  DATA: li_car_t06 TYPE STANDARD TABLE OF ztdm_se_car_t06,
+        li_equi    TYPE STANDARD TABLE OF ty_equi.
+
+*--- Local work areas declaration
+  DATA: lwa_error   TYPE ty_error,
+        lwa_input   TYPE ztdm_se_car_t02,
+        lwa_eabl    TYPE eabl,
+        lwa_car_t06 TYPE ztdm_se_car_t06,
+        lwa_equi    LIKE LINE OF li_equi.
+
+*--- Local variables declaration
+  DATA: lv_error    TYPE string,
+        lf_error    TYPE c,
+        lv_key_date TYPE stichtag.
+
+  DATA: li_amcg_data  TYPE STANDARD TABLE OF ztdm_se_car_t07,
+        lwa_amcg_data TYPE ztdm_se_car_t07.
+
+  DATA: li_etdz     TYPE STANDARD TABLE OF etdz,
+        lwa_etdz    TYPE etdz,
+        lv_tabix    TYPE sy-tabix,
+        lv_zwnummer TYPE eabl-zwnummer.
+
+  DATA: li_egerh TYPE STANDARD TABLE OF egerh,
+        li_eastl TYPE STANDARD TABLE OF eastl,
+        li_easts TYPE STANDARD TABLE OF easts.
+
+******Begin of Change by Har Mayank for Post cutover to IB 01/19/2015
+  DATA: lv_anlage                TYPE anlage,
+        lwa_easts                TYPE easts,
+        lv_car_t09_cars_eligible TYPE boolean,
+        lit_return               TYPE bapiret2_t,
+        lwa_return               TYPE bapiret2,
+        lv_tariftyp              TYPE tariftyp_anl,
+        lwa_egerh                TYPE egerh,
+        lwa_eablg                TYPE eablg,
+        ls_egerh                 TYPE egerh,
+        ls_eastl                 TYPE eastl,
+        lt_eablg                 TYPE STANDARD TABLE OF eablg,
+        lit_billinst             TYPE STANDARD TABLE OF ztcc_bilins_elec.
+******End of Change by Har Mayank for Post cutover to IB 01/19/2015
+
+  IF i_input[] IS NOT INITIAL.
+
+    PERFORM fetch_device_category CHANGING li_equi.
+
+    SELECT *
+      FROM ztdm_se_car_t07
+      INTO TABLE li_amcg_data.
+
+****Begin of Change for HPQC Defect 3981 by VARAO
+****Get the Logical Device Numbers for all the Equipments
+    SELECT *
+      FROM egerh
+      INTO TABLE li_egerh
+       FOR ALL ENTRIES IN i_input
+     WHERE equnr = i_input-zequnr
+       AND bis  =  '99991231'
+       AND ab   LE sy-datum.
+
+***For all the Logical device numbers fetched from EGERH...Get the Installation Data
+    IF li_egerh[] IS NOT INITIAL.
+      SELECT *
+        FROM eastl
+        INTO TABLE li_eastl
+         FOR ALL ENTRIES IN li_egerh
+        WHERE logiknr = li_egerh-logiknr
+          AND bis  =  '99991231'
+          AND ab   LE sy-datum.
+    ENDIF.
+
+    IF li_eastl IS NOT INITIAL.
+****For all the Instalations get the Billing Relavant data
+***This table will have all registers data
+      SELECT *
+        FROM easts
+        INTO TABLE li_easts
+         FOR ALL ENTRIES IN  li_eastl
+       WHERE anlage = li_eastl-anlage
+         AND bis =  '99991231'
+         AND ab   LE sy-datum.
+    ENDIF.
+
+****Delete all registers that are not relevant to billing
+    DELETE li_easts WHERE zwnabr EQ 'X'.
+
+    SORT li_easts BY logikzw.
+
+****End of Change for HPQC Defect 3981 by VARAO
+
+    SELECT *
+     FROM etdz
+      INTO TABLE li_etdz
+      FOR ALL ENTRIES IN i_input
+    WHERE equnr = i_input-zequnr
+      AND bis = '99991231'
+       AND ab   LE sy-datum.
+
+****Delete all registers which are not read relavant
+    DELETE  li_etdz WHERE nablesen EQ 'X'.
+
+    SORT li_etdz BY equnr logikzw.
+
+****Begin of Change for HPQC Defect 3981 by VARAO
+***With the below logic, we are deleting registers from LI_ETDZ table
+***all the registers which are only bill relavant
+    LOOP AT li_etdz INTO lwa_etdz.
+      lv_tabix = sy-tabix.
+      READ TABLE li_easts
+      WITH KEY logikzw = lwa_etdz-logikzw
+                                   BINARY SEARCH
+                                   TRANSPORTING NO FIELDS.
+      IF sy-subrc NE 0.
+        DELETE li_etdz INDEX lv_tabix.
+      ENDIF.
+      CLEAR:lwa_etdz,lv_tabix.
+    ENDLOOP.
+
+****End of Change for HPQC Defect 3981 by VARAO
+
+***By now we have all Bill Relavant Register data in li_etdz.
+
+    SORT: i_input BY zdevloc zsernr zequnr.
+    LOOP AT i_input INTO lwa_input.
+
+*--- Initialize the local work areas and variables
+      CLEAR: lwa_eablg,lwa_eabl,lv_error,lf_error,lwa_etdz,lv_zwnummer,lv_key_date.
+
+***Read the first read relavant register
+      CLEAR: lwa_etdz.
+      READ TABLE li_etdz INTO lwa_etdz WITH KEY equnr  = lwa_input-zequnr
+                                                zwnummer = '001'.
+
+      IF sy-subrc EQ 0.
+        lv_zwnummer = lwa_etdz-zwnummer.
+      ELSE.
+        READ TABLE li_etdz INTO lwa_etdz WITH KEY equnr  = lwa_input-zequnr.
+        IF sy-subrc EQ 0.
+          lv_zwnummer = lwa_etdz-zwnummer.
+        ENDIF.
+      ENDIF.
+
+****Get the Last Meter Read document date
+      CALL FUNCTION 'ISU_DETERM_LAST_EABL_FOR_VALID'
+        EXPORTING
+          x_equnr      = lwa_input-zequnr
+          x_zwnummer   = lv_zwnummer
+          x_adat       = sy-datum
+          x_atim       = '2359'
+          x_adatreal   = sy-datum
+          x_atimreal   = '2359'
+        IMPORTING
+          y_eabl_prev  = lwa_eabl
+        EXCEPTIONS
+          system_error = 1
+          OTHERS       = 2.
+      IF sy-subrc <> 0.
+        lv_error = 'Unable to read last meter read document date'(009).
+        lf_error = abap_true.
+      ELSEIF  lwa_eabl-adatsoll IS INITIAL.
+        lv_error = 'Unable to read last meter read document date'(009).
+        lf_error = abap_true.
+      ELSE.
+
+****Begin of Change for HPQC Defect 3981
+*        lv_key_date = lwa_eabl-adatsoll + 1.
+*        lv_key_date = lwa_eabl-adat + 1. "change by ssinha
+
+
+****End of Change for HPQC Defect 3981
+
+******Begin of Change by Har Mayank for Post cutover to IB 01/19/2015
+* start of change by ssinha
+*        SELECT SINGLE *
+*          INTO lwa_eablg
+*          FROM eablg
+*          WHERE ablbelnr = lwa_eabl-ablbelnr AND
+*        ablesgr  = '01'.
+        SELECT * FROM eablg INTO TABLE lt_eablg WHERE ablbelnr = lwa_eabl-ablbelnr. "ssinha
+        IF sy-subrc IS INITIAL.
+******End of Change by Har Mayank for Post cutover to IB 01/19/2015
+          IF lt_eablg IS NOT INITIAL.
+            READ TABLE  lt_eablg INTO lwa_eablg WITH KEY ablesgr = '21'.
+            IF sy-subrc <> 0.
+              DELETE lt_eablg WHERE anlage = space.
+              READ TABLE lt_eablg INTO lwa_eablg INDEX 1.
+              IF sy-subrc = 0.
+                lv_key_date = lwa_eabl-adat + 1. "change by ssinha
+              ENDIF.
+            ELSE.
+              lv_key_date = lwa_eabl-adat .
+            ENDIF.
+          ENDIF.
+* End of change by ssinha
+*--- Initialise the work area
+          CLEAR: lwa_equi.
+          READ TABLE li_equi INTO lwa_equi WITH KEY  equnr = lwa_input-zequnr.
+
+******Begin of Change by Har Mayank for Post cutover to IB 01/19/2015
+          CLEAR lv_anlage.
+          IF lwa_eablg-anlage IS NOT INITIAL.
+            lv_anlage = lwa_eablg-anlage.
+          ELSE.
+            CLEAR: ls_egerh.
+            SELECT SINGLE * FROM  egerh
+                            INTO  ls_egerh
+                            WHERE equnr = lwa_input-zequnr AND
+                                    ab <= lv_key_date      AND
+                                   bis >= lv_key_date.
+            IF sy-subrc EQ 0.
+              CLEAR: ls_eastl.
+              SELECT SINGLE * FROM  eastl
+                              INTO  ls_eastl
+                              WHERE bis     >= lv_key_date AND
+                                     ab     <= lv_key_date AND
+                                    logiknr =  ls_eastl-logiknr.
+              IF sy-subrc EQ 0.
+                lv_anlage = ls_eastl-anlage.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+
+          CLEAR: lv_tariftyp.
+          SELECT SINGLE tariftyp
+                 INTO lv_tariftyp
+                 FROM v_eanl
+                 WHERE anlage EQ lv_anlage AND
+                       bis GE lv_key_date AND
+                       ab  LE lv_key_date.
+
+          IF sy-subrc IS INITIAL.
+            CLEAR: lv_car_t09_cars_eligible.
+            SELECT SINGLE cars_eligible
+                  FROM ztdm_se_car_t09
+                  INTO lv_car_t09_cars_eligible
+                  WHERE tariftyp = lv_tariftyp.
+            IF lv_car_t09_cars_eligible = 'X'.
+
+              CLEAR lwa_amcg_data.
+              READ TABLE li_amcg_data INTO lwa_amcg_data WITH KEY gertyp = lwa_equi-matnr.
+              IF sy-subrc NE 0.
+                lf_error = abap_true.
+                CONCATENATE 'AMCG Value not found in table ZTDM_SE_CAR_T07 for Device category'(010)
+                            lwa_equi-matnr INTO lv_error  SEPARATED BY space.
+              ELSE.
+                READ TABLE li_egerh INTO lwa_egerh WITH KEY equnr = lwa_equi-equnr. "INDEX 1.
+                CLEAR : lit_billinst,
+                        lit_return.
+                SELECT *
+                    FROM ztcc_bilins_elec
+                    INTO TABLE lit_billinst
+                    WHERE register_group = lwa_egerh-zwgruppe AND
+                          rate_category  = lv_tariftyp AND
+                          ( rate_fact_group = 'INTERVAL' OR
+                            rate_fact_group = 'INTERVAL60' )
+                        AND int_billing EQ abap_true.
+
+* Add by Pgoyal1:DMND0051840: 18/01/2017: ECDK976149
+                IF ( sy-subrc IS INITIAL OR lv_tariftyp+0(2) = 'GS' OR lv_tariftyp+0(2) = 'GP' ) AND lwa_equi-sparte = '01'.
+* End by Pgoyal1:DMND0051840: 18/01/2017: ECDK976149
+
+                  REFRESH: lit_return[].
+                  CALL FUNCTION 'Z_REG_AMCG_PROFILE_UPDATE'
+                    EXPORTING
+                      iv_sernr            = lwa_input-zsernr
+                      iv_matnr            = lwa_equi-matnr
+                      iv_installation     = lv_anlage
+                      iv_devloc           = lwa_input-zdevloc
+                      iv_ami_amcg_cap_grp = lwa_amcg_data-amcg_cap_grp
+                      iv_actvt_date       = lv_key_date
+                      iv_devmodif         = abap_true
+                    IMPORTING
+                      et_return           = lit_return.
+
+                  READ TABLE lit_return INTO lwa_return WITH KEY type = 'E'.
+                  IF sy-subrc IS INITIAL.
+                    CLEAR : lv_error.
+                    lf_error            = abap_true.
+                    lv_error            = lwa_return-message.
+                  ENDIF.
+                ELSE.
+                  CALL FUNCTION 'ZDMDL_DEVICE_AMCG_CHANGE'
+                    EXPORTING
+                      im_serial_number   = lwa_input-zsernr
+                      im_key_date        = lv_key_date
+                      im_device_category = lwa_equi-matnr
+                      im_amcg            = lwa_amcg_data-amcg_cap_grp
+                    IMPORTING
+                      ex_message         = lv_error
+                    EXCEPTIONS
+                      error_exists       = 1
+                      OTHERS             = 2.
+
+                  IF sy-subrc NE 0.
+                    lf_error = abap_true.
+                  ENDIF.
+                ENDIF.
+              ENDIF.
+            ELSE.
+*              CONCATENATE 'Rate Category value not found in table ZTDM_SE_CAR_T09 for the Installation'(103)
+*                                        lwa_equi-matnr INTO lv_error  SEPARATED BY space.
+              CONCATENATE  'Rate category'(105) lv_tariftyp 'not configured for OTA billing in the ZTDM_SE_CAR_T09 table'(106)
+                           INTO lv_error  SEPARATED BY space.
+              lf_error = abap_true.
+
+            ENDIF.
+          ELSE.
+            CONCATENATE 'Valid Rate Category Missing for the validation in table ZTCC_BILINS_ELEC for Device Category'(101)
+                      lwa_equi-matnr INTO lv_error  SEPARATED BY space.
+            lf_error = abap_true.
+
+
+          ENDIF.
+        ELSE.
+          lv_error = text-104.
+          lf_error = abap_true.
+        ENDIF.
+      ENDIF.
+******End of Change by Har Mayank for Post cutover to IB 01/19/2015
+
+
+      IF lf_error  EQ abap_true.
+        lwa_error-zdevloc       = lwa_input-zdevloc.
+        lwa_error-zsernr        = lwa_input-zsernr.
+        lwa_error-zequnr        = lwa_input-zequnr.
+        lwa_error-error         = lv_error.
+        lwa_error-keydate       = lv_key_date.
+        APPEND lwa_error TO i_error.
+        CLEAR lwa_error.
+      ELSE.
+        lwa_car_t06-zcardevloc  =  lwa_input-zdevloc.
+        lwa_car_t06-zcarsdlflag = 'X'.
+        lwa_car_t06-zcarsdldate = sy-datum.
+        lwa_car_t06-zcarsbatch  = p_name.
+        lwa_car_t06-zsernr = lwa_input-zsernr.
+        APPEND  lwa_car_t06 TO li_car_t06.
+        CLEAR lwa_car_t06.
+      ENDIF.
+
+*--- Initialise the work area
+      CLEAR : lwa_input,
+              lwa_equi.
+
+* Begin of R4C Changes by SKOTHURI
+      CLEAR: lv_error,
+             lwa_return.
+      REFRESH: lit_return.
+      CLEAR: lwa_eablg,lwa_eabl,lv_error,lwa_error,lf_error,lwa_etdz,lv_zwnummer,lv_key_date.
+* End of R4C Changes by SKOTHURI
+    ENDLOOP.
+
+    IF li_car_t06 IS NOT INITIAL.
+      MODIFY ztdm_se_car_t06 FROM TABLE li_car_t06.
+      IF sy-subrc EQ 0.
+        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'.
+      ENDIF.
+    ENDIF.
+
+  ENDIF.
+
+ENDFORM.                    " CHAGE_AMCG_SWITCH
+*&---------------------------------------------------------------------*
+*&      Form  FETCH_DEVICE_CATEGORY
+*&---------------------------------------------------------------------*
+*       Fetch the device category from table EQUI based on the
+*       equipment number
+*----------------------------------------------------------------------*
+*      <--P_LI_EQUI  text
+*----------------------------------------------------------------------*
+FORM fetch_device_category  CHANGING p_li_equi TYPE tt_equi.
+
+  SORT i_input BY zequnr.
+
+  SELECT
+    equnr
+    matnr
+    sparte
+    FROM equi INTO TABLE p_li_equi
+    FOR ALL ENTRIES IN i_input
+    WHERE
+    equnr = i_input-zequnr.
+
+ENDFORM.                    " FETCH_DEVICE_CATEGORY
+*&---------------------------------------------------------------------*
+*&      Form  DATA_UPDATE
+*&      Form  DATA_UPDATE
+*&---------------------------------------------------------------------*
+*       Update tables T04 and T05 for the Route Sets whose AMCG values
+*       have been changed to Cutover Completed
+*----------------------------------------------------------------------*
+FORM data_update .
+
+  TYPES: BEGIN OF lty_eger,
+           equnr        TYPE equnr,             "Equipment Number
+           bis          TYPE biszeitsch,        "Date at Which Time Slice Expires
+           devloc       TYPE devloc,            "Device Location
+           amcg_cap_grp TYPE e_ami_ams_cap_grp, "AMCG
+         END OF lty_eger.
+
+  DATA: li_t01      TYPE STANDARD TABLE OF ztdm_se_car_t01,
+        li_t05      TYPE STANDARD TABLE OF ztdm_se_car_t05,
+        li_temp_t05 TYPE STANDARD TABLE OF ztdm_se_car_t05,
+        li_t01_temp TYPE STANDARD TABLE OF ztdm_se_car_t01,
+        li_eger     TYPE STANDARD TABLE OF lty_eger.
+
+  DATA: lwa_route_data TYPE ztdm_se_car_t04,
+        lwa_t05        TYPE ztdm_se_car_t05,
+        lwa_t01        TYPE ztdm_se_car_t01,
+        lwa_t01_temp   LIKE LINE OF li_t01_temp,
+        lwa_eger       LIKE LINE OF li_eger.
+
+  DATA: lv_tabix       TYPE sy-tabix.
+
+  DATA:lt_opt_out  TYPE STANDARD TABLE OF zbi_opt_out,
+       lwa_opt_out TYPE zbi_opt_out,
+       lv_index    TYPE sy-tabix.
+
+*-- Fetching data from T04 table
+  SELECT SINGLE * FROM ztdm_se_car_t04 INTO lwa_route_data
+    WHERE
+    zrtset = p_route.
+
+  IF sy-subrc IS INITIAL.
+    MOVE:
+    'CUTC'    TO lwa_route_data-zrtsetstat,
+    sy-datum  TO lwa_route_data-zrtsetcut.
+
+*-- Updating data in T04 table
+    MODIFY ztdm_se_car_t04 FROM lwa_route_data.
+    IF sy-subrc IS INITIAL.
+      COMMIT WORK AND WAIT.
+    ENDIF.
+
+  ENDIF.
+
+****Get the MRU data for the Devices for which AMCG swithing is complete
+  SELECT *
+    FROM ztdm_se_car_t01
+    INTO TABLE li_t01
+     FOR ALL ENTRIES IN i_validated_dloc
+   WHERE zcardevloc =  i_validated_dloc-zdevloc
+     AND zcarequnr  = i_validated_dloc-zequnr.
+  IF sy-subrc EQ 0.
+**Copy the data to a temp table for T01 update based on V_EGER
+    APPEND LINES OF li_t01 TO li_t01_temp.
+
+***Get the Unique MRU number from the above data
+    SORT li_t01 BY zcarableinh.
+    DELETE ADJACENT DUPLICATES FROM li_t01 COMPARING zcarableinh.
+
+***Fetch the MRU data from T05 table
+    SELECT *
+      FROM ztdm_se_car_t05
+      INTO TABLE li_t05
+       FOR ALL ENTRIES IN li_t01
+      WHERE zcarmru = li_t01-zcarableinh.
+    IF sy-subrc EQ 0.
+      SORT li_t05 BY zcarmru.
+    ENDIF.
+***Check if every MRU has the cutover comeplete indicator already. If exists we dont need to change
+***If not we have to change it to 'X' with current date and Job Name
+    LOOP AT li_t01 INTO lwa_t01.
+      READ TABLE li_t05 INTO lwa_t05 WITH KEY zcarmru = lwa_t01-zcarableinh.
+      IF sy-subrc EQ 0.
+        IF lwa_t05-zcarsmruflag IS INITIAL.
+          lwa_t05-zcarsmruflag = 'X'.
+          lwa_t05-zcarsmrudate = sy-datum.
+          lwa_t05-zcarsbatch = p_name.
+          APPEND lwa_t05 TO li_temp_t05.
+          CLEAR lwa_t05.
+        ENDIF.
+      ELSE.
+        lwa_t05-zcarmru = lwa_t01-zcarableinh.
+        lwa_t05-zcarsattgt = '0.00'.
+        lwa_t05-zcarsmruflag = 'X'.
+        lwa_t05-zcarsatdate = sy-datum.
+        lwa_t05-zcarsattime = sy-uzeit.
+        lwa_t05-zcarsatuid = sy-uname.
+        lwa_t05-zcarsmrudate = sy-datum.
+        lwa_t05-zcarsbatch = p_name.
+        APPEND lwa_t05 TO li_temp_t05.
+        CLEAR lwa_t05.
+      ENDIF.
+    ENDLOOP.
+***If the MRU's have to be updated with CARS Indicator, then update the table
+    IF li_temp_t05 IS NOT INITIAL.
+      MODIFY ztdm_se_car_t05 FROM TABLE li_temp_t05.
+      COMMIT WORK AND WAIT.
+    ENDIF.
+
+***Select data from V_EGER table
+    SORT li_t01_temp BY zcarequnr zcardevloc.
+
+    SELECT
+    equnr                            " Equipment Number
+    bis                              " Date at Which a Time Slice Expires
+    devloc                           " Device Location
+    amcg_cap_grp                     " Capability Group of Advanced Metering System
+    INTO TABLE li_eger
+    FROM v_eger
+    FOR ALL ENTRIES IN li_t01_temp
+    WHERE
+    equnr        EQ li_t01_temp-zcarequnr  AND    " Equipment number
+    bis          EQ '99991231'             AND
+    devloc       EQ li_t01_temp-zcardevloc.       " Device location
+
+    IF sy-subrc IS INITIAL.
+
+      SORT li_eger BY equnr devloc.
+
+      LOOP AT li_t01_temp INTO lwa_t01_temp.
+
+        MOVE sy-tabix TO lv_tabix.
+
+        READ TABLE li_eger INTO lwa_eger
+        WITH KEY
+        equnr  = lwa_t01_temp-zcarequnr
+        devloc = lwa_t01_temp-zcardevloc
+        BINARY SEARCH.
+
+        IF sy-subrc IS INITIAL.
+
+          MOVE lwa_eger-amcg_cap_grp TO lwa_t01_temp-zcaramcg_cap_grp.
+
+          MODIFY li_t01_temp FROM lwa_t01_temp INDEX lv_tabix TRANSPORTING zcaramcg_cap_grp.
+
+        ENDIF.
+
+        CLEAR: lwa_t01_temp, lwa_eger.
+
+      ENDLOOP.
+
+      IF li_t01_temp IS NOT INITIAL.
+        MODIFY ztdm_se_car_t01 FROM TABLE li_t01_temp.
+        COMMIT WORK AND WAIT.
+      ENDIF.
+
+
+    ENDIF.
+
+  ENDIF.
+
+****Update T04 one more time again just in case as the status is critical for next pass
+*-- Fetching data from T04 table
+  CLEAR lwa_route_data.
+  SELECT SINGLE * FROM ztdm_se_car_t04 INTO lwa_route_data
+    WHERE
+    zrtset = p_route.
+
+  IF sy-subrc IS INITIAL.
+    MOVE:
+    'CUTC'    TO lwa_route_data-zrtsetstat,
+    sy-datum  TO lwa_route_data-zrtsetcut.
+
+*-- Updating data in T04 table
+    MODIFY ztdm_se_car_t04 FROM lwa_route_data.
+    IF sy-subrc IS INITIAL.
+      COMMIT WORK AND WAIT.
+    ENDIF.
+
+  ENDIF.
+
+ENDFORM.                    " DATA_UPDATE
+*&---------------------------------------------------------------------*
+*&      Form  SEND_EMAIL_TO_SAP
+*&---------------------------------------------------------------------*
+* Send mail to the SAP inbox of user who submitted this job
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM send_email_to_sap .
+
+  DATA: maildata TYPE sodocchgi1,
+        mailpack TYPE STANDARD TABLE OF sopcklsti1,
+        mailbin  TYPE STANDARD TABLE OF solisti1,
+        mailtxt  TYPE STANDARD TABLE OF solisti1,
+        mailrec  TYPE STANDARD TABLE OF somlreci1,
+        pdf      TYPE STANDARD TABLE OF tline.
+
+  DATA: l_wa_mailpack TYPE sopcklsti1,
+        l_wa_mailtxt  TYPE solisti1,
+        l_wa_mailrec  TYPE somlreci1,
+        tab_lines     TYPE i,
+        lv_spono      TYPE tsp01-rqident,
+        lv_char_spono TYPE string.
+
+  CLEAR: l_wa_mailpack, l_wa_mailtxt, l_wa_mailrec.
+
+  REFRESH: mailpack, mailbin, mailtxt, mailrec.
+
+  MOVE  sy-spono TO : lv_spono, lv_char_spono.
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING
+      input  = lv_char_spono
+    IMPORTING
+      output = lv_char_spono.
+
+* Creation of the document to be sent
+* Mail Subject
+  CONCATENATE 'Change AMCG Summary'(011) 'for spool #'(012) lv_char_spono INTO maildata-obj_descr
+  SEPARATED BY space.
+
+* Mail Contents
+  l_wa_mailtxt-line = 'Please click on an attachement to know more details'(013).
+  APPEND l_wa_mailtxt TO mailtxt.
+
+  DESCRIBE TABLE mailtxt LINES tab_lines.
+  READ TABLE mailtxt INTO l_wa_mailtxt INDEX tab_lines.
+  maildata-doc_size = ( tab_lines - 1 ) * 255 + strlen( l_wa_mailtxt ).
+
+
+  CALL FUNCTION 'CONVERT_ABAPSPOOLJOB_2_PDF'
+    EXPORTING
+      src_spoolid = lv_spono
+    TABLES
+      pdf         = pdf.
+
+  CALL FUNCTION 'QCE1_CONVERT'
+    TABLES
+      t_source_tab = pdf
+      t_target_tab = mailbin.
+
+*Describe the body of the message
+  l_wa_mailpack-transf_bin = space.
+  l_wa_mailpack-head_start = 1.
+  l_wa_mailpack-head_num = 0.
+  l_wa_mailpack-body_start = 1.
+  l_wa_mailpack-body_num = tab_lines.
+  l_wa_mailpack-doc_type = 'RAW'.
+  APPEND l_wa_mailpack TO mailpack.
+  CLEAR:l_wa_mailpack.
+
+*Create attachment notification
+  CLEAR: tab_lines.
+  DESCRIBE TABLE mailbin LINES tab_lines.
+  l_wa_mailpack-transf_bin = 'X'.
+  l_wa_mailpack-head_start = 1.
+  l_wa_mailpack-head_num = 1.
+  l_wa_mailpack-body_start = 1.
+  l_wa_mailpack-body_num = tab_lines.
+  CONCATENATE 'Generated File for Spool#'(014) lv_char_spono INTO l_wa_mailpack-obj_descr
+  SEPARATED BY space.
+  l_wa_mailpack-doc_type = 'PDF'.
+  l_wa_mailpack-doc_size = tab_lines * 255.
+  APPEND l_wa_mailpack TO mailpack.
+  CLEAR:l_wa_mailpack.
+
+* Set recipient - email address here!!!
+  l_wa_mailrec-receiver = sy-uname.
+  l_wa_mailrec-rec_type = 'B'.
+  l_wa_mailrec-express = 'X'.
+  APPEND l_wa_mailrec TO mailrec.
+
+  ##fm_subrc_ok
+* Sending the document
+  CALL FUNCTION 'SO_NEW_DOCUMENT_ATT_SEND_API1'
+    EXPORTING
+      document_data              = maildata
+      put_in_outbox              = ' '
+      commit_work                = 'X'
+    TABLES
+      packing_list               = mailpack
+      contents_bin               = mailbin
+      contents_txt               = mailtxt
+      receivers                  = mailrec
+    EXCEPTIONS
+      too_many_receivers         = 1
+      document_not_sent          = 2
+      operation_no_authorization = 4
+      OTHERS                     = 99.
+
+ENDFORM.                    " SEND_EMAIL_TO_SAP
+*&---------------------------------------------------------------------*
+*&      Form  UPDATE_ZBI_OPT_OUT_TABLE
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM update_zbi_opt_out_table.
+
+  TYPES: BEGIN OF lty_error_opt,
+           message TYPE char255,
+         END OF lty_error_opt.
+
+  DATA: li_t03     TYPE STANDARD TABLE OF ztdm_se_car_t03,
+        li_t01     TYPE STANDARD TABLE OF ztdm_se_car_t01,
+        lwa_t01    TYPE ztdm_se_car_t01,
+        lv_count   TYPE i,
+        lv_opt_out TYPE char1.
+
+  DATA: li_error_opt  TYPE STANDARD TABLE OF lty_error_opt,
+        li_opt_out    TYPE STANDARD TABLE OF zbi_opt_out,
+        lwa_opt_out   TYPE zbi_opt_out,
+        lwa_error_opt TYPE lty_error_opt,
+        lv_err_cnt    TYPE i,
+        lv_succ_cnt   TYPE i,
+        lv_index      TYPE sy-tabix.
+
+  CLEAR:li_t03[],li_t01[],li_error_opt[],li_opt_out[],lwa_t01,lv_count,lv_opt_out,
+        lwa_opt_out,lv_err_cnt,lv_succ_cnt,lv_index.
+
+  WRITE: sy-uline.
+
+  WRITE:/28 'Update Billing Opt Out Table Summary'(017).
+
+  SKIP 1.
+
+  SELECT COUNT(*)
+      FROM tvarvc
+      WHERE name = text-t02
+        AND low  = abap_true.
+  IF sy-subrc EQ 0.
+    lv_opt_out = abap_true.
+  ELSE.
+    WRITE:/2 'TVARVC Entry Z_OPT_OUT_BILLING is not set for billing update'.
+    WRITE:/2 'ZBI_OPT_OUT table will not updated with cutover date if Z_OPT_OUT_BILLING is not set to X'.
+  ENDIF.
+
+  IF lv_opt_out EQ abap_true.
+    REFRESH li_t03.
+    CLEAR lv_count.
+    SELECT *
+      FROM ztdm_se_car_t03
+       INTO TABLE li_t03
+      WHERE zrtset = p_route.
+    IF sy-subrc EQ 0.
+      DESCRIBE TABLE li_t03 LINES lv_count.
+      WRITE:/2 'Total MRUs in Route Set:'(016),
+             60 lv_count.
+    ENDIF.
+
+    IF i_validated_dloc[] IS NOT INITIAL.
+****Get the MRU data for the Devices for which AMCG swithing is complete
+      SELECT *
+        FROM ztdm_se_car_t01
+        INTO TABLE li_t01
+         FOR ALL ENTRIES IN i_validated_dloc
+       WHERE zcardevloc =  i_validated_dloc-zdevloc
+         AND zcarequnr  = i_validated_dloc-zequnr.
+      IF sy-subrc EQ 0.
+***Get the Unique MRU number from the above data
+        SORT li_t01 BY zcarableinh.
+        DELETE ADJACENT DUPLICATES FROM li_t01 COMPARING zcarableinh.
+
+*****Begin of change by valuru for Relase 3 Project
+        CLEAR:li_opt_out[].
+        IF li_t01[] IS NOT INITIAL.
+          SELECT *
+            FROM zbi_opt_out
+            INTO TABLE li_opt_out
+             FOR ALL ENTRIES IN li_t01
+            WHERE ableinh = li_t01-zcarableinh
+              AND sparte  IN s_div.   " p_div. "R4C post cutover changes
+          IF sy-subrc EQ 0.
+            SORT li_opt_out BY ableinh.
+            LOOP AT li_t01  INTO lwa_t01.
+              CLEAR lwa_opt_out.
+***If the entry is found in Opt Out Table and Cutover Date is not populated
+***then Update it
+              READ TABLE li_opt_out INTO lwa_opt_out WITH KEY ableinh = lwa_t01-zcarableinh
+                                    BINARY SEARCH.
+              IF sy-subrc EQ 0.
+                CLEAR lv_index.
+                lv_index = sy-tabix.
+                IF lwa_opt_out-zcodate IS INITIAL.
+                  lwa_opt_out-zcodate = sy-datum.
+                  lwa_opt_out-aedat = sy-datum.
+                  lwa_opt_out-aenam = sy-uname.
+                  lwa_opt_out-aezet = sy-uzeit.
+                  MODIFY  li_opt_out FROM lwa_opt_out INDEX lv_index.
+                  CLEAR lwa_opt_out.
+                  lv_succ_cnt = lv_succ_cnt + 1.
+                ELSE.
+                  lv_err_cnt = lv_err_cnt + 1.
+                  CONCATENATE lwa_t01-zcarableinh 'MRU is already Cutover in ZBI_OPT_OUT Billing table' INTO lwa_error_opt-message SEPARATED BY space.
+                  APPEND lwa_error_opt-message TO li_error_opt.
+                  CLEAR lwa_error_opt-message.
+                ENDIF.
+              ELSE.
+                lv_err_cnt = lv_err_cnt + 1.
+                CONCATENATE 'No Entry in table ZBI_OPT_OUT for MRU' lwa_t01-zcarableinh INTO lwa_error_opt-message.
+                APPEND lwa_error_opt-message TO li_error_opt.
+                CLEAR lwa_error_opt-message.
+              ENDIF.
+            ENDLOOP.
+          ELSE.
+            WRITE:/2 'No MRUs found in ZBI_OPT_OUT table to update Cutover Date'.
+          ENDIF.
+
+
+          IF li_opt_out IS NOT INITIAL.
+            MODIFY zbi_opt_out FROM TABLE li_opt_out.
+            IF sy-subrc EQ 0.
+              COMMIT WORK AND WAIT.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+      ELSE.
+        WRITE:/2 'ZBI_OPT_OUT table was not updated with MRU Cutover Date as no Devices are Cutover to Automated Reads'.
+      ENDIF.
+    ELSE.
+      WRITE:/2 'ZBI_OPT_OUT table was not updated with MRU Cutover Date as no Devices are Cutover to Automated Reads'.
+    ENDIF.
+  ENDIF.
+
+
+  WRITE:/2 'Total MRUs Cutover Date Update in ZBI_OPT_OUT Billing Table:'(018),
+         60 lv_succ_cnt.
+
+  WRITE:/2 'Total Error Records:',
+        60 lv_err_cnt.
+
+  IF li_error_opt IS NOT INITIAL.
+    SKIP 1.
+    WRITE sy-uline.
+    WRITE:/2 'Error Records with Reasons as below'.
+    WRITE sy-uline.
+    LOOP AT li_error_opt INTO lwa_error_opt.
+      WRITE:/2 lwa_error_opt-message.
+    ENDLOOP.
+  ENDIF.
+
+  REFRESH:li_opt_out.
+
+ENDFORM.                    " UPDATE_ZBI_OPT_OUT_TABLE

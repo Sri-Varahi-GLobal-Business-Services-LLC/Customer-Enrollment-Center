@@ -1,0 +1,125 @@
+METHOD if_bsp_wd_custom_f4_callback~retrieve_custom_values.
+  DATA: lv_att      TYPE string,
+        lv_location TYPE string,
+        lv_param    TYPE char60,
+        lv_county   TYPE string,
+        lt_city     TYPE STANDARD TABLE OF string,
+        lt_county   TYPE STANDARD TABLE OF string,
+        lt_township TYPE STANDARD TABLE OF string,
+        lt_location TYPE STANDARD TABLE OF string,
+        ls_key_value TYPE shsvalstr.
+  FIELD-SYMBOLS: <option>  LIKE LINE OF is_search_help-selopt.
+
+  DATA: lr_cc_ref TYPE REF TO object.
+
+  GET PARAMETER ID 'COUNTY' FIELD lv_param.
+  lv_county = lv_param.
+  FREE MEMORY ID 'COUNTY'.
+  IF lt_county IS INITIAL OR lt_city IS INITIAL OR lt_township IS INITIAL.
+*    CALL METHOD zso_serviceorder_util=>z_get_detail
+*      EXPORTING
+*        i_connxn    = 'NULL'
+*      IMPORTING
+*        et_county   = lt_county
+*        et_city     = lt_city
+*        et_township = lt_township
+**       e_county    =
+**       e_township  =
+*      .
+*  ENDIF.
+    READ TABLE is_search_help-selopt WITH KEY shlpfield = 'KEY_REF' ASSIGNING <option>.
+
+    IF <option> IS ASSIGNED.
+      IF <option>-low EQ 'ZCOUNTY1'.
+        READ TABLE is_search_help-selopt WITH KEY shlpfield = 'KEY' ASSIGNING <option>.
+        IF sy-subrc EQ 0.
+          lv_att = <option>-low.
+          TRANSLATE lv_att TO UPPER CASE.
+        ENDIF.
+        CALL METHOD zso_serviceorder_util=>z_get_detail
+          EXPORTING
+            i_param   = 'CO'
+          IMPORTING
+            et_county = lt_county.
+        LOOP AT lt_county INTO lv_location.
+          TRANSLATE lv_location TO UPPER CASE.
+          IF  lv_location CS lv_att.
+            ls_key_value-key = lv_location.
+            ls_key_value-value = lv_location.
+            APPEND ls_key_value TO ct_results_tab.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+      IF <option>-low EQ 'ZCOUNTY2'.
+        READ TABLE is_search_help-selopt WITH KEY shlpfield = 'KEY' ASSIGNING <option>.
+        IF sy-subrc EQ 0.
+          lv_att = <option>-low.
+          TRANSLATE lv_att TO UPPER CASE.
+        ENDIF.
+        CALL METHOD zso_serviceorder_util=>z_get_detail
+          EXPORTING
+            i_param   = 'CO'
+          IMPORTING
+            et_county = lt_county.
+        LOOP AT lt_county INTO lv_location.
+          TRANSLATE lv_location TO UPPER CASE.
+          IF  lv_location CS lv_att.
+            ls_key_value-key = lv_location.
+            ls_key_value-value = lv_location.
+            APPEND ls_key_value TO ct_results_tab.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+      IF <option>-low EQ 'ZCITY'.
+        READ TABLE is_search_help-selopt WITH KEY shlpfield = 'KEY' ASSIGNING <option>.
+        IF sy-subrc EQ 0.
+          lv_att = <option>-low.
+          TRANSLATE lv_att TO UPPER CASE.
+        ENDIF.
+        CALL METHOD zso_serviceorder_util=>z_get_detail
+          EXPORTING
+            i_param   = 'CI'
+*            i_county  = lv_county
+          IMPORTING
+            et_city = lt_city.
+
+        LOOP AT lt_city INTO lv_location.
+          TRANSLATE lv_location TO UPPER CASE.
+          IF  lv_location CS lv_att.
+            ls_key_value-key = lv_location.
+            ls_key_value-value = lv_location.
+            APPEND ls_key_value TO ct_results_tab.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+      IF <option>-low EQ 'ZTOWNSHIP'.
+        READ TABLE is_search_help-selopt WITH KEY shlpfield = 'KEY' ASSIGNING <option>.
+        IF sy-subrc EQ 0.
+          lv_att = <option>-low.
+          TRANSLATE lv_att TO UPPER CASE.
+        ENDIF.
+        READ TABLE is_search_help-selopt WITH KEY shlpfield = 'VALUE' ASSIGNING <option>.
+        IF sy-subrc EQ 0.
+          lv_county = <option>-low.
+          TRANSLATE lv_county TO UPPER CASE.
+        ENDIF.
+        CALL METHOD zso_serviceorder_util=>z_get_detail
+          EXPORTING
+            i_param   = 'TO'
+            i_county  = lv_county
+          IMPORTING
+            et_township = lt_township.
+
+        LOOP AT lt_township INTO lv_location.
+          TRANSLATE lv_location TO UPPER CASE.
+          IF  lv_location CS lv_att.
+            ls_key_value-key = lv_location.
+            ls_key_value-value = lv_location.
+            APPEND ls_key_value TO ct_results_tab.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDMETHOD.
+

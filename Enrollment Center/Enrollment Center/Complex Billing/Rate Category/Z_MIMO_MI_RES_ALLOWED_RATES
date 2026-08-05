@@ -1,0 +1,22 @@
+FUNCTION Z_MIMO_MI_RES_ALLOWED_RATES .
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(IM_DIVISION) TYPE  SPARTE OPTIONAL
+*"  EXPORTING
+*"     REFERENCE(EX_ALLOWED_RATE_CATEGORIES) TYPE  ISU_RANGES_TARIFTYP
+*"----------------------------------------------------------------------
+
+  FREE ex_allowed_rate_categories.
+
+  IF im_division = c_division-electric OR im_division IS NOT SUPPLIED.
+    zcl_range_utility=>simple_range_from_fields( EXPORTING im_low = 'RS_1000' CHANGING ch_range = ex_allowed_rate_categories[] ).
+    zcl_range_utility=>simple_range_from_fields( EXPORTING im_low = 'RS_2000' CHANGING ch_range = ex_allowed_rate_categories[] ).
+  ENDIF.
+
+  IF im_division = c_division-gas OR im_division IS NOT SUPPLIED.
+    zcl_range_utility=>simple_range_from_fields( EXPORTING im_low = 'A_752' CHANGING ch_range = ex_allowed_rate_categories[] ).
+    zcl_range_utility=>simple_range_from_fields( EXPORTING im_low = 'A_250' CHANGING ch_range = ex_allowed_rate_categories[] ).
+    zcl_range_utility=>simple_range_from_fields( EXPORTING im_low = 'A_260' CHANGING ch_range = ex_allowed_rate_categories[] ).
+  ENDIF.
+ENDFUNCTION.

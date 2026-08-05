@@ -1,0 +1,50 @@
+FUNCTION zpgm_ec_eligibilitycheck.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IS_ATTR) TYPE  ZSPGMEN_ATTR
+*"  TABLES
+*"      ET_RETURN STRUCTURE  BAPIRET2 OPTIONAL
+*"      ET_MSG STRUCTURE  ZSPGMMSG_ATTR OPTIONAL
+*"----------------------------------------------------------------------
+  DATA: ls_progid TYPE zspgm_progid,
+        lr_ec     TYPE REF TO zcl_ec_eligibility_check,
+        lt_msg    TYPE zspgmmsg_attr_tt,
+        lv_method TYPE string.
+
+* Create Reference
+  CREATE OBJECT lr_ec TYPE zcl_ec_eligibility_check.
+  lr_ec->gt_csdd[] = gt_csdd[].
+  lr_ec->gt_pay_terms[] = gt_pay_terms[].
+
+* Loop through program ID
+  LOOP AT gt_progid INTO ls_progid.
+    READ TABLE gt_enroll
+      WITH KEY zenrlbp = is_attr-zenrlbp
+               zenrlca = is_attr-zenrlca
+               zpgm_type = ls_progid-zpgm_type
+    TRANSPORTING NO FIELDS.
+
+*   Check return code
+    CHECK sy-subrc <> 0.
+    CLEAR lv_method.
+    CONCATENATE 'CHECK_' ls_progid-zpgm_type
+    INTO lv_method.
+
+*   Perform Eligibility Check
+    TRY.
+        CALL METHOD lr_ec->(lv_method)
+          EXPORTING
+            is_attr     = is_attr
+            iv_zpgmtype = ls_progid-zpgm_type
+          CHANGING
+            et_msg      = lt_msg.
+      CATCH cx_sy_dyn_call_error.
+        . "INTO exc_ref.
+    ENDTRY.
+  ENDLOOP.
+
+  et_msg[] = lt_msg[].
+
+ENDFUNCTION.
+

@@ -1,0 +1,190 @@
+METHOD perform_dev_chg_wrapper.
+  CONSTANTS:
+    lc_zm05       TYPE emma_case-ccat VALUE 'ZM05',
+    lc_zm06       TYPE emma_case-ccat VALUE 'ZM06',
+    lc_debug_name TYPE char15 VALUE 'DM038_DEV_MOD'.
+  DATA:
+    lt_import  TYPE ztt_mdmod_mass_devmod,
+    ls_import  TYPE zst_mdmod_mass_devmod,
+    lt_data    TYPE ztt_ztdm_mass_devmod,
+    ls_data    TYPE ztdm_mass_devmod,
+    ls_massd   TYPE ztdm_mass_devmod,
+    lt_export  TYPE STANDARD TABLE OF zst_mdmod_parallel_job_return,
+    ls_export  TYPE zst_mdmod_parallel_job_return,
+    lv_rate    TYPE boolean,
+    lv_error   TYPE boolean,
+    lt_newreg  TYPE ztt_mdmod_new_register,
+    lv_devloc  TYPE tplnr,
+    lv_datecat TYPE zst_mdmod_mass_devmod-date_category,
+    lv_date    TYPE syst-datum,
+    lv_mr_open TYPE boolean,
+    ls_return  TYPE bapiret2,
+    lv_casenr  TYPE emma_cnr,
+    lv_id      TYPE laufi.
+
+
+* Debug Mode
+  me->debug( EXPORTING pv_name = lc_debug_name ).
+
+* Emma Case number filled in BO method
+  CLEAR: lv_casenr.
+  lv_casenr = me->iv_casenr.
+  CLEAR: me->iv_casenr.
+
+  LOOP AT it_import INTO ls_import.
+    lv_devloc  = ls_import-devloc.
+    lv_datecat = ls_import-date_category.
+    lv_date    = ls_import-custdate.
+
+    SORT ls_import-data BY sernr matnr.
+    LOOP AT ls_import-data INTO ls_data.
+
+      REFRESH: me->t_reads. "lt_data,
+      CLEAR ls_massd.
+      CLEAR ls_export.
+
+      IF NOT lv_casenr IS INITIAL.
+        lv_datecat = ls_data-date_cat.                      "D00K926383
+      ENDIF.
+
+      ls_export-devloc = ls_data-devloc.
+      ls_export-sernr  = ls_data-sernr.
+      ls_export-matnr  = ls_data-matnr.
+      ls_massd = ls_data.
+      APPEND ls_data TO lt_data.
+
+      IF NOT ls_data-anlage IS INITIAL.
+        lv_rate = 'X'.
+      ENDIF.
+      AT END OF matnr.
+        me->determine_date( EXPORTING
+                              iv_sernr    = ls_massd-sernr
+                              iv_matnr    = ls_massd-matnr
+                              iv_datecat  = lv_datecat
+                              iv_custdate = lv_date
+                            IMPORTING
+                              ev_date     = lv_date
+                              ev_open     = lv_mr_open ).
+        IF lv_date GT sy-datum OR
+           NOT lv_mr_open IS INITIAL.
+
+          SELECT equnr
+            FROM equi
+            INTO ls_export-equnr
+           UP TO 1 ROWS
+           WHERE matnr EQ ls_export-matnr
+             AND sernr EQ ls_export-sernr.
+          ENDSELECT.
+
+          IF lv_date GT sy-datum.
+            MESSAGE e930(zbil_prof_alloc) INTO ls_return-message.
+            msg_add ls_return ls_export-t_return.
+          ELSE.
+            MESSAGE e931(zbil_prof_alloc) INTO ls_return-message.
+            msg_add ls_return ls_export-t_return.
+          ENDIF.
+          RAISE EVENT error_occured
+                EXPORTING
+                  is_return = ls_export
+                  iv_ccat   = lc_zm05
+                  iv_iden   = ls_massd-laufi
+                  iv_runid  = ls_massd-laufd.
+          APPEND ls_export TO et_export.
+          CONTINUE.
+        ENDIF.
+
+        LOOP AT lt_data TRANSPORTING NO FIELDS
+                        WHERE NOT zwgruppe     IS INITIAL
+                           OR NOT kennziff_new IS INITIAL
+                           OR NOT nablesen     IS INITIAL
+                           OR NOT intsizeid    IS INITIAL
+                           OR NOT touperiod    IS INITIAL
+                           OR NOT amcg_cap_grp IS INITIAL
+                           OR NOT donotuse     IS INITIAL.
+          EXIT.
+        ENDLOOP.
+        IF sy-subrc IS INITIAL.
+          me->perform_dev_mod( EXPORTING
+                                  it_input = lt_data
+                                  iv_date  = lv_date
+                                  it_bilinst = ls_import-bilinst
+                               IMPORTING
+                                  es_return = ls_export
+                                  et_newreg = lt_newreg ).
+        ENDIF.
+
+        LOOP AT ls_export-t_return TRANSPORTING NO FIELDS
+                         WHERE type EQ 'E'
+                            OR type EQ 'X'
+                            OR type EQ 'A'.
+          EXIT.
+        ENDLOOP.
+        IF sy-subrc IS INITIAL.
+          SELECT equnr
+            FROM equi
+            INTO ls_export-equnr
+           UP TO 1 ROWS
+           WHERE matnr EQ ls_export-matnr
+             AND sernr EQ ls_export-sernr.
+          ENDSELECT.
+
+          RAISE EVENT error_occured
+                EXPORTING
+                  is_return = ls_export
+                  iv_ccat   = lc_zm05
+                  iv_iden   = ls_massd-laufi
+                  iv_runid  = ls_massd-laufd.
+
+          APPEND ls_export TO et_export.
+          CONTINUE.
+        ELSE.
+          APPEND ls_export TO et_export.
+        ENDIF.
+        IF NOT lv_rate  IS INITIAL
+         OR NOT lt_newreg IS INITIAL.
+          me->perform_rate_changes( EXPORTING
+                                     it_input  = lt_data
+                                     it_newreg = lt_newreg
+                                     iv_date   = lv_date
+                                     it_bilinst = ls_import-bilinst
+                                    IMPORTING
+                                      es_return = ls_export ).
+*         Check for errors
+          LOOP AT ls_export-t_return TRANSPORTING NO FIELDS
+                           WHERE type EQ 'E'
+                              OR type EQ 'X'
+                              OR type EQ 'A'.
+            EXIT.
+          ENDLOOP.
+          IF sy-subrc IS INITIAL.
+            SELECT equnr
+              FROM equi
+              INTO ls_export-equnr
+             UP TO 1 ROWS
+             WHERE matnr EQ ls_export-matnr
+               AND sernr EQ ls_export-sernr.
+            ENDSELECT.
+
+            RAISE EVENT error_occured
+                  EXPORTING
+                    is_return = ls_export
+                    iv_ccat   = lc_zm06.
+
+            APPEND ls_export TO et_export.
+            CONTINUE.
+          ENDIF.
+        ENDIF.
+      ENDAT.
+    ENDLOOP.
+  ENDLOOP.
+
+  IF NOT et_export IS INITIAL.
+    lv_id = lv_casenr.
+
+* Application Log
+    me->application_log( EXPORTING pt_import = et_export
+                                   p_date    = sy-datum
+                                   p_id      = lv_id    ).  "Emma Case number
+  ENDIF.
+ENDMETHOD.
+

@@ -1,0 +1,24 @@
+METHOD get_allocated_profiles.
+
+  CLEAR rv_profile.
+
+  SELECT SINGLE profile                                     "#EC WARNOK
+  INTO rv_profile
+  FROM  eprofass
+  WHERE logikzw = iv_logikzw
+  AND  profrole = co_ib_prof_role
+  AND  dateto EQ co_date_infinite
+  AND  datefrom LE my_date.
+
+  IF sy-subrc IS NOT INITIAL.
+    IF my_is_profdelloc EQ abap_true.
+      populate_status_return space co_warning co_value_30 my_equnr iv_logikzw space space.
+    ELSE.
+      populate_status_return space co_error co_value_30 my_equnr iv_logikzw space space.
+    ENDIF.
+  ELSE.
+    populate_status_return space co_warning co_value_19 iv_logikzw my_gernr space space.
+  ENDIF.
+
+ENDMETHOD.
+

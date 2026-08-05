@@ -1,0 +1,139 @@
+FUNCTION zpgm_get_enrolled_plan.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_PARTNER) TYPE  BU_PARTNER
+*"     VALUE(IV_VKONT) TYPE  VKONT_KK
+*"     VALUE(IV_ENRLSDP) TYPE  ZENRLSDP
+*"     VALUE(IV_EXEC_TIME) TYPE  ZEXEC_TIME
+*"     VALUE(IV_PGM_TYPE) TYPE  ZPGM_TYPE
+*"  TABLES
+*"      T_PGM_ENROLLED STRUCTURE  ZSPGM_ENROLLED
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM calls the BRF+ Function
+*               FUNC_PGM_VALIDATION_CHECK to check eligibility and
+*               returns error message if any
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  DATA: lt_enroll   TYPE STANDARD TABLE OF ztpgm_enroll,
+        lt_pgm      TYPE STANDARD TABLE OF ztpgm_progidt,
+        lt_enrolled TYPE STANDARD TABLE OF zspgm_enrolled,
+        lt_excl     TYPE STANDARD TABLE OF ztpgm_excl,
+        lr_pgm_type TYPE TABLE OF isu_ranges,
+        lr_status   TYPE TABLE OF isu_ranges,
+        lr_devloc   TYPE TABLE OF isu_ranges,
+        ls_line     TYPE isu_ranges,
+        ls_enrolled TYPE zspgm_enrolled.
+
+  FIELD-SYMBOLS : <fs_enroll> TYPE ztpgm_enroll,
+                  <fs_excl>   TYPE ztpgm_excl,
+                  <fs_pgm>    TYPE ztpgm_progidt.
+
+*  Get Exclude Program Type
+  SELECT *
+    INTO TABLE lt_excl
+    FROM ztpgm_excl
+  WHERE program_type = iv_pgm_type.
+
+* Check return code
+  CHECK sy-subrc = 0.
+
+* Execution Time
+  IF iv_exec_time = 1.
+    DELETE lt_excl WHERE excl_prgm_type = iv_pgm_type.
+  ENDIF.
+
+* Populate Device Location
+  CLEAR ls_line.
+  ls_line-sign = 'I'.
+  ls_line-option = 'EQ'.
+  APPEND ls_line TO lr_devloc.
+  CLEAR ls_line.
+  ls_line-sign = 'I'.
+  ls_line-option = 'EQ'.
+  ls_line-low = iv_enrlsdp.
+  APPEND ls_line TO lr_devloc.
+
+  CLEAR ls_line.
+  ls_line-sign = 'I'.
+  ls_line-option = 'EQ'.
+  ls_line-low = '001'.
+  APPEND ls_line TO lr_status.
+
+  CLEAR ls_line.
+  ls_line-sign = 'I'.
+  ls_line-option = 'EQ'.
+  ls_line-low = '002'.
+  APPEND ls_line TO lr_status.
+
+  CLEAR ls_line.
+  ls_line-sign = 'I'.
+  ls_line-option = 'EQ'.
+  ls_line-low = '005'.
+  APPEND ls_line TO lr_status.
+
+* Loop thru exclusion
+  LOOP AT lt_excl ASSIGNING <fs_excl>.
+    CLEAR ls_line.
+    ls_line-sign = 'I'.
+    ls_line-option = 'EQ'.
+    ls_line-low = <fs_excl>-excl_prgm_type.
+    APPEND ls_line TO lr_pgm_type.
+
+  ENDLOOP.
+
+* Check for initial
+  CHECK lr_pgm_type IS NOT INITIAL.
+  SELECT *
+    INTO TABLE lt_enroll
+    FROM ztpgm_enroll
+  WHERE zenrlbp = iv_partner
+  AND   zenrlca = iv_vkont
+  AND   zpgm_type IN lr_pgm_type
+  AND   zenrlsdp  IN lr_devloc
+*  AND   zenrlsdp = iv_enrlsdp
+  AND   zenrlstatus IN lr_status.
+*  AND   zenrlstatus IN ('001','002').
+
+* Check return code
+  CHECK sy-subrc = 0.
+
+  SELECT *
+    INTO TABLE lt_pgm
+    FROM ztpgm_progidt
+  WHERE spras = sy-langu.
+
+  LOOP AT lt_enroll ASSIGNING <fs_enroll>.
+    READ TABLE lt_pgm
+      ASSIGNING <fs_pgm>
+    WITH KEY program_type = <fs_enroll>-zpgm_type.
+    IF <fs_pgm> IS ASSIGNED.
+      ls_enrolled-pgm_type = <fs_enroll>-zpgm_type.
+      ls_enrolled-zenrlstatus = <fs_enroll>-zenrlstatus.
+      ls_enrolled-pgm_desc = <fs_pgm>-description.
+      IF <fs_enroll>-zenrlstatus = '005'.
+        ls_enrolled-number = 048.
+      ELSE.
+        ls_enrolled-number = 022.
+
+      ENDIF.
+
+      APPEND ls_enrolled TO t_pgm_enrolled.
+
+    ENDIF.
+  ENDLOOP.
+
+ENDFUNCTION.
+

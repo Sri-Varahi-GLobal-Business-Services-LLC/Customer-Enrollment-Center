@@ -1,0 +1,49 @@
+FUNCTION zdm_get_amcg_upd_key_date.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(I_EQUNR) TYPE  EQUNR
+*"     REFERENCE(I_ZWNUMMER) TYPE  E_ZWNUMMER
+*"  EXPORTING
+*"     REFERENCE(E_DATE) TYPE  DATUM
+*"     REFERENCE(E_MSG) TYPE  BAPI_MSG
+*"----------------------------------------------------------------------
+  DATA:lwa_eabl  TYPE eabl,
+       lt_eablg  TYPE STANDARD TABLE OF eablg,
+       lwa_eablg TYPE eablg.
+  CALL FUNCTION 'ISU_DETERM_LAST_EABL_FOR_VALID'
+    EXPORTING
+      x_equnr      = i_equnr
+      x_zwnummer   = i_zwnummer
+      x_adat       = sy-datum
+      x_atim       = '2359'
+      x_adatreal   = sy-datum
+      x_atimreal   = '2359'
+    IMPORTING
+      y_eabl_prev  = lwa_eabl
+    EXCEPTIONS
+      system_error = 1
+      OTHERS       = 2.
+  IF sy-subrc <> 0.
+    e_msg = 'Unable to read last meter read document date'(009).
+  ELSEIF  lwa_eabl-adatsoll IS INITIAL.
+    e_msg = 'Unable to read last meter read document date'(009).
+  ELSE.
+    SELECT * FROM eablg INTO TABLE lt_eablg WHERE ablbelnr = lwa_eabl-ablbelnr. "ssinha
+    IF sy-subrc IS INITIAL.
+
+      IF lt_eablg IS NOT INITIAL.
+        READ TABLE  lt_eablg INTO lwa_eablg WITH KEY ablesgr = '21'.
+        IF sy-subrc <> 0.
+          DELETE lt_eablg WHERE anlage = space.
+          READ TABLE lt_eablg INTO lwa_eablg INDEX 1.
+          IF sy-subrc = 0.
+            e_date = lwa_eabl-adat + 1. "change by ssinha
+          ENDIF.
+        ELSE.
+          e_date = lwa_eabl-adat .
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDFUNCTION.

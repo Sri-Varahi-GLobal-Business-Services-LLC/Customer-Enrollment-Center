@@ -1,0 +1,33 @@
+METHOD if_bsp_dlc_obj_type_callback~get_object_sub_types.
+
+  DATA:   lv_sub_object TYPE bsp_dlc_object_sub_type.
+
+  IF iv_object_type = 'ZFI_ACC_OBJTYP'.
+
+    lv_sub_object = 'V1'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V2'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V3'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V4'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V5'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V6'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+  ENDIF.
+ENDMETHOD.
+

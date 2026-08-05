@@ -1,0 +1,29 @@
+METHOD SYNCHRONIZE_INTERVAL_PROFILE.
+
+  DATA: lv_msgv1 TYPE sy-msgv1,
+        lv_msgv2 TYPE sy-msgv2,
+        lv_msgv3 TYPE sy-msgv3,
+        lv_success_profiles TYPE i.
+
+  CLEAR : lv_msgv1,
+        lv_msgv2,
+        lv_msgv3,
+        lv_success_profiles.
+
+  lv_success_profiles = me->synchronize_profiles( iv_low  = iv_profile
+                                                  iv_high = iv_profile ).
+
+  lv_msgv1 = iv_profile.
+  lv_msgv2 = my_anlage.
+  lv_msgv3 = my_gernr.
+
+  IF lv_success_profiles IS INITIAL.
+    populate_status_return space co_error co_value_11 lv_msgv1 lv_msgv2 space space.
+  ELSE.
+    COMMIT WORK AND WAIT.
+    populate_status_return space co_success co_value_12 lv_msgv1 lv_msgv2 lv_msgv3 space.
+  ENDIF.
+
+
+ENDMETHOD.
+

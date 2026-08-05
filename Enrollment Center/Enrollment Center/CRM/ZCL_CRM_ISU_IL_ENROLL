@@ -1,0 +1,851 @@
+class ZCL_CRM_ISU_IL_ENROLL definition
+  public
+  inheriting from CL_CRM_IU_IL_ABSTR_ROOT
+  final
+  create public .
+
+public section.
+
+  constants GC_OBJ_ENROLL type CRMT_EXT_OBJ_NAME value 'Enrollment'. "#EC NOTEXT
+
+  methods IF_CRM_IU_IL_ABSTR_NROOT~MODIFY
+    redefinition .
+  methods IF_CRM_IU_IL_ABSTR_NROOT~READ_ATTR
+    redefinition .
+  methods IF_CRM_IU_IL_ABSTR_ROOT~CHECK_BEFORE_SAVE
+    redefinition .
+  methods IF_CRM_IU_IL_ABSTR_ROOT~CREATE
+    redefinition .
+  methods IF_CRM_IU_IL_ABSTR_ROOT~INIT
+    redefinition .
+  methods IF_CRM_IU_IL_ABSTR_ROOT~LOCK
+    redefinition .
+  methods IF_CRM_IU_IL_ABSTR_ROOT~SAVE
+    redefinition .
+  methods IF_CRM_IU_IL_ABSTR~RESET
+    redefinition .
+  methods IF_CRM_IU_IL_ABSTR_NROOT~EXECUTE
+    redefinition .
+protected section.
+
+  methods GET_ENROLL_OBJ
+    importing
+      !IS_KEY type ZSPGM_KEY
+    changing
+      !CS_ENROLL type ZSPGM_ENROLL optional .
+private section.
+
+  types:
+    BEGIN OF ty_msg,
+      key TYPE zspgm_key,
+      msg TYPE REF TO cl_crm_genil_bapi_mess_cont,
+    END OF ty_msg .
+
+  data GR_GMSG type ref to CL_CRM_GENIL_GLOBAL_MESS_CONT .
+  data:
+    GT_MSG TYPE STANDARD TABLE OF ty_msg .
+  type-pools ABAP .
+  data IS_LOCKED type ABAP_BOOL .
+  data GV_CREATE_CALLED type ABAP_BOOL .
+
+  methods ADD_GMSG
+    importing
+      !IT_MSG type BAPIRET2_T optional
+      !IV_SHOW_ONLY_ONCE type ABAP_BOOL optional
+      !IV_ROOT_LIST type ref to IF_GENIL_CONT_ROOT_OBJECTLIST optional .
+  methods ADD_MSG
+    importing
+      !IV_OBJ_ID type CRMT_GENIL_OBJECT_ID optional
+      !IV_OBJ_NAME type CRMT_EXT_OBJ_NAME
+      !IV_KEY type ZSPGM_KEY optional
+      !IT_MSG type BAPIRET2_T .
+  methods UNLOCK
+    importing
+      !IV_KEY type ZSPGM_KEY
+    returning
+      value(RV_UNLOCKED) type ABAP_BOOL .
+ENDCLASS.
+
+
+
+CLASS ZCL_CRM_ISU_IL_ENROLL IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_CRM_ISU_IL_ENROLL->ADD_GMSG
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_MSG                         TYPE        BAPIRET2_T(optional)
+* | [--->] IV_SHOW_ONLY_ONCE              TYPE        ABAP_BOOL(optional)
+* | [--->] IV_ROOT_LIST                   TYPE REF TO IF_GENIL_CONT_ROOT_OBJECTLIST(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method ADD_GMSG.
+ IF NOT gr_gmsg IS BOUND AND
+     iv_root_list IS SUPPLIED.
+    gr_gmsg = iv_root_list->get_global_message_container( ).
+  ENDIF.
+
+  CHECK: gr_gmsg IS BOUND,
+         it_msg IS NOT INITIAL.
+
+  gr_gmsg->add_bapi_messages(
+    it_bapi_messages  = it_msg
+    iv_show_only_once = iv_show_only_once ).
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_CRM_ISU_IL_ENROLL->ADD_MSG
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJ_ID                      TYPE        CRMT_GENIL_OBJECT_ID(optional)
+* | [--->] IV_OBJ_NAME                    TYPE        CRMT_EXT_OBJ_NAME
+* | [--->] IV_KEY                         TYPE        ZSPGM_KEY(optional)
+* | [--->] IT_MSG                         TYPE        BAPIRET2_T
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method ADD_MSG.
+  DATA: lrs_msg   TYPE REF TO ty_msg,
+        lrs_prmsg TYPE REF TO bapiret2,
+        lv_obj_id TYPE crmt_genil_object_id,
+        lt_prmsg  TYPE bapiret2_t,
+        ls_prmsg  TYPE bapiret2,
+        lv_comp   TYPE crmt_component_name,
+        lr_model  TYPE REF TO if_genil_obj_model,
+        ls_t100   TYPE t100.
+
+  lt_prmsg = it_msg.
+
+* check not it_msg is initial.
+  READ TABLE gt_msg REFERENCE INTO lrs_msg
+                    WITH KEY key = iv_key.
+
+  CHECK sy-subrc = 0.
+  lr_model = cl_crm_genil_model_service=>get_runtime_model( ).
+  lv_comp  = lr_model->get_component_name(
+                         me->if_crm_iu_il_abstr~object_name ).
+
+  LOOP AT lt_prmsg REFERENCE INTO lrs_prmsg.
+    lrs_prmsg->field = lv_comp.
+  ENDLOOP.
+
+  IF iv_obj_id IS NOT SUPPLIED.
+    lv_obj_id = cl_crm_genil_container_tools=>build_object_id(
+                                                iv_key ).
+  ELSE.
+    lv_obj_id = iv_obj_id.
+  ENDIF.
+
+  lrs_msg->msg->add_messages(
+      iv_object_name   = iv_obj_name
+      iv_object_id     = lv_obj_id
+      it_bapi_messages = lt_prmsg
+      iv_show_only_once = 'X' ).
+
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZCL_CRM_ISU_IL_ENROLL->GET_ENROLL_OBJ
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IS_KEY                         TYPE        ZSPGM_KEY
+* | [<-->] CS_ENROLL                      TYPE        ZSPGM_ENROLL(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_enroll_obj.
+    DATA: lt_msg       TYPE bapiret2_t.
+
+    CHECK cs_enroll IS SUPPLIED.
+
+    IF cl_crm_isu_il_tools=>check_backend_func_available(
+         iv_function  = 'ZISU_IL_ENROLL_GET'
+         iv_rfc_dest  = rfc_dest ) = abap_true.
+
+      CALL FUNCTION 'ZISU_IL_ENROLL_GET'
+        DESTINATION rfc_dest
+        EXPORTING
+          iv_key                = is_key
+          i_read_from_buffer    = 'X'
+        IMPORTING
+          es_enroll             = cs_enroll
+        TABLES
+          et_return             = lt_msg
+        EXCEPTIONS
+          communication_failure = 1
+          system_failure        = 2.
+
+      IF sy-subrc = 0.
+        LOOP AT lt_msg TRANSPORTING NO FIELDS
+                       WHERE type CA 'AEX'.
+        ENDLOOP.
+
+*       if there are errors
+        IF sy-subrc = 0.
+          CLEAR: cs_enroll.
+          add_msg(
+            iv_obj_name = gc_obj_enroll
+            iv_key = is_key
+            it_msg      = lt_msg ).
+        ENDIF.
+
+      ELSE.
+        CLEAR: cs_enroll.
+      ENDIF.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_ENROLL->IF_CRM_IU_IL_ABSTR_NROOT~EXECUTE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        ANY
+* | [--->] IV_ID                          TYPE        CRMT_GENIL_OBJECT_ID
+* | [--->] IV_METHOD_NAME                 TYPE        CRMT_OBJ_METHOD_NAME
+* | [--->] IT_PARAMETERS                  TYPE        CRMT_NAME_VALUE_PAIR_TAB
+* | [--->] IV_ROOTLIST                    TYPE REF TO IF_GENIL_CONT_ROOT_OBJECTLIST
+* | [--->] IV_MSG_SERVICE_ACCESS          TYPE REF TO IF_GENIL_MSG_SERVICE_ACCESS
+* | [<---] ET_CHANGED_OBJECTS             TYPE        CRMT_GENIL_OBJ_INSTANCE_TAB
+* | [<---] EV_SUCCESS                     TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_nroot~execute.
+*CALL METHOD SUPER->IF_CRM_IU_IL_ABSTR_NROOT~EXECUTE
+*  EXPORTING
+*    IV_KEY                =
+*    IV_ID                 =
+*    IV_METHOD_NAME        =
+*    IT_PARAMETERS         =
+*    IV_ROOTLIST           =
+*    IV_MSG_SERVICE_ACCESS =
+**  IMPORTING
+**    et_changed_objects    =
+**    ev_success            =
+*    .
+    DATA: lv_key            TYPE zspgm_key,
+          lt_return         TYPE bapiret2_t,
+          ls_attr           TYPE zsdeenroll_attr,
+          lv_success        TYPE char1,
+          ls_return         TYPE syst,
+          lv_root           TYPE REF TO if_genil_cont_root_object,
+          ls_msg            TYPE ty_msg,
+          lt_all_msg        TYPE bapiret2_t,
+          lv_old_prod       TYPE crmt_ordered_prod_db,
+          lv_created        TYPE boole_d,
+          lv_number         TYPE crmt_object_id_db,
+          lv_methodnotfound TYPE abap_bool.
+
+    FIELD-SYMBOLS: <line>  TYPE crmt_name_value_pair,
+                   <value> TYPE data.
+    CLEAR: ls_return, lv_old_prod.
+    ev_success = abap_true.
+
+* Get the order no. from the root object. Not from parameter structure!
+    lv_key = iv_key.
+    CHECK lv_key IS NOT INITIAL.
+
+* get order attributes from parameters
+    CALL METHOD cl_crm_isu_il_tools=>fill_struct_from_nvp_tab
+      EXPORTING
+        it_parameters = it_parameters
+      CHANGING
+        cs_parameter  = ls_attr.
+
+    CASE iv_method_name.
+
+*     Execute Eligibility Check
+      WHEN 'ExecuteDeEnrollment'.
+
+*       Set Old Product
+        IF ls_attr-zpgm_type = 'CPP'.
+          lv_old_prod = 'RS_1007'.
+        ELSE.
+          lv_old_prod = 'RS_1008'.
+        ENDIF.
+
+        DATA: ls_product TYPE comm_product.
+        SELECT SINGLE *
+          INTO ls_product
+          FROM comm_product
+        WHERE product_id = ls_attr-crm_product.
+
+        CALL FUNCTION 'Z_DLA_RATE_CHANGE'
+          EXPORTING
+            header_guid            = ls_attr-header_guid
+            item_guid              = ls_attr-item_guid
+            product_guid           = ls_product-product_guid "ls_attr-product_guid
+            crm_product            = ls_attr-crm_product
+            prod_chg_date          = ls_attr-prod_chg_date
+            repeat_call            = ls_attr-repeat_call
+*           CALLER                 =
+            old_crm_product        = lv_old_prod
+          IMPORTING
+*           OLD_ITEM_GUID          =
+*           NEW_ITEM_GUID          =
+            rate_change            = lv_success
+            ir_created             = lv_created
+            ir_number              = lv_number
+          EXCEPTIONS
+            process_not_executable = 1
+            process_not_completed  = 2
+            ir_not_created         = 3
+            bus_agr_rel_error      = 4
+            bus_agr_set_notfound   = 5
+            contract_not_saved     = 6
+            prod_change_failed     = 7
+            OTHERS                 = 8.
+        IF sy-subrc <> 0.
+* Implement suitable error handling here
+        ENDIF.
+        CASE sy-subrc.
+          WHEN '1'.
+            ls_return-msgty = 'E'.
+            ls_return-msgno = 015.
+            ls_return-subrc = '1'.
+          WHEN '2'.
+            ls_return-msgty = 'E'.
+            ls_return-msgno = 016.
+            ls_return-subrc = '2'.
+          WHEN '3'.
+            ls_return-msgty = 'E'.
+            ls_return-msgno = 017.
+            ls_return-subrc = '3'.
+          WHEN '4'.
+            ls_return-msgty = 'E'.
+            ls_return-msgno = 018.
+            ls_return-subrc = '4'.
+          WHEN '5'.
+            ls_return-msgno = 'E'.
+            ls_return-msgno = 019.
+            ls_return-subrc = '5'.
+          WHEN '6'.
+            ls_return-msgty = 'E'.
+            ls_return-msgno = 020.
+            ls_return-subrc = '6'.
+          WHEN '7'.
+            ls_return-msgty = 'E'.
+            ls_return-msgno = 021.
+            ls_return-subrc = '7'.
+          WHEN '8'.
+            ls_return-msgty = 'E'.
+            ls_return-msgno = 022.
+            ls_return-subrc = '8'.
+          WHEN OTHERS.
+            ls_return-msgty = 'S'.
+
+        ENDCASE.
+        ls_return-msgid = 'ZPGM_ENROLL'.
+      WHEN OTHERS.
+*      Method was not found, set flag to false
+*      Execute2 should then be called
+        ev_success = abap_false.
+        lv_methodnotfound  = abap_true.
+
+    ENDCASE.
+*    CLEAR ls_return-subrc.
+    IF ls_return-msgno IS NOT INITIAL.
+
+* * report success, error to framework
+      lt_all_msg = zcl_crm_isu_il_enroll_comp=>get_messages(
+       is_system_message = ls_return
+       it_message = lt_return
+       ).
+    ENDIF.
+
+    IF zcl_crm_isu_il_enroll_comp=>error_messages_exist( lt_all_msg ) = abap_false AND
+      lv_methodnotfound = abap_false.
+
+      DATA: ls_changed_object       LIKE LINE OF et_changed_objects.
+
+      ls_changed_object-object_name = gc_obj_enroll.
+      ls_changed_object-object_id   = iv_id.
+      APPEND ls_changed_object TO et_changed_objects.
+      CLEAR ls_return.
+      ls_return-msgty = 'S'.
+
+      IF lv_created = abap_true.
+        ls_return-msgno = 025.
+        ls_return-msgv1 =  lv_number.
+        ls_return-msgv2 =  ls_attr-zpgm_type.
+      ELSE.
+        ls_return-msgno = 026.
+        ls_return-msgv1 =
+        ls_return-msgv2 =  ls_attr-zpgm_type.
+
+      ENDIF.
+      lt_all_msg = zcl_crm_isu_il_enroll_comp=>get_messages(
+       is_system_message = ls_return
+       it_message = lt_return
+       ).
+      add_msg(
+       iv_obj_name = gc_obj_enroll
+       iv_key      = lv_key
+       it_msg      = lt_all_msg ).
+
+
+    ELSE. " report error
+      ev_success = abap_false.
+      add_msg(
+       iv_obj_name = gc_obj_enroll
+       iv_key      = lv_key
+       it_msg      = lt_all_msg ).
+
+    ENDIF.
+
+*  if execute failed AND entity was not locked externally (or explicitly).
+    IF ev_success = abap_false AND is_locked = abap_false.
+
+*    release any lock made by the execute method internally in the backend.
+      if_crm_iu_il_abstr_root~init(
+        iv_key                = lv_key
+        iv_id                 = iv_id
+        iv_msg_service_access = iv_msg_service_access ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_ENROLL->IF_CRM_IU_IL_ABSTR_NROOT~MODIFY
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IV_DELTA                       TYPE        CRMT_DELTA
+* | [--->] IO_OBJECT_LIST                 TYPE REF TO IF_GENIL_CONT_OBJECT_LIST_BASE
+* | [<---] EO_NEXT_OBJECT                 TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [<-->] CT_CHANGED_OBJECTS             TYPE        CRMT_GENIL_OBJ_INSTANCE_TAB
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_nroot~modify.
+    DATA: ls_enroll       TYPE zspgm_enroll,
+          lt_return       TYPE bapiret2_t,
+          lt_result       TYPE crmt_attr_name_tab,
+          lv_key          TYPE zspgm_key,
+          lr_message_cont TYPE REF TO cl_crm_genil_global_mess_cont.
+
+    lr_message_cont = iv_object->if_genil_cont_simple_object~get_global_message_container( ).
+
+*   order object key and attributes
+    iv_object->get_key( IMPORTING es_key = lv_key ).
+
+    iv_object->get_attributes( IMPORTING es_attributes = ls_enroll ) .
+
+    IF iv_delta = 'M'.
+*    We get the fields that can be changed. These fields which
+*    can be changed are specified in
+*    IF_CRM_IU_IL_ABSTR_NROOT~READ_ATTR.
+      lt_result = get_changed_fields( iv_object ).
+
+      IF NOT lt_result IS INITIAL.
+
+        IF cl_crm_isu_il_tools=>check_backend_func_available(
+             iv_function  = 'ZISU_IL_ENROLL_CHANGE'
+             iv_rfc_dest  = rfc_dest ) = abap_true.
+
+          CALL FUNCTION 'ZISU_IL_ENROLL_CHANGE'
+            DESTINATION rfc_dest
+            EXPORTING
+              iv_key                = lv_key
+              is_enroll             = ls_enroll
+            TABLES
+              it_changed_fields     = lt_result
+              et_return             = lt_return
+            EXCEPTIONS
+              communication_failure = 1
+              system_failure        = 2.
+
+*        report success, error to framework
+          DATA: lt_all_msg              TYPE bapiret2_t.
+          lt_all_msg = cl_crm_isu_il_srv_comp=>get_messages(
+           is_system_message = sy
+           it_message = lt_return
+           ).
+
+          IF zcl_crm_isu_il_enroll_comp=>error_messages_exist( lt_all_msg ) = abap_false.
+            DATA: ls_changed_object       LIKE LINE OF ct_changed_objects.
+
+            ls_changed_object-object_name = iv_object->get_name( ).
+            ls_changed_object-object_id   = iv_object->get_object_id( ).
+            APPEND ls_changed_object TO ct_changed_objects.
+
+          ELSE. " report error
+            add_msg(
+             iv_obj_name = gc_obj_enroll
+             iv_key = lv_key
+             it_msg      = lt_all_msg ).
+
+          ENDIF.
+
+        ENDIF.
+
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_ENROLL->IF_CRM_IU_IL_ABSTR_NROOT~READ_ATTR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE REF TO IF_GENIL_CONTAINER_OBJECT
+* | [--->] IT_REQUESTED_ATTR              TYPE        CRMT_ATTR_NAME_TAB(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_nroot~read_attr.
+    DATA: lv_key              TYPE zspgm_key,
+          ls_enroll           TYPE zspgm_enroll,
+          lt_changeable_field TYPE crm_isu_fieldname_tab,
+          ls_changeable_field TYPE fieldname,
+          lv_root             TYPE REF TO if_genil_cont_root_object,
+          ls_msg              TYPE ty_msg.
+
+
+* connection object key
+    CALL METHOD iv_object->get_key
+      IMPORTING
+        es_key = lv_key.
+
+* get data
+    me->get_enroll_obj(
+      EXPORTING
+        is_key   = lv_key
+      CHANGING
+        cs_enroll      = ls_enroll ).
+
+    IF NOT ls_enroll-zenrlbp IS INITIAL.
+
+      ls_changeable_field = 'ZENRLSTATUS'.
+      APPEND ls_changeable_field TO lt_changeable_field.
+
+      ls_changeable_field = 'ZDENRL_BDPS'.
+      APPEND ls_changeable_field TO lt_changeable_field.
+
+* conveying to the framework the fields which should be changeable
+      set_field_properties(
+        iv_object    = iv_object
+        iv_property  = if_genil_obj_attr_properties=>changeable
+        it_fieldname = lt_changeable_field ).
+
+* providing the data to the framework
+      iv_object->set_attributes( ls_enroll ).
+
+    ENDIF.
+
+* check if message container exists
+    READ TABLE gt_msg TRANSPORTING NO FIELDS
+                      WITH KEY key = lv_key.
+* if no message container found
+    IF sy-subrc <> 0.
+      CLEAR ls_msg.
+      ls_msg-key = lv_key.
+      lv_root ?= iv_object.
+*    message container already set?
+*    if not create a new one
+      ls_msg-msg ?= lv_root->get_message_container( ).
+      IF ls_msg-msg IS INITIAL.
+        CREATE OBJECT ls_msg-msg.
+        lv_root->set_message_container( ls_msg-msg ).
+      ENDIF.
+*   insert message container in order message table.
+      INSERT ls_msg INTO TABLE gt_msg.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_ENROLL->IF_CRM_IU_IL_ABSTR_ROOT~CHECK_BEFORE_SAVE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        ANY
+* | [--->] IV_ID                          TYPE        CRMT_GENIL_OBJECT_ID
+* | [--->] IV_MSG_SERVICE_ACCESS          TYPE REF TO IF_GENIL_MSG_SERVICE_ACCESS
+* | [<-()] RV_SUCCESS                     TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_root~check_before_save.
+    rv_success = abap_true.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_ENROLL->IF_CRM_IU_IL_ABSTR_ROOT~CREATE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_NUMBER                      TYPE        INT4
+* | [--->] IS_PARAMETERS                  TYPE        ANY(optional)
+* | [--->] IV_ROOT_LIST                   TYPE REF TO IF_GENIL_CONT_ROOT_OBJECTLIST
+* | [--->] IT_PARAMETERS                  TYPE        CRMT_NAME_VALUE_PAIR_TAB(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_root~create.
+    DATA: lv_root       TYPE REF TO if_genil_cont_root_object,
+          ls_parameters TYPE zspgm_create,
+          lv_key        TYPE zspgm_key,
+          ls_msg        TYPE ty_msg,
+          lt_bapiret2   TYPE bapiret2_t.
+    MOVE-CORRESPONDING is_parameters TO ls_parameters.
+
+    IF cl_crm_isu_il_tools=>check_backend_func_available(
+           iv_function  = 'ZISU_IL_ENROLL_CREATE'
+           iv_rfc_dest  = rfc_dest ) = abap_true.
+
+      CALL FUNCTION 'ZISU_IL_ENROLL_CREATE'
+        DESTINATION rfc_dest
+        EXPORTING
+          is_enroll_create      = ls_parameters
+          iv_commit             = abap_false
+        IMPORTING
+          e_enroll_key          = lv_key
+        TABLES
+          et_return             = lt_bapiret2
+        EXCEPTIONS
+          communication_failure = 1
+          system_failure        = 2.
+
+      IF sy-subrc = 0.
+
+* Check lt_bapiret local table for messages of type "A"(abort)
+* E" (Error) or "X"
+        LOOP AT lt_bapiret2 TRANSPORTING NO FIELDS
+                            WHERE type CA 'AEX'.
+        ENDLOOP.
+
+* If there are no Abort, Error, or X messages
+        IF sy-subrc <> 0.
+
+          gv_create_called = abap_true.
+
+          TRY.
+              lv_root = iv_root_list->add_object(
+                                        iv_object_name = gc_obj_enroll
+                                        is_object_key  = lv_key ).
+
+            CATCH cx_crm_genil_duplicate_rel
+                  cx_crm_genil_model_error.             "#EC NO_HANDLER
+          ENDTRY.
+
+        ENDIF.
+
+*     add global message
+        add_gmsg(
+          it_msg            = lt_bapiret2
+          iv_show_only_once = abap_true
+          iv_root_list      = iv_root_list ).
+
+      ENDIF.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_ENROLL->IF_CRM_IU_IL_ABSTR_ROOT~INIT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        ANY
+* | [--->] IV_ID                          TYPE        CRMT_GENIL_OBJECT_ID
+* | [--->] IV_MSG_SERVICE_ACCESS          TYPE REF TO IF_GENIL_MSG_SERVICE_ACCESS
+* | [<---] ET_ADDITIONAL_OBJ              TYPE        CRMT_GENIL_OBJ_INST_LINE_TAB
+* | [<---] RV_SUCCESS                     TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_root~init.
+    DATA: lv_key  TYPE zspgm_key.
+
+    CHECK rfc_dest IS NOT INITIAL.
+
+* order object key
+    lv_key = iv_key.
+    CHECK lv_key IS NOT INITIAL.
+
+    rv_success = unlock( iv_key = iv_key ).
+
+    IF cl_crm_isu_il_tools=>check_backend_func_available(
+         iv_function  = 'ZISU_IL_ENROLL_INIT'
+         iv_rfc_dest  = rfc_dest ) = abap_true.
+
+      CALL FUNCTION 'ZISU_IL_ENROLL_INIT'
+        DESTINATION rfc_dest
+        EXPORTING
+          is_key = lv_key.
+
+    ENDIF.
+
+* delete corresponding message container entry
+    DELETE me->gt_msg WHERE key = lv_key.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_ENROLL->IF_CRM_IU_IL_ABSTR_ROOT~LOCK
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        ANY
+* | [--->] IV_ID                          TYPE        CRMT_GENIL_OBJECT_ID
+* | [--->] IV_MSG_SERVICE_ACCESS          TYPE REF TO IF_GENIL_MSG_SERVICE_ACCESS
+* | [<---] ET_ADDITIONAL_OBJ              TYPE        CRMT_GENIL_OBJ_INST_LINE_TAB
+* | [<---] RV_SUCCESS                     TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_root~lock.
+    DATA: lv_key       TYPE zspgm_key,
+          lt_return    TYPE bapiret2_t,
+          temp_counter TYPE i.
+
+    CHECK rfc_dest IS NOT INITIAL.
+
+* order object key
+    lv_key = iv_key.
+    CHECK lv_key IS NOT INITIAL.
+
+    IF cl_crm_isu_il_tools=>check_backend_func_available(
+         iv_function  = 'ZISU_IL_ENROLL_LOCK'
+         iv_rfc_dest  = rfc_dest ) = abap_true.
+
+      CALL FUNCTION 'ZISU_IL_ENROLL_LOCK'
+        DESTINATION rfc_dest
+        EXPORTING
+          is_key                = lv_key
+        TABLES
+          et_return             = lt_return
+        EXCEPTIONS
+          communication_failure = 1
+          system_failure        = 2.
+
+      LOOP AT lt_return TRANSPORTING NO FIELDS
+                        WHERE type CA 'AEX'.
+      ENDLOOP.
+
+      IF sy-subrc = 0.
+
+        add_msg(
+          iv_obj_name = gc_obj_enroll
+          iv_key = lv_key
+          it_msg      = lt_return ).
+
+      ELSE.
+        is_locked = abap_true.
+        rv_success = abap_true.
+
+
+      ENDIF.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_ENROLL->IF_CRM_IU_IL_ABSTR_ROOT~SAVE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        ANY
+* | [--->] IV_ID                          TYPE        CRMT_GENIL_OBJECT_ID
+* | [--->] IV_MSG_SERVICE_ACCESS          TYPE REF TO IF_GENIL_MSG_SERVICE_ACCESS
+* | [<---] ET_ID_MAPPING                  TYPE        CRMT_GENIL_ID_MAPPING_TAB
+* | [<---] ET_ADDITIONAL_SAVED_OBJ        TYPE        CRMT_GENIL_OBJ_INST_LINE_TAB
+* | [<---] RV_SUCCESS                     TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr_root~save.
+    DATA: lv_key    TYPE zspgm_key,
+          lt_return TYPE bapiret2_t.
+
+    lv_key = iv_key.
+
+    IF cl_crm_isu_il_tools=>check_backend_func_available(
+         iv_function  = 'ZISU_IL_ENROLL_SAVE'
+         iv_rfc_dest  = rfc_dest ) = abap_true.
+
+      CALL FUNCTION 'ZISU_IL_ENROLL_SAVE'
+        DESTINATION rfc_dest
+        EXPORTING
+          is_key                = lv_key
+          i_create_save_needed  = gv_create_called
+        TABLES
+          et_return             = lt_return
+        EXCEPTIONS
+          communication_failure = 1
+          system_failure        = 2.
+
+      IF sy-subrc = 0.
+
+* clear create flag
+        gv_create_called = abap_false.
+
+        LOOP AT lt_return TRANSPORTING NO FIELDS
+                          WHERE type CA 'AEX'.
+        ENDLOOP.
+        IF sy-subrc = 0.
+
+          add_msg(
+            iv_obj_name = gc_obj_enroll
+            iv_key = lv_key
+            it_msg      = lt_return ).
+
+        ELSE.
+          rv_success = abap_true.
+        ENDIF.
+
+      ENDIF.
+    ENDIF.
+
+*  if at a later stage the init method is enhanced # then this
+*  enhancements will definitially also need to be called after save
+*  We dont read the return value. (see usage in cl_ibase_ist_genil_root)
+    CALL METHOD if_crm_iu_il_abstr_root~init
+      EXPORTING
+        iv_key                = iv_key
+        iv_id                 = iv_id
+        iv_msg_service_access = iv_msg_service_access.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CRM_ISU_IL_ENROLL->IF_CRM_IU_IL_ABSTR~RESET
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_crm_iu_il_abstr~reset.
+    DATA: lrs_msg TYPE REF TO ty_msg.
+
+    CALL METHOD super->if_crm_iu_il_abstr~reset.
+
+* clear message container(s)
+    LOOP AT gt_msg REFERENCE INTO lrs_msg.
+      lrs_msg->msg->reset( ).
+      FREE lrs_msg->msg.
+    ENDLOOP.
+    CLEAR gt_msg.
+
+    FREE gr_gmsg.
+    CLEAR gr_gmsg.
+*    .
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_CRM_ISU_IL_ENROLL->UNLOCK
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        ZSPGM_KEY
+* | [<-()] RV_UNLOCKED                    TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method UNLOCK.
+
+  DATA: lv_key   TYPE zspgm_key.
+
+  CHECK rfc_dest IS NOT INITIAL.
+
+* order object key
+  lv_key = iv_key.
+  CHECK lv_key IS NOT INITIAL.
+
+  IF cl_crm_isu_il_tools=>check_backend_func_available(
+       iv_function  = 'ZISU_IL_ENROLL_UNLOCK'
+       iv_rfc_dest  = rfc_dest ) = abap_true.
+
+    CALL FUNCTION 'ZISU_IL_ENROLL_UNLOCK'
+      DESTINATION rfc_dest
+      EXPORTING
+        is_key           = iv_key
+      EXCEPTIONS
+        communication_failure = 1
+        system_failure        = 2.
+
+    IF sy-subrc =  0.
+      is_locked = abap_false.
+      rv_unlocked = abap_true.
+    ENDIF.
+
+  ENDIF.
+
+
+  endmethod.
+ENDCLASS.

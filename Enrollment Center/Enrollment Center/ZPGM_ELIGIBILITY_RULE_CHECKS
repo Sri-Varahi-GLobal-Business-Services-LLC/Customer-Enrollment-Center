@@ -1,0 +1,129 @@
+FUNCTION zpgm_eligibility_rule_checks .
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_ELIGIBILITY_INPT) TYPE  ZSPGM_BRF_INPUT
+*"  TABLES
+*"      ET_MESSAGES STRUCTURE  ZSPGM_BRF_RETURN OPTIONAL
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Raghavendra Dasari
+*  Date                      : 11/16/2015
+*----------------------------------------------------------------*
+*  Description: This FM calls the BRF+ Function
+*               ENROLMNT_PRE_VALIDATION_CHECKS to check eligibility and
+*               returns error message if any
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  CONSTANTS : lc_function_id TYPE if_fdt_types=>id VALUE '68B5999264261ED5A6C69ADD5FA75200',
+              lc_input       TYPE char20 VALUE 'ZSENRL_INT_STRUC'.
+
+  DATA: ls_eligibility TYPE zsenrl_int_struc,
+        ls_input       TYPE zsppm_ca_pgmtype,
+        ls_return      TYPE zspgm_brf_return,
+        ls_msg         TYPE zspgm_brf_return.
+
+  DATA: loref_context  TYPE REF TO if_fdt_context,
+        loref_result   TYPE REF TO if_fdt_result,
+        loref_func     TYPE REF TO if_fdt_function,
+        lx_fdt         TYPE REF TO cx_fdt,
+        lt_message     TYPE STANDARD TABLE OF zspgm_brf_return.
+
+  FIELD-SYMBOLS : <fs_error_message> TYPE if_fdt_types=>s_message.
+
+  CLEAR: loref_context, loref_result, loref_func, lx_fdt, ls_return,
+         et_messages[], ls_eligibility, ls_input, lt_message, ls_msg.
+
+  LOOP AT iv_eligibility_inpt-zca_pgmtype INTO ls_input.
+
+    CLEAR: lt_message[], ls_msg, ls_return, ls_eligibility.
+
+    ls_eligibility-zenrldat     = iv_eligibility_inpt-zenrldat.
+    ls_eligibility-zenrltim     = iv_eligibility_inpt-zenrltim.
+    ls_eligibility-zenrlsdp     = iv_eligibility_inpt-zenrlsdp.
+    ls_eligibility-zenrlbp      = iv_eligibility_inpt-zenrlbp.
+    ls_eligibility-zenrlca      = ls_input-zenrlca.
+    ls_eligibility-zcallername  = iv_eligibility_inpt-zcallername.
+    ls_eligibility-zprgmid      = iv_eligibility_inpt-zprgmid.
+    ls_eligibility-zpgmtype     = ls_input-zpgmtype.
+    ls_eligibility-zinstall     = iv_eligibility_inpt-zinstall.
+    ls_eligibility-zcontract    = iv_eligibility_inpt-zcontract.
+    ls_eligibility-zenrl_source = iv_eligibility_inpt-zenrl_source.
+    ls_eligibility-zexec_time   = iv_eligibility_inpt-zexec_time.
+    ls_eligibility-email        = iv_eligibility_inpt-email.
+    ls_eligibility-zenrlsdp_gas = iv_eligibility_inpt-zenrlsdp_gas.
+    ls_eligibility-electric_only = abap_false.
+
+* Clear the Factory instance
+    cl_fdt_factory=>destruct_object( ).
+    cl_fdt_factory=>clear_buffers( ).
+
+* Get Instance of BRF Function
+    loref_func = cl_fdt_factory=>get_instance( )->get_function( lc_function_id ).
+    loref_context = loref_func->get_process_context( ).
+    loref_context->set_value( EXPORTING iv_name = lc_input
+                                        ia_value = ls_eligibility ).
+
+    TRY.
+*       Process the Rules
+        loref_func->process( EXPORTING io_context = loref_context
+                             IMPORTING eo_result  = loref_result ).
+
+*       Get Errors if any
+        loref_result->get_value( IMPORTING ea_value = lt_message ).
+
+        LOOP AT lt_message INTO ls_msg.
+          clear: ls_return.
+          MOVE-CORRESPONDING ls_msg to ls_return.
+*          MOVE :
+*                 ls_msg-msgid      TO ls_return-msgid,
+*                 ls_msg-msgtype    TO ls_return-msgtype,
+*                 ls_msg-msgnumber  TO ls_return-msgnumber,
+*                 ls_msg-message_v1 TO ls_return-message_v1,
+*                 ls_msg-message_v2 TO ls_return-message_v2,
+*                 ls_msg-message_v3 TO ls_return-message_v3,
+*                 ls_msg-message_v4 TO ls_return-message_v4,
+*                 ls_msg-partner    TO ls_return-partner,
+*                 ls_msg-vkont      TO ls_return-vkont,
+*                 ls_msg-pgm_desc   TO ls_return-pgm_desc,
+*                 ls_msg-message    TO ls_return-message.
+
+          APPEND ls_return TO et_messages.
+        ENDLOOP.
+
+      CATCH cx_fdt INTO lx_fdt.
+        LOOP AT lx_fdt->mt_message ASSIGNING <fs_error_message>.
+          clear: ls_return.
+          MOVE :
+                 <fs_error_message>-id            TO ls_return-id,
+                 <fs_error_message>-msgty         TO ls_return-type,
+                 <fs_error_message>-msgno         TO ls_return-number,
+                 <fs_error_message>-msgv1         TO ls_return-MESSAGE_V1,
+                 <fs_error_message>-msgv2         TO ls_return-MESSAGE_V2,
+                 <fs_error_message>-msgv3         TO ls_return-MESSAGE_V3,
+                 <fs_error_message>-msgv4         TO ls_return-MESSAGE_V4,
+                 ls_eligibility-zenrlbp           TO ls_return-zenrlbp,
+                 ls_eligibility-zenrlca           TO ls_return-zenrlca,
+                 'BRF+ Call Err'                  TO ls_return-field.
+
+
+          MESSAGE ID ls_return-id TYPE ls_return-type NUMBER ls_return-number
+                  WITH ls_return-message_v1 ls_return-message_v2 ls_return-message_v3 ls_return-message_v4
+                  INTO ls_return-message.
+
+          APPEND ls_return TO et_messages.
+        ENDLOOP.
+    ENDTRY.
+
+  ENDLOOP.
+
+ENDFUNCTION.
+

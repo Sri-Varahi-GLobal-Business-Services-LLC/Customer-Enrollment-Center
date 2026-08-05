@@ -1,0 +1,147 @@
+FUNCTION z_elig_rate .
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(SOURCE_SYSTEM) TYPE  ZELIG_SOURCE_SYSTEM
+*"     VALUE(CATEGORY) TYPE  ZELIG_CATEGORY
+*"     VALUE(DEVICE) TYPE  EQUNR
+*"  EXPORTING
+*"     VALUE(ELIGIBLE_FLG) TYPE  BOOLEAN_FLG
+*"     VALUE(ERROR_MESSAGE) TYPE  STRING
+*"----------------------------------------------------------------------
+*-----------------------------------------------------------------------
+*Modified:   September 2007
+*Author:     Chad Essenmacher
+*Desc:       Modifed SQL for performance enhancements to get execution time
+*            down for IVR processing.
+*-----------------------------------------------------------------------
+*-----------------------------------------------------------------------
+  TYPES: BEGIN OF t_operand,
+           operand      TYPE ettaf-operand,
+         END OF t_operand.
+
+  DATA: fl_eligible(1)     TYPE c,
+        fl_operand(1)      TYPE c,
+        l_operand_tab      TYPE STANDARD TABLE OF t_operand,   "ettaf-operand,
+        l_operand_rec      LIKE LINE OF l_operand_tab.
+
+  TRY.
+*     Initialize values / variables
+      CLEAR : wa_zelig_rules,v_operand,v_tariftyp,v_installation.
+      CLEAR : l_operand_tab, l_operand_rec, fl_operand.
+      REFRESH : i_zelig_rules,i_logikzw.
+
+
+
+* Call the Z_ELIG_TABLE_LOOKUP module to get the corresponding values
+* for rule RATE CATEGORY
+      CALL FUNCTION 'Z_ELIG_TABLE_LOOKUP'
+        EXPORTING
+          pi_source_system = source_system
+          pi_category      = category
+          pi_rule_name     = c_rule_rt_cat
+        IMPORTING
+          pe_values        = i_zelig_rules.
+
+*     If values returned
+      IF i_zelig_rules IS NOT INITIAL.
+*       Get the tariff type using deice
+        PERFORM z_get_tariftyp USING device
+                               CHANGING error_message.
+
+*       If error message is not found
+        IF error_message IS INITIAL.
+*         If tariftyp matches set flag to space and exit
+          LOOP AT i_zelig_rules INTO wa_zelig_rules.
+            IF wa_zelig_rules = v_tariftyp.
+              eligible_flg = space.
+              error_message = text-e32.
+              fl_eligible = c_set_x.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+
+*       Clear variables
+        REFRESH : i_zelig_rules.
+        CLEAR : v_tariftyp,wa_zelig_rules.
+      ENDIF.
+
+*     Don't continue if this first check failed
+      IF fl_eligible = c_set_x.
+*     Clear variables
+        CLEAR : wa_zelig_rules,v_operand,v_tariftyp.
+        REFRESH : i_zelig_rules.
+        EXIT.
+      ENDIF.
+
+
+
+
+
+
+
+
+
+*     Call the Z_ELIG_TABLE_LOOKUP module  to get the corresponding values
+*     for rule RATE FACTS
+      CALL FUNCTION 'Z_ELIG_TABLE_LOOKUP'
+        EXPORTING
+          pi_source_system = source_system
+          pi_category      = category
+          pi_rule_name     = c_rule_rt_fact
+        IMPORTING
+          pe_values        = i_zelig_rules.
+
+*     If values returned
+      IF i_zelig_rules IS NOT INITIAL.
+*       Get tariftyp using device
+        PERFORM z_get_tariftyp USING device
+                               CHANGING error_message.
+*       If error message not found
+        IF error_message IS INITIAL.
+*         Select operand related to rate fact by using the tariftyp for current time slice
+          SELECT operand
+            FROM ettaf
+            INTO TABLE l_operand_tab
+             FOR ALL ENTRIES IN i_zelig_rules
+           WHERE operand = i_zelig_rules-table_line
+             AND tariftyp = v_tariftyp
+             AND ab       <= sy-datum
+             AND bis      >= sy-datum.
+
+*         Check results
+          IF l_operand_tab IS NOT INITIAL.
+*           Rate Fact Found - not eligibile
+            eligible_flg = space.
+            error_message = text-e33.
+          ELSE.
+*           Rate Fact Not Found - eligible
+            eligible_flg = c_set_x.
+            CLEAR error_message.
+          ENDIF.
+
+        ELSE.
+*         Tariftype not found
+          eligible_flg = space.
+        ENDIF.
+      ELSE.
+*       If no match found set message appropriately
+        error_message = text-e04.   "Rate category Fact Operand not found
+      ENDIF.
+
+
+
+*     Clear variables
+      CLEAR : wa_zelig_rules,v_operand,v_tariftyp.
+      REFRESH : i_zelig_rules.
+
+
+*   Catch system errors.
+    CATCH cx_root INTO v_err_obj.
+      CONCATENATE text-e16 c_fm_rate INTO error_message.
+      eligible_flg = space.
+      CLEAR v_err_obj.
+  ENDTRY.
+
+ENDFUNCTION.
+

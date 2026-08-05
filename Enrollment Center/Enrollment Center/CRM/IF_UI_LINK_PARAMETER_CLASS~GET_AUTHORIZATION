@@ -1,0 +1,22 @@
+method IF_UI_LINK_PARAMETER_CLASS~GET_AUTHORIZATION.
+
+  rv_result = abap_undefined.
+
+* check only in case of launch transactions and BI reports
+  if is_link_info-link_type ne 'C' and
+     is_link_info-link_type ne 'D'.
+    return.
+  endif.
+
+  authority-check object 'C_LL_TGT'
+           id 'LL_TYPE' field is_link_info-link_type
+           id 'LL_TGT'  field is_link_info-link_parameter(40). " max 40 chars are taken into account
+
+  if sy-subrc eq 0.
+    rv_result = abap_true.
+  else.
+    rv_result = abap_false.
+  endif.
+
+endmethod.
+

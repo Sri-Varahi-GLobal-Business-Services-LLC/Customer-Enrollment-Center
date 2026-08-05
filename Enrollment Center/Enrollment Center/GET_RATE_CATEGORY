@@ -1,0 +1,16 @@
+METHOD get_rate_category.
+  CLEAR rv_ratecategory.
+  IF my_tariftyp IS INITIAL.
+    SELECT SINGLE tariftyp
+           INTO  rv_ratecategory
+           FROM v_eanl
+           WHERE anlage = my_anlage
+           AND ( bis = co_date_infinite AND ab LE my_date ).
+    IF NOT sy-subrc IS INITIAL.
+      populate_status_return space co_error co_value_26 my_anlage space space space.
+    ENDIF.
+  ELSE.
+    rv_ratecategory = my_tariftyp.
+  ENDIF.
+ENDMETHOD.
+

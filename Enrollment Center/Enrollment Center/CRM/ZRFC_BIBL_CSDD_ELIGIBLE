@@ -1,0 +1,771 @@
+FUNCTION zrfc_bibl_csdd_eligible.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_ALL_PAY_TERMS) TYPE  BOOLEAN OPTIONAL
+*"  TABLES
+*"      LT_CHDOC TYPE  CDREDCD_TAB OPTIONAL
+*"      LT_PLAN STRUCTURE  ZSPLAN_CHANGECSDD OPTIONAL
+*"  CHANGING
+*"     VALUE(CT_ELIGIBLE) TYPE  ZTCSDD_ELIGIBLE
+*"     VALUE(CT_PAY_TERMS) TYPE  ZTCSDD_PAYTERMS
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Kyle Harris
+*  Date                      : 1/2/2014
+*----------------------------------------------------------------*
+*  Description: here we perform an eligibility check for the customer
+*               to see if they can enroll in CSDD.  We also retrieve
+*               the available payment terms
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   : E2DK931609
+*  Author                    : Elie Roques
+*  Modification Date         : 2014/06/10
+*  Description               : Performance optimisation
+*  Defect #                  : 4608
+*  Modification flag         : #4608
+******************************************************************
+*  SAP Transport Request #   : E2DK931967
+*  Author                    : Elie Roques
+*  Modification Date         : 2014/06/19
+*  Description               : Handling of combo accounts
+*                              and code cleaning
+*  Defect #                  : 4608
+*  Modification flag         : #4608
+******************************************************************
+*  SAP Transport Request #   : E2DK933207
+*  Author                    : Elie Roques
+*  Modification Date         : 2014/08/26
+*  Description               : Determine Over The Air reading
+*                              through the meter's capabilities
+*  Change Request #          : 07467
+*  Modification flag         : #07467
+******************************************************************
+*  SAP Transport Request #   : E2DK935047
+*  Author                    : Elie Roques
+*  Modification Date         : 2015/01/14
+*  Description               : Black out DYs leading to billing
+*                              twice a month or skipping a bill
+*                              month (BPP customers enablement)
+*  Change Request #          : 8000002420
+*  Modification flag         : 8000002420
+******************************************************************
+*  SAP Transport Request #   : ECDK971276
+*  Author                    : Elie Roques
+*  Modification Date         : 2015/04/06
+*  Description               : Add a check for opt out flag
+*  Change Request #          :
+*  Modification flag         : "ECDK971276
+******************************************************************
+*  SAP Transport Request #   : ECDK972800
+*  Author                    : Elie Roques
+*  Modification Date         : 2015/08/11
+*  Description               : Performance enhancement defect 826
+*  Change Request #          :
+*  Modification flag         : 826
+******************************************************************
+*  SAP Transport Request #   : E2DK939555
+*  Author                    : Laura Vieth
+*  Modification Date         : 2015/11/09
+*  Description               : Smart Energy R5 - don't allow CSDD if account is prepay
+*  Change Request #          :
+*  Modification flag         : E2DK939555 SE R5
+******************************************************************
+*  Transport Request  : ECDK975674
+*  Author             : Tapas Pradhan
+*  Modification Date  : 16th Dec, 2016
+*  Description        : CSDD Programming need modification for
+*                       eligiblity validations
+*  Demand number      : DMND0035514
+*  Search String      : Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+******************************************************************
+
+* #4608 - Start
+  TYPES:
+    BEGIN OF ty_fkkvkx,
+      vkont           TYPE vkont_kk,
+      vktyp           TYPE vktyp_kk,
+      abwvk           TYPE abwvk_kk,
+      consolidator_id TYPE consolidator_id,   " E2DK939555 SE R5
+    END OF ty_fkkvkx.
+
+  TYPES: BEGIN OF ty_ever,
+           vkonto  TYPE vkont_kk,
+           vertrag TYPE vertrag,
+           sparte  TYPE sparte,
+           anlage  TYPE anlage,
+           pypls   TYPE e_pypls,
+           einzdat TYPE einzdat,
+           auszdat TYPE auszdat,
+         END OF ty_ever.
+
+  TYPES: BEGIN OF ty_eanlh,
+           anlage   TYPE anlage,
+           tariftyp TYPE tariftyp_anl,
+           ableinh  TYPE ableinheit,
+         END OF ty_eanlh.
+
+* Begin of #07467
+  TYPES: BEGIN OF ty_eastl,
+           anlage  TYPE anlage,
+           logiknr TYPE logiknr,
+         END OF ty_eastl.
+
+  TYPES: BEGIN OF ty_capabilities,
+           logiknr      TYPE logiknr,
+           amcg_cap_grp TYPE e_ami_amcg_cap_grp,
+           amcg_cap     TYPE e_ami_capabilities,
+         END OF ty_capabilities,
+         BEGIN OF ty_gas_capabilities,
+           logiknr      TYPE logiknr,
+           ams          TYPE e_ami_ams,
+           amcg_cap_grp TYPE e_ami_amcg_cap_grp,
+         END OF ty_gas_capabilities.
+* End of #07467
+  TYPES: BEGIN OF ty_eanl,
+           anlage  TYPE anlage,
+           vstelle TYPE vstelle,
+           sparte  TYPE sparte,
+         END OF ty_eanl.
+
+  CONSTANTS:
+    lc_paramid(14) TYPE c VALUE 'Z_CSDD_TESTING',
+    lc_01(2)       TYPE c VALUE '01',
+    lc_02(2)       TYPE c VALUE '02',
+    lc_2           TYPE c VALUE '2',
+    lc_3           TYPE c VALUE '3',
+    lc_dy(2)       TYPE c VALUE 'DY',
+    lc_ce(2)       TYPE c VALUE 'CE',
+    lc_ce21(4)     TYPE c VALUE 'CE21',
+    lc_validto     TYPE sy-datum VALUE '99991231',
+    lc_z           TYPE kombinat VALUE 'Z',
+    lc_m           TYPE kombinat VALUE 'M',
+    lc_zahlkond(8) TYPE c VALUE 'ZAHLKOND',
+    lc_i           TYPE c VALUE 'I',
+    lc_eq(2)       TYPE c VALUE 'EQ',
+    lc_sa(2)       TYPE c VALUE 'SA',
+    lc_esmopt_out  TYPE e_operand VALUE 'ESMOPT_OUT',       "ECDK971276
+    lc_gsmopt_out  TYPE e_operand VALUE 'GSMOPT_OUT',       "ECDK971276
+    lc_prepay      TYPE consolidator_id VALUE '0008'.
+
+
+  DATA:
+    lt_fkkvkx         TYPE STANDARD TABLE OF ty_fkkvkx,
+    lt_ever           TYPE STANDARD TABLE OF ty_ever,
+    lt_eanlh          TYPE STANDARD TABLE OF ty_eanlh,
+    lv_lines          TYPE i,
+    lt_rcat           TYPE STANDARD TABLE OF zbi_csdd_rcat,
+    lv_fr_date        TYPE dats,
+    lv_testing        TYPE xuvalue,
+    lt_eastl          TYPE STANDARD TABLE OF ty_eastl,      "#07467
+    lt_eastl_ota      TYPE STANDARD TABLE OF ty_eastl,      "#07467
+    lt_capabilities   TYPE STANDARD TABLE OF ty_capabilities, "#07467
+    lt_gcm_capability TYPE TABLE OF ty_gas_capabilities,
+    lt_ettifn         TYPE TABLE OF ettifn,                 "ECDK971276
+    ls_ettifn         TYPE ettifn,                          "ECDK971276
+    ls_eanl           TYPE ty_eanl,
+    lt_eanl           TYPE TABLE OF ty_eanl,
+    lt_eanl_vstelle   TYPE TABLE OF ty_eanl,
+    lv_rc             TYPE sy-subrc.
+
+  DATA: ls_plan       TYPE zsplan_changecsdd.
+
+*{ Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+  DATA : lt_egerh TYPE TABLE OF egerh-logiknr.
+*} Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+
+  FIELD-SYMBOLS:
+    <fs_fkkvkx> TYPE ty_fkkvkx,
+    <fs_ever>   TYPE ty_ever,
+    <fs_eanlh>  TYPE ty_eanlh,
+    <fs_record> TYPE zscsdd_eligible,
+    <fs_eastl>  TYPE ty_eastl,                              "#07467
+    <fs_eanl>   TYPE ty_eanl.
+
+  DATA: lt_eligible        TYPE ztcsdd_eligible.
+
+* #4608 - End
+
+  FIELD-SYMBOLS <eligible> TYPE zscsdd_eligible.
+  UNASSIGN <eligible>.
+
+  CHECK ct_eligible IS NOT INITIAL.
+
+
+*(+/-) #4608 - Start
+  CLEAR: lv_lines, lv_fr_date.
+  REFRESH: lt_fkkvkx, lt_ever, lt_eanlh, lt_rcat, lt_eanl.
+  UNASSIGN: <fs_fkkvkx>, <fs_ever>, <fs_eanlh>, <fs_record>, <fs_eanl>.
+
+  " E2DK939555 Start SE R5 - add consolidator_id to select
+  SELECT a~vkont a~vktyp b~abwvk b~consolidator_id
+" E2DK939555 End SE R5
+    INTO TABLE lt_fkkvkx
+    FROM fkkvk AS a
+    INNER JOIN fkkvkp AS b ON b~vkont = a~vkont
+    FOR ALL ENTRIES IN ct_eligible
+    WHERE a~vkont = ct_eligible-vkont.
+
+  SELECT vkonto vertrag sparte anlage pypls einzdat auszdat
+    FROM ever
+    INTO TABLE lt_ever
+    FOR ALL ENTRIES IN ct_eligible
+    WHERE vkonto  EQ ct_eligible-vkont
+    AND   auszdat GE sy-datum.
+  IF lt_ever[] IS NOT INITIAL.
+    SELECT anlage vstelle sparte
+      FROM v_eanl
+      INTO TABLE lt_eanl_vstelle
+      FOR ALL ENTRIES IN lt_ever
+      WHERE anlage = lt_ever-anlage
+      AND   bis    = lc_validto.
+
+    IF lt_eanl_vstelle[] IS NOT INITIAL.
+      SELECT anlage vstelle sparte
+        FROM v_eanl
+        INTO TABLE lt_eanl
+        FOR ALL ENTRIES IN lt_eanl_vstelle
+        WHERE vstelle = lt_eanl_vstelle-vstelle
+        AND   bis     = lc_validto
+*{ Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+* Divison check for Gas & Electricity to fetch Installations
+        AND ( sparte = lc_01 OR
+              sparte = lc_02 ).
+*} Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+      IF lt_eanl[] IS NOT INITIAL.
+        SELECT anlage tariftyp ableinh
+          FROM eanlh
+          INTO TABLE lt_eanlh
+          FOR ALL ENTRIES IN lt_eanl
+          WHERE anlage  EQ lt_eanl-anlage
+          AND   ab      LE sy-datum
+          AND   bis     GE sy-datum.
+
+        SELECT * FROM zbi_csdd_rcat INTO TABLE lt_rcat. "#EC CI_NOWHERE
+
+        "ECDK971276 - Start of change
+        SELECT *
+          FROM ettifn
+          INTO TABLE lt_ettifn
+          FOR ALL ENTRIES IN lt_eanl
+          WHERE anlage EQ lt_eanl-anlage
+          AND   ( operand EQ lc_esmopt_out OR
+                  operand EQ lc_gsmopt_out )
+          AND   bis GE sy-datum.
+        "ECDK971276 - End of change
+
+* Start - EROQUES Defect 826
+        SELECT anlage logiknr
+          FROM eastl
+          INTO TABLE lt_eastl
+          FOR ALL ENTRIES IN lt_eanl
+          WHERE anlage = lt_eanl-anlage
+            AND bis    = lc_validto.
+        IF lt_eastl[] IS NOT INITIAL.
+*{ Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+* Selecting the valid Logical no. for the Meter OTA error check
+          CLEAR lt_egerh[].
+
+          SELECT logiknr
+            FROM egerh
+            INTO TABLE lt_egerh
+            FOR ALL ENTRIES IN lt_eastl
+            WHERE logiknr  EQ lt_eastl-logiknr
+              AND ab       LE sy-datum
+              AND bis      EQ lc_validto
+              AND ( kombinat EQ lc_z OR kombinat EQ lc_m ).
+
+          SORT lt_egerh BY table_line.
+
+*} Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+          SELECT a~logiknr a~amcg_cap_grp b~amcg_cap
+            INTO TABLE lt_capabilities
+            FROM egerh AS a
+            INNER JOIN teami_amcgcap AS b ON b~amcg_cap_grp = a~amcg_cap_grp
+            FOR ALL ENTRIES IN lt_eastl
+            WHERE a~logiknr      EQ lt_eastl-logiknr
+              AND a~ab           LE sy-datum
+              AND a~bis          EQ lc_validto
+              AND a~kombinat     EQ lc_z
+              AND a~ams          NE space
+              AND a~amcg_cap_grp NE space
+              AND b~amcg_cap     EQ lc_3.
+          SELECT a~logiknr a~ams a~amcg_cap_grp
+            INTO TABLE lt_gcm_capability
+            FROM egerh AS a
+            INNER JOIN equi AS c ON c~equnr = a~equnr
+            INNER JOIN etyp AS d ON d~matnr = c~matnr
+            FOR ALL ENTRIES IN lt_eastl
+            WHERE a~logiknr EQ lt_eastl-logiknr
+              AND a~ab          LE sy-datum
+              AND a~bis         EQ lc_validto
+              AND a~kombinat    EQ lc_m
+              AND d~smart_meter EQ lc_2.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+* End - EROQUES Defect 826
+  ENDIF.
+
+  DESCRIBE TABLE ct_eligible LINES lv_lines.
+  GET PARAMETER ID lc_paramid FIELD lv_testing.
+
+  LOOP AT ct_eligible ASSIGNING <fs_record>.
+    READ TABLE lt_fkkvkx ASSIGNING <fs_fkkvkx> WITH KEY vkont = <fs_record>-vkont.
+    IF sy-subrc = 0.
+      IF <fs_fkkvkx>-vktyp <> lc_01.
+        <fs_record>-ineligible = abap_true.
+        <fs_record>-ineligible_reason = 'Contract Account is either Collective or Non-Energy'.
+        CONTINUE.
+      ENDIF.
+      IF sy-subrc = 0 AND <fs_fkkvkx>-abwvk IS NOT INITIAL.
+        <fs_record>-ineligible = abap_true.
+        <fs_record>-ineligible_reason = 'Contract Account is part of a Collective Account'.
+        CONTINUE.
+      ENDIF.
+      " E2DK939555 Start SE R5
+      IF <fs_fkkvkx>-consolidator_id = lc_prepay.
+        <fs_record>-ineligible = abap_true.
+        <fs_record>-ineligible_reason = 'Customer enrolled on PrePay'.
+        CONTINUE.
+      ENDIF.
+      " E2DK939555 End SE R5
+    ENDIF.
+
+    LOOP AT lt_ever TRANSPORTING NO FIELDS WHERE vkonto = <fs_record>-vkont AND auszdat NE lc_validto.
+      EXIT.
+    ENDLOOP.
+    IF sy-subrc = 0 AND lv_lines = 1.
+      <fs_record>-ineligible = abap_true.
+      <fs_record>-ineligible_reason = 'Customer has a pending installation move out'.
+    ENDIF.
+
+    READ TABLE lt_ever ASSIGNING <fs_ever> WITH KEY vkonto = <fs_record>-vkont.
+    IF sy-subrc <> 0.
+      <fs_record>-ineligible = abap_true.
+      <fs_record>-ineligible_reason = 'No Active Contract Exists'.
+      CONTINUE.
+
+    ELSE.
+      CLEAR ls_eanl.
+      READ TABLE lt_eanl INTO ls_eanl WITH KEY anlage = <fs_ever>-anlage.
+      IF sy-subrc = 0.
+        LOOP AT lt_eanl ASSIGNING <fs_eanl> WHERE vstelle = ls_eanl-vstelle.
+          IF <fs_record>-ineligible = abap_true.
+            EXIT.
+          ENDIF.
+          READ TABLE lt_eanlh ASSIGNING <fs_eanlh> WITH KEY anlage = <fs_eanl>-anlage.
+          IF sy-subrc = 0.
+            READ TABLE lt_rcat WITH KEY tariftyp = <fs_eanlh>-tariftyp TRANSPORTING NO FIELDS.
+            IF sy-subrc <> 0.
+              <fs_record>-ineligible = abap_true.
+              <fs_record>-ineligible_reason = 'Customers Rate is not Eligible'.
+              EXIT.
+            ENDIF.
+          ENDIF.
+          "ECDK971276 - Start of change
+          READ TABLE lt_ettifn INTO ls_ettifn WITH KEY anlage = <fs_eanl>-anlage.
+          IF sy-subrc = 0.
+            <fs_record>-ineligible = abap_true.
+            IF ls_ettifn-ab LE sy-datum.
+              <fs_record>-ineligible_reason = 'Customer has an active Smart Meter Opt Out flag'.
+            ELSE.
+              <fs_record>-ineligible_reason = 'Customer has a pending Smart Meter Opt Out flag'.
+            ENDIF.
+            EXIT.
+          ENDIF.
+          "ECDK971276 - End of change
+
+* Start - EROQUES Defect 826
+          IF <fs_eanl>-sparte = lc_01.
+            LOOP AT lt_eastl ASSIGNING <fs_eastl> WHERE anlage = <fs_eanl>-anlage.
+*{ Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+* Checking for the valid meters only
+              READ TABLE lt_egerh WITH KEY table_line = <fs_eastl>-logiknr
+                                  TRANSPORTING NO FIELDS BINARY SEARCH.
+              IF sy-subrc = 0.
+*} Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+                READ TABLE lt_capabilities WITH KEY logiknr = <fs_eastl>-logiknr TRANSPORTING NO FIELDS.
+                IF lv_testing NS 'A' AND sy-subrc <> 0.
+                  <fs_record>-ineligible = abap_true.
+                  <fs_record>-ineligible_reason = 'Not all Meters are reading Over the Air'.
+                  EXIT.
+                ENDIF.
+              ENDIF.              " Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+            ENDLOOP.
+            IF sy-subrc <> 0.
+              <fs_record>-ineligible = abap_true.
+              CONCATENATE 'No meter found on Installation' <fs_eanl>-anlage INTO <fs_record>-ineligible_reason SEPARATED BY space.
+            ENDIF.
+          ELSE.
+            lv_rc = 1.
+            LOOP AT lt_eastl ASSIGNING <fs_eastl> WHERE anlage = <fs_eanl>-anlage.
+*{ Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+* Checking for the valid meters only
+              READ TABLE lt_egerh WITH KEY table_line = <fs_eastl>-logiknr
+                                  TRANSPORTING NO FIELDS BINARY SEARCH.
+              IF sy-subrc = 0.
+*} Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+                READ TABLE lt_gcm_capability INTO DATA(ls_gcm_capability) WITH KEY logiknr = <fs_eastl>-logiknr.
+
+                IF sy-subrc = 0.
+                  CALL FUNCTION 'Z_RFC_IS_AMR_ENABLED'
+                    EXPORTING
+                      im_ams            = ls_gcm_capability-ams
+                      im_amcg_cap_group = ls_gcm_capability-amcg_cap_grp
+                    EXCEPTIONS
+                      not_amr           = 1
+                      not_enabled       = 2.
+
+                  IF sy-subrc <> 1.
+                    lv_rc = 1.
+                    EXIT.
+                  ELSE.
+                    " There is a non-AMR smart GCM
+                    lv_rc = 0.
+                  ENDIF.
+                ENDIF.
+              ENDIF.              " Ins : Tapas Pradhan : DMND0035514 : 16th dec, 2016
+            ENDLOOP.
+
+            IF lv_rc <> 0.
+              IF lv_testing NS 'A'.
+                <fs_record>-ineligible = abap_true.
+                IF sy-subrc <> 0.
+                  CONCATENATE 'No meter found on Installation' <fs_eanl>-anlage INTO <fs_record>-ineligible_reason SEPARATED BY space.
+                ELSE.
+                  <fs_record>-ineligible_reason = 'Not all Meters are reading Over the Air'.
+                ENDIF.
+                EXIT.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+          IF sy-subrc <> 0.
+            <fs_record>-ineligible = abap_true.
+            CONCATENATE 'No meter found on Installation' <fs_eanl>-anlage INTO <fs_record>-ineligible_reason SEPARATED BY space.
+          ENDIF.
+* End - EROQUES Defect 826
+
+        ENDLOOP.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+
+  lt_eligible = ct_eligible.
+
+
+*****Number of Changes*****
+  CHECK lv_lines = 1.
+
+  DATA:     lv_objectid TYPE cdhdr-objectid,
+            lv_to_date  TYPE datum,
+            lv_nr_from  TYPE pcdhdr-planchngnr VALUE '0',
+            lt_pcdhdr   TYPE TABLE OF pcdhdr,
+            ls_pcdhdr   TYPE pcdhdr,
+            lt_pc       TYPE TABLE OF cdshw,
+            lt_pc2      TYPE TABLE OF cdshw,
+            lt_cd       TYPE cdredcd_tab,
+            lt_cd2      TYPE cdredcd_tab,
+            lv_lines2   TYPE sy-tabix.
+
+  FIELD-SYMBOLS: <pc> TYPE cdshw,
+                 <cd> TYPE cdred.
+  CLEAR: lv_objectid, lv_fr_date, lv_to_date, lt_pcdhdr, ls_pcdhdr, lt_pc, lt_pc2, lt_cd, lt_cd2, lv_lines, lv_lines2.
+  UNASSIGN: <eligible>, <pc>, <cd>.
+
+  READ TABLE lt_eligible ASSIGNING <eligible> INDEX 1.
+
+  CHECK <eligible>-ineligible = abap_false.
+
+  lv_objectid = <eligible>-vkont.
+
+  lv_fr_date = sy-datum - 365.
+  lv_to_date = sy-datum + 35.
+
+  CALL FUNCTION 'PLANNED_CHANGES_READ_HEADERS'
+    EXPORTING
+      date_of_change             = lv_fr_date
+      udate_to                   = lv_to_date
+      objectclass                = 'MKK_VKONT'
+      objectid                   = lv_objectid
+      planned_change_number_from = lv_nr_from
+      username                   = ''
+    TABLES
+      i_cdhdr                    = lt_pcdhdr
+    EXCEPTIONS
+      no_position_found          = 1
+      OTHERS                     = 2.
+
+  IF sy-subrc = 0.
+    LOOP AT lt_pcdhdr INTO ls_pcdhdr.
+      CLEAR lt_pc.
+      UNASSIGN <pc>.
+
+      CALL FUNCTION 'PLANNED_CHANGES_READ_POSITIONS'
+        EXPORTING
+          objectclas        = ls_pcdhdr-objectclas
+          objectid          = ls_pcdhdr-objectid
+          changenumber      = ls_pcdhdr-changenr
+          tablename         = 'FKKVKP'
+        TABLES
+          editpos           = lt_pc
+        EXCEPTIONS
+          no_position_found = 1
+          OTHERS            = 2.
+
+      IF sy-subrc = 0.
+        LOOP AT lt_pc ASSIGNING <pc> WHERE fname = lc_zahlkond
+          AND f_new CS lc_dy
+          AND f_old CS lc_dy.
+          APPEND <pc> TO lt_pc2.
+        ENDLOOP.
+        LOOP AT lt_pc ASSIGNING <pc> WHERE fname = lc_zahlkond
+               AND f_new CS lc_dy
+               AND f_old EQ lc_ce21.
+          CLEAR ls_plan.
+          ls_plan-fname = <pc>-fname.
+          ls_plan-f_old = <pc>-f_old.
+          ls_plan-f_new = <pc>-f_new.
+          ls_plan-udate = ls_pcdhdr-udate.
+          ls_plan-utime = ls_pcdhdr-utime.
+          APPEND ls_plan TO lt_plan.
+        ENDLOOP.
+
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  CALL FUNCTION 'CHANGEDOCUMENT_READ'
+    EXPORTING
+      date_of_change             = lv_fr_date
+      objectclass                = 'MKK_VKONT'
+      objectid                   = lv_objectid
+      tablename                  = 'FKKVKP'
+    TABLES
+      editpos                    = lt_cd
+    EXCEPTIONS
+      no_position_found          = 1
+      wrong_access_to_archive    = 2
+      time_zone_conversion_error = 3
+      OTHERS                     = 4.
+
+  IF sy-subrc = 0.
+    LOOP AT lt_cd ASSIGNING <cd> WHERE fname = lc_zahlkond
+      AND f_new CS lc_dy
+      AND f_old CS lc_dy.
+      APPEND <cd> TO lt_cd2.
+    ENDLOOP.
+  ENDIF.
+
+  lt_chdoc[] = lt_cd[].
+
+  DESCRIBE TABLE lt_pc2 LINES lv_lines.
+  DESCRIBE TABLE lt_cd2 LINES lv_lines2.
+  lv_lines = lv_lines + lv_lines2.
+  <eligible>-no_changes = lv_lines.
+
+  ct_eligible = lt_eligible.
+
+*****Get Available Payment Terms*****
+  DATA:  lt_pay_terms       TYPE ztcsdd_payterms,
+         lt_pay_terms_limit TYPE TABLE OF zbi_csdd_limit.
+  FIELD-SYMBOLS: <pay_terms_limit> TYPE zbi_csdd_limit,
+                 <fs_pay_term>     TYPE zscsdd_payterms.
+  CLEAR: lt_pay_terms, lt_pay_terms_limit.
+  UNASSIGN: <pay_terms_limit>, <fs_pay_term>.
+
+  SELECT zahlkond text FROM te052t INTO TABLE lt_pay_terms.
+
+  SELECT * FROM zbi_csdd_limit INTO TABLE lt_pay_terms_limit. "#EC CI_NOWHERE
+
+  LOOP AT lt_pay_terms_limit ASSIGNING <pay_terms_limit>.
+    IF <pay_terms_limit>-zbatchlmt <= <pay_terms_limit>-zinvcreate.
+      READ TABLE lt_pay_terms TRANSPORTING NO FIELDS WITH KEY payment_terms = <pay_terms_limit>-zduedate.
+      DELETE lt_pay_terms INDEX sy-tabix.
+    ENDIF.
+  ENDLOOP.
+
+  IF iv_all_pay_terms = abap_true.
+    LOOP AT lt_pay_terms TRANSPORTING NO FIELDS WHERE payment_terms NS lc_dy AND payment_terms NS lc_ce.
+      DELETE lt_pay_terms INDEX sy-tabix.
+    ENDLOOP.
+
+  ELSE.
+    LOOP AT lt_pay_terms TRANSPORTING NO FIELDS WHERE payment_terms NS lc_dy AND payment_terms <> lc_ce21.
+      DELETE lt_pay_terms INDEX sy-tabix.
+    ENDLOOP.
+
+  ENDIF.
+
+  SORT lt_pay_terms ASCENDING BY payment_terms.
+
+* Start of 8000002420
+  TYPES:
+    BEGIN OF ty_mro,
+      anlage   TYPE anlage,
+      ablbelnr TYPE ablbelnr,
+      ableinh  TYPE ableinh,
+      adatsoll TYPE adatsoll,
+      zuorddat TYPE e_zuorddat,
+      erdat    TYPE erdat,
+    END OF ty_mro.
+
+  DATA: lv_nmru       TYPE ableinheit,
+        lv_portion(2) TYPE c,
+        lv_dateto     TYPE sy-datum,
+        lt_te417      TYPE TABLE OF te417,
+        lwa_te417     TYPE te417,
+        lwa_te417_bis TYPE te417,
+        lt_te418      TYPE TABLE OF te418,
+        lwa_te418     TYPE te418,
+        lv_index      TYPE i,
+        lwa_eanlh     TYPE ty_eanlh,
+        lwa_pt_limit  TYPE zbi_csdd_limit,
+        lv_temp_date  TYPE sy-datum,
+        lv_calid      TYPE scal-fcalid,
+        lr_mru        TYPE RANGE OF ableinh,
+        ls_mru        LIKE LINE OF lr_mru,
+        lt_mro        TYPE TABLE OF ty_mro,
+        ls_mro        TYPE ty_mro.
+
+  SELECT a~anlage a~ablbelnr a~ableinh a~adatsoll b~zuorddat b~erdat
+    INTO TABLE lt_mro
+    FROM eablg AS a
+    INNER JOIN eabl AS b ON b~ablbelnr = a~ablbelnr
+    FOR ALL ENTRIES IN lt_ever
+    WHERE a~anlage = lt_ever-anlage
+    AND   ( a~ablesgr = lc_01 OR a~ablesgr = lc_02 )
+    AND   b~erdat    GE lt_ever-einzdat
+    AND   b~adatsoll GE lt_ever-einzdat.
+
+  SELECT a~anlage a~ablbelnr a~ableinh a~adatsoll b~zuorddat b~erdat
+    APPENDING TABLE lt_mro
+    FROM eablg AS a
+    INNER JOIN etrg AS b ON  b~anlage  = a~anlage
+                         AND b~abrdats = a~abrdats
+    FOR ALL ENTRIES IN lt_ever
+    WHERE a~anlage = lt_ever-anlage
+    AND   ( a~ablesgr = lc_01 OR a~ablesgr = lc_02 )
+    AND   b~erdat    GE lt_ever-einzdat
+    AND   b~adatsoll GE lt_ever-einzdat.
+  IF lt_mro[] IS NOT INITIAL.
+    SORT lt_mro BY anlage ASCENDING zuorddat DESCENDING.
+    DELETE ADJACENT DUPLICATES FROM lt_mro COMPARING anlage.
+    LOOP AT lt_mro INTO ls_mro.
+      ls_mru-sign = lc_i.
+      ls_mru-option = lc_eq.
+      ls_mru-low = ls_mro-ableinh.
+      APPEND ls_mru TO lr_mru.
+      CLEAR ls_mru.
+    ENDLOOP.
+  ENDIF.
+  LOOP AT lt_eanlh INTO lwa_eanlh.
+    READ TABLE lt_mro WITH KEY anlage = lwa_eanlh-anlage TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      ls_mru-sign = lc_i.
+      ls_mru-option = lc_eq.
+      ls_mru-low = lwa_eanlh-ableinh.
+      APPEND ls_mru TO lr_mru.
+      CLEAR ls_mru.
+    ENDIF.
+  ENDLOOP.
+  IF lr_mru[] IS NOT INITIAL.
+    SORT lr_mru BY low ASCENDING.
+    DELETE ADJACENT DUPLICATES FROM lr_mru.
+  ENDIF.
+
+  lv_dateto = sy-datum.
+  ADD 2 TO lv_dateto+4(2).
+* Get the reading and billing calendar for the next 2 months
+  SELECT *
+    FROM te417
+    INTO TABLE lt_te417
+    WHERE zuorddat GE sy-datum
+    AND   zuorddat LE lv_dateto.
+  IF sy-subrc = 0.
+    SORT lt_te417 BY termschl termtdat ASCENDING.
+* Get calendar on the MRU level to have the reads download date. We use SA*01 as CSDD MRU will be SA* to SM* and all MRUs
+* on one portion have the same calendar and have a route lc_01. Final MRU will be determined later when applying subscription
+    SELECT *
+      FROM te418
+      INTO TABLE lt_te418
+      FOR ALL ENTRIES IN lt_te417
+      WHERE termtdat EQ   lt_te417-termtdat
+      AND   ( termschl LIKE 'SA%01' OR termschl IN lr_mru ).
+    IF sy-subrc = 0.
+      SORT lt_te418 BY termschl termtdat ASCENDING.
+      LOOP AT lr_mru INTO ls_mru.
+        lv_portion = ls_mru-low+2(2).
+        LOOP AT lt_pay_terms ASSIGNING <fs_pay_term>.
+          IF <fs_pay_term>-payment_terms+0(2) NE lc_dy.
+            CONTINUE.
+          ENDIF.
+          lv_index = sy-tabix.
+          READ TABLE lt_pay_terms_limit INTO lwa_pt_limit WITH KEY zduedate = <fs_pay_term>-payment_terms.
+          CONCATENATE lc_sa lwa_pt_limit-portion lc_01 INTO lv_nmru.
+* Going to a lower portion
+* Black out DYs for which Old portion billing current month bill date >= new MRU next month reads download
+          IF ls_mru-low+2(2) > lv_nmru+2(2).
+            READ TABLE lt_te417 INTO lwa_te417 WITH KEY termschl = lv_portion.
+            IF sy-subrc = 0.
+              LOOP AT lt_te417 INTO lwa_te417_bis WHERE termschl = lwa_pt_limit-portion.
+                IF + lwa_te417_bis-zuorddat+4(2) = ( lwa_te417-zuorddat+4(2) + 1 ).
+                  READ TABLE lt_te418 INTO lwa_te418 WITH KEY termschl = lv_nmru
+                                                              termtdat = lwa_te417_bis-termtdat.
+                  IF sy-subrc = 0.
+                    lv_temp_date = lwa_te418-begablv - 1.
+                    lv_calid = lwa_te418-ident.
+                    CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+                      EXPORTING
+                        correct_option      = '-'
+                        date                = lv_temp_date
+                        factory_calendar_id = lv_calid
+                      IMPORTING
+                        date                = lv_temp_date.
+                    IF  lwa_te417-termtdat >= lv_temp_date.
+                      DELETE lt_pay_terms INDEX lv_index.
+                    ENDIF.
+                  ENDIF.
+                  EXIT.
+                ENDIF.
+              ENDLOOP.
+            ENDIF.
+* Going to a higher portion
+* Black out DYs for which New portion billing current month bill date >= old MRU next month reads download
+          ELSEIF ls_mru-low+2(2) < lv_nmru+2(2).
+            READ TABLE lt_te417 INTO lwa_te417 WITH KEY termschl = lwa_pt_limit-portion.
+            IF sy-subrc = 0.
+              LOOP AT lt_te417 INTO lwa_te417_bis WHERE termschl = lv_portion.
+                IF + lwa_te417_bis-zuorddat+4(2) = ( lwa_te417-zuorddat+4(2) + 1 ).
+                  READ TABLE lt_te418 INTO lwa_te418 WITH KEY termschl = ls_mru-low
+                                                              termtdat = lwa_te417_bis-termtdat.
+                  IF sy-subrc = 0.
+                    lv_temp_date = lwa_te418-begablv - 1.
+                    lv_calid = lwa_te418-ident.
+                    CALL FUNCTION 'DATE_CONVERT_TO_FACTORYDATE'
+                      EXPORTING
+                        correct_option      = '-'
+                        date                = lv_temp_date
+                        factory_calendar_id = lv_calid
+                      IMPORTING
+                        date                = lv_temp_date.
+                    IF  lwa_te417-termtdat >= lv_temp_date.
+                      DELETE lt_pay_terms INDEX lv_index.
+                    ENDIF.
+                  ENDIF.
+                  EXIT.
+                ENDIF.
+              ENDLOOP.
+            ENDIF.
+          ENDIF.
+        ENDLOOP.
+      ENDLOOP.
+    ENDIF.
+  ENDIF.
+* End of 8000002420
+  ct_pay_terms = lt_pay_terms.
+
+ENDFUNCTION.

@@ -1,0 +1,231 @@
+FUNCTION z_update_rtype_for_downgrade.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(IT_DOWNGRADE) TYPE  ZTT_MDMOD_MASS_DEVMOD
+*"     REFERENCE(IV_TARIFTYP) TYPE  EANLH-TARIFTYP
+*"  EXPORTING
+*"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_TAB
+*"----------------------------------------------------------------------
+"----------------------------------------------------------------------
+"*"Local Interface:
+"  IMPORTING
+"     REFERENCE(IT_DOWNGRADE) TYPE  ZTT_MDMOD_MASS_DEVMOD
+"     REFERENCE(IV_TARIFTYP) TYPE  EANLH-TARIFTYP
+"  EXPORTING
+"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_TAB
+"----------------------------------------------------------------------
+  CONSTANTS:
+    lc_wmode    TYPE regen-wmode VALUE '2',
+    lc_prorate  TYPE regen-kennzx VALUE 'X',
+    lc_nodialog TYPE regen-no_dialog VALUE 'X',
+    lc_maxbis   TYPE syst-datum VALUE '99991231',
+    lc_kwh_r    TYPE tarifart VALUE 'KWH_R'.
+
+  FIELD-SYMBOLS:
+    <fs_auto_reg> TYPE reg70_r,
+    <fs_obj_reg>  TYPE reg70_r.
+
+  DATA:
+    ls_equi      TYPE equi,
+    li_easts     TYPE STANDARD TABLE OF easts,
+    ls_easts     TYPE easts,
+    li_etdz      TYPE STANDARD TABLE OF etdz,
+    ls_etdz      TYPE etdz,
+    ls_auto      TYPE isu70_devicerate_auto,
+    ls_reg       TYPE reg70_r,
+    ls_obj       TYPE isu70_devicerate,
+    ls_downgrade TYPE zst_mdmod_mass_devmod,
+    ls_data      TYPE ztdm_mass_devmod,
+    li_reads     TYPE ztt_estmate_reads_per_reg,
+    ls_reads     TYPE zst_estmate_reads_per_reg,
+    lv_dbupdate  TYPE regen-db_update,
+    lv_dateminus TYPE syst-datum,
+    lv_equnr     TYPE equnr,
+    lv_zwnummer  TYPE e_zwnummer,
+    lv_adat      TYPE adat,
+    ls_return    TYPE bapiret2,
+    lv_zwsterw   TYPE i_zwsterw,
+    lt_res       TYPE bapieablu_tab,
+    lt_ret_mtr   TYPE STANDARD TABLE OF bapireturn1.
+
+  READ TABLE it_downgrade INTO ls_downgrade INDEX 1.
+  READ TABLE ls_downgrade-data INTO ls_data INDEX 1.
+
+  CHECK sy-subrc IS INITIAL.
+
+  SELECT *
+    FROM easts
+    INTO TABLE li_easts
+   WHERE anlage EQ ls_data-anlage
+     AND bis    EQ lc_maxbis.
+
+  CHECK sy-subrc IS INITIAL.
+
+  READ TABLE li_easts INTO ls_easts
+                      WITH KEY tarifart = lc_kwh_r.
+
+  CHECK sy-subrc IS INITIAL.
+
+  SELECT *
+    FROM equi
+    INTO ls_equi
+      UP TO 1 ROWS
+   WHERE matnr EQ ls_data-matnr
+     AND sernr EQ ls_data-sernr.
+  ENDSELECT.
+
+
+****Start of changes by VALURU for MR Results
+  CALL FUNCTION 'ISU_S_DEVICERATE_PROVIDE'
+    EXPORTING
+      x_anlage       = ls_data-anlage
+      x_equnr        = ls_equi-equnr
+      x_stichtag     = ls_downgrade-custdate
+      x_wmode        = lc_wmode
+      x_prorate      = lc_prorate
+      x_upd_online   = 'X'
+      x_no_dialog    = lc_nodialog
+    IMPORTING
+      y_obj          = ls_obj
+      y_auto         = ls_auto
+    EXCEPTIONS
+      not_found      = 1
+      invalid        = 2
+      foreign_lock   = 3
+      input_error    = 4
+      system_error   = 5
+      internal_error = 6
+      not_qualified  = 7
+      cancelled      = 8
+      OTHERS         = 9.
+
+  IF NOT sy-subrc IS INITIAL.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            INTO ls_return-message.
+    msg_add ls_return et_return.
+    EXIT.
+  ENDIF.
+
+  lv_dateminus = ls_downgrade-custdate - 1.
+  SELECT *
+      FROM etdz
+      INTO TABLE li_etdz
+     WHERE equnr EQ ls_equi-equnr
+       AND bis   EQ lc_maxbis.
+
+  zcl_device_modif_util=>create_estimates( EXPORTING
+                                              iv_equnr    = ls_equi-equnr
+                                              iv_adat     = lv_dateminus
+                                           IMPORTING
+                                              et_reads    = li_reads ).
+
+  PERFORM fill_integ_data USING     ls_equi
+                                    li_reads
+                                    ls_downgrade-custdate
+                          CHANGING  ls_auto
+                                    lt_res.
+
+  LOOP AT ls_auto-reg ASSIGNING <fs_auto_reg> WHERE bis EQ lc_maxbis. " WITH KEY tarifart = 'KWH_R'
+
+    <fs_auto_reg>-nablesen = 'X'.
+    <fs_auto_reg>-zwnabr   = 'X'.
+    CLEAR:
+      <fs_auto_reg>-tarifart,
+      <fs_auto_reg>-kondigr.
+  ENDLOOP.
+
+  LOOP AT ls_obj-obj-reg ASSIGNING <fs_obj_reg> WHERE bis EQ lc_maxbis. " WITH KEY tarifart = 'KWH_R'
+
+    <fs_obj_reg>-nablesen = 'X'.
+    <fs_obj_reg>-zwnabr   = 'X'.
+    CLEAR:
+      <fs_obj_reg>-tarifart,
+      <fs_obj_reg>-kondigr.
+  ENDLOOP.
+  ls_auto-contr-use-okcode = 'X'.
+  ls_auto-contr-okcode = 'SAVE'.
+
+  CALL FUNCTION 'ISU_S_DEVICERATE_CHANGE'
+    EXPORTING
+      x_anlage      = ls_data-anlage
+      x_equnr       = ls_equi-equnr
+      x_stichtag    = ls_downgrade-custdate
+*     x_wmode       = lc_wmode
+      x_prorate     = lc_prorate
+      x_upd_online  = 'X'
+      x_no_dialog   = lc_nodialog
+      x_auto        = ls_auto
+      x_obj         = ls_obj
+    IMPORTING
+      y_db_update   = lv_dbupdate
+    EXCEPTIONS
+      not_found     = 1
+      foreign_lock  = 2
+      cancelled     = 3
+      input_error   = 4
+      general_fault = 5
+      OTHERS        = 6.
+
+  IF NOT sy-subrc IS INITIAL.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            INTO ls_return-message.
+    msg_add ls_return et_return.
+    EXIT.
+  ELSE.
+    COMMIT WORK.
+  ENDIF.
+  IF NOT lt_res IS INITIAL.
+    CALL FUNCTION 'BAPI_MTRREADDOC_UPLOAD'
+      TABLES
+        meterreadingresults = lt_res
+        return              = lt_ret_mtr.
+
+    LOOP AT lt_ret_mtr TRANSPORTING NO FIELDS WHERE type EQ 'E'
+                                                 OR type EQ 'A'
+                                                 OR type EQ 'X'. EXIT.
+    ENDLOOP.
+    IF NOT sy-subrc IS INITIAL.
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = 'X'.
+    ELSE.
+    ENDIF.
+
+    DATA:lt_eabl_17_after TYPE STANDARD TABLE OF v_eabl,
+         lwa_eabl_17      TYPE v_eabl.
+
+    SELECT *
+      FROM v_eabl
+      INTO TABLE lt_eabl_17_after
+      WHERE equnr = ls_equi-equnr
+      AND adatsoll = lv_dateminus
+      AND ablesgr = '17'
+      AND ablstat = '0'.
+    IF sy-subrc EQ 0.
+      LOOP AT lt_eabl_17_after INTO lwa_eabl_17.
+        ls_return-type = 'W'.
+        ls_return-id = 'ZBILL'.
+        ls_return-parameter  = '000'.
+        ls_return-message_v1  = 'MR results estimation failed for register'(003).
+        ls_return-message_v2  = lwa_eabl_17-zwnummer.
+        ls_return-message_v3  = 'MRD is not complete'.
+        ls_return-parameter = 'SENDMAIL'.
+        APPEND ls_return TO et_return.
+        CLEAR ls_return.
+
+        ls_return-type = 'W'.
+        ls_return-id = 'ZBILL'.
+        ls_return-parameter  = '000'.
+        ls_return-message_v1  = 'Open MR order(s) were inadvertently created'(004).
+        ls_return-message_v2  = 'by the system'(005).
+        APPEND ls_return TO et_return.
+        CLEAR ls_return.
+
+      ENDLOOP.
+    ENDIF.
+  ENDIF.
+ENDFUNCTION.
+

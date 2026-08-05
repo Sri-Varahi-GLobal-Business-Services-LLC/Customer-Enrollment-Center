@@ -1,0 +1,1958 @@
+class ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL definition
+  public
+  inheriting from ZL_ZCMSUMMQ_ALLCONNECTQEF
+  create public .
+
+public section.
+
+*"* public components of class ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL
+*"* do not include other source files here!!!
+  data GC_NOFLAG type CHAR1 .
+  data GC_SPANISH type CHAR1 .
+  data GR_CONF_POPUP type ref to IF_BSP_WD_POPUP .
+  data GV_ENRLSDP_EL type ZENRLSDP .
+  data GV_ENRLSDP_GS type ZENRLSDP .
+
+  methods IF_BSP_WD_HISTORY_STATE_DESCR~GET_STATE_DESCRIPTION
+    redefinition .
+protected section.
+
+  methods DO_PREPARE_OUTPUT
+    redefinition .
+*"* protected components of class ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL
+*"* do not include other source files here!!!
+  methods DO_VIEW_INIT_ON_ACTIVATION
+    redefinition .
+  methods EH_ONALLCONNECT
+    redefinition .
+  methods EH_ONCLICK
+    redefinition .
+  methods EH_ONEBILL
+    redefinition .
+  methods EH_ONFINISH
+    redefinition .
+  methods EH_ONSPANISHCHECK
+    redefinition .
+  methods EH_ONYES
+    redefinition .
+  methods OP_TOIDENTIFICATION
+    redefinition .
+  methods EH_ONCUST_POPUP_CLOSE
+    redefinition .
+private section.
+
+  type-pools ABAP .
+  methods OFFER_CSDD
+    returning
+      value(RE_CSDD_OFFERED) type ABAP_BOOL .
+  methods CHK_CUST_PRG_ELIG
+    returning
+      value(RE_CUST_PRG_OFFERED) type ABAP_BOOL .
+  methods GET_DEVLOC
+    importing
+      value(IR_CURRENT) type ref to IF_BOL_BO_PROPERTY_ACCESS
+      value(IV_SPARTE) type CRM_ISU_SPARTE .
+  methods GET_DEVLOC_FROM_PREMISE .
+*"* private components of class ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL
+*"* do not include other source files here!!!
+ENDCLASS.
+
+
+
+CLASS ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->CHK_CUST_PRG_ELIG
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] RE_CUST_PRG_OFFERED            TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD chk_cust_prg_elig.
+    CONSTANTS: lc_event                   TYPE string VALUE 'CUST_POPUP_CLOSE'.
+    DATA: lr_bdc       TYPE REF TO if_crm_ui_data_context,
+          lr_comp      TYPE REF TO zl_zdpp_enr_bspwdcomponen_impl,
+          lr_current   TYPE REF TO if_bol_bo_property_access,
+          lr_customer  TYPE REF TO cl_crm_bol_entity,
+          lr_contract  TYPE REF TO if_bol_bo_property_access,
+          lr_device    TYPE REF TO if_bol_bo_property_access,
+          ls_contract  TYPE crm_isu_il_md_contract,
+          ls_device    TYPE crm_isu_device_attr,
+          lr_buag      TYPE REF TO cl_crm_bol_entity,
+          ls_buag      TYPE crmt_buag_ic_attr,
+          lr_iterator  TYPE REF TO if_bol_bo_col_iterator,
+          lr_coll      TYPE REF TO if_bol_bo_col,
+          lv_dest      TYPE rfcdest,
+          lv_available TYPE boolean.
+
+    DATA: lr_msg_srv TYPE REF TO cl_bsp_wd_message_service.
+
+    lr_msg_srv = cl_bsp_wd_message_service=>get_instance( ).
+
+    TRY.
+*       Get GDC
+        lr_bdc  = cl_crm_ui_data_context_srv=>get_instance( ).
+        CHECK lr_bdc IS BOUND.
+
+*       Get Confirmed Customer
+        lr_current = lr_bdc->get_entity( 'CURRENTCUSTOMER' ).
+
+*       Check for bound
+        IF lr_current IS BOUND.
+          lr_customer ?= lr_current.
+        ELSE.
+          re_cust_prg_offered = abap_false.
+          lr_msg_srv->add_message(
+              iv_msg_type       = if_genil_message_container=>mt_error
+              iv_msg_id         = 'ZPGM_ENROLL'
+              iv_msg_number     = 001 ).
+          EXIT.
+        ENDIF.
+
+*       Get Confirmed Business Agreement
+        lr_current = lr_bdc->get_entity( 'CURRENTBUAG' ).
+
+*       Check for bound
+        IF lr_current IS NOT BOUND.
+          re_cust_prg_offered = abap_false.
+          lr_msg_srv->add_message(
+              iv_msg_type       = if_genil_message_container=>mt_error
+              iv_msg_id         = 'ZPGM_ENROLL'
+              iv_msg_number     = 002 ).
+          EXIT.
+        ELSE.
+          lr_buag ?= lr_current.
+          IF lr_buag IS BOUND.
+            lr_buag->reread(
+                iv_invalidate_children = abap_true ).
+          ENDIF.
+          lr_current->get_properties(
+            IMPORTING
+              es_attributes = ls_buag
+          ).
+        ENDIF.
+
+*       Check for Bound
+        CHECK lr_customer IS BOUND OR
+              lr_buag IS BOUND.
+
+        lr_coll = lr_buag->get_related_entities(
+               iv_relation_name = 'BuAgIsuContractRel' ).
+
+        IF lr_coll IS NOT BOUND OR lr_coll->size( ) = 0.
+          re_cust_prg_offered = abap_false.
+*          lr_msg_srv->add_message(
+*              iv_msg_type       = if_genil_message_container=>mt_error
+*              iv_msg_id         = 'ZPGM_ENROLL'
+*              iv_msg_number     = 003 ).
+*          EXIT.
+*        ENDIF.
+          get_devloc_from_premise( ).
+        ELSE.
+*       Get iterator
+          lr_iterator ?= lr_coll->get_iterator( ).
+
+          CHECK lr_iterator IS BOUND.
+          lr_current ?= lr_iterator->get_first( ).
+
+          WHILE lr_current IS BOUND.
+
+*         Get Properties and check for valid electric contract
+            lr_current->get_properties(
+              IMPORTING
+                es_attributes = ls_contract ).
+
+*         Get Device location
+            get_devloc(
+              EXPORTING
+                ir_current = lr_current " Access Interface for BO Attributes
+                iv_sparte  = ls_contract-sparte    " Division
+            ).
+
+            lr_current ?= lr_iterator->get_next( ).
+          ENDWHILE.
+        ENDIF.
+      CATCH cx_root.
+    ENDTRY.
+
+*   Get the RFC destination
+    cl_crm_isu_il_tools=>get_backend_dest(
+    EXPORTING
+      iv_check_avlbl  = abap_true
+    IMPORTING
+      ev_backend_dest = lv_dest
+      ev_available    = lv_available
+    EXCEPTIONS
+      no_backend_dest = 1
+      OTHERS          = 2 ).
+
+    IF lv_dest IS NOT INITIAL  and
+     ( gv_enrlsdp_el IS NOT INITIAL OR
+       gv_enrlsdp_gs IS NOT INITIAL ).
+.
+*     Check over the air meter
+      CALL FUNCTION 'ZPGM_OVERTHEAIR_CHK'
+        DESTINATION lv_dest
+        EXPORTING
+          iv_devloc_el  = gv_enrlsdp_el
+          iv_devloc_gs  = gv_enrlsdp_gs
+        IMPORTING
+          ev_overtheair = re_cust_prg_offered.
+    ENDIF.
+
+    IF re_cust_prg_offered = abap_true.
+      CALL METHOD comp_controller->window_manager->create_popup_2_confirm
+        EXPORTING
+          iv_title          = 'Enrollment Center Prompt'
+          iv_text           = 'Customer is eligible for Customer Programs. Access Enrollment Center for details.'
+          iv_btncombination = if_bsp_wd_window_manager=>co_btncomb_ok
+        RECEIVING
+          rv_result         = gr_conf_popup.
+
+*     Set on close event for popup
+      CALL METHOD gr_conf_popup->set_on_close_event
+        EXPORTING
+          iv_view       = me
+          iv_event_name = lc_event.
+
+*     Open popup
+      gr_conf_popup->open( ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->DO_PREPARE_OUTPUT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_FIRST_TIME                  TYPE        ABAP_BOOL (default =ABAP_FALSE)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD do_prepare_output.
+******************************************************************
+*  Method Name               : DO_PREPARE_OUTPUT
+*  Author                    : Vinoth Nagarajan
+*  Date                      : 11/02/2011
+*  FRICEW Id #               : CMENH140
+*  Original SAP Program Name : N/A
+*  SAP Transport Request #   : C3DK904262
+*----------------------------------------------------------------*
+*  Description: This method is triggered during initilization.
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   : C3DK904588
+*  Author                    : Vinoth Nagarajan
+*  Modification Date         : 12-13-2011
+*  Description               : Defect 1728
+******************************************************************
+*
+*  SAP Transport Request #   : C3DK904777
+*  Author                    : Vinoth Nagarajan
+*  Modification Date         : 01-11-2012
+*  Description               : Defect 2991
+******************************************************************
+*  SAP Transport Request #   : C7DK900279
+*  Author                    : Eric Dietzel
+*  Modification Date         : 4/20/2015
+*  Description               : Added OFFER_CSDD method call.
+*                              Smart Energy R4
+*************************************************************************
+*  SAP Transport Request #   : C3DK908284
+*  Author                    : Raghavendra Dasari
+*  Modification Date         : 11/25/2015
+*  Description               : Removed OFFER_CSDD method call.
+*                              Smart Energy R5
+*************************************************************************
+
+  DATA : lr_coco      TYPE REF TO zl_zcmsummq_bspwdcomponen_impl, "Comp controller
+         lr_buag      TYPE REF TO cl_crm_bol_entity,
+         lv_buagstr   TYPE string,
+         lv_guid_str  TYPE string,
+         lv_guid      TYPE crmt_object_guid,
+         lv_contr     TYPE crm_isu_contract,
+         lr_datatr    TYPE REF TO cl_bsp_wd_value_node,
+         lv_buagid    TYPE crmt_buag_id,
+         lr_ent       TYPE REF TO cl_crm_bol_entity,
+         lr_contracts TYPE REF TO if_bol_entity_col,
+         lr_iter      TYPE REF TO if_bol_entity_col_iterator,
+         lr_ebill     TYPE REF TO cl_bsp_wd_value_node.
+
+  CONSTANTS : lc_x TYPE c VALUE 'X'.
+
+  CALL METHOD super->do_prepare_output.
+
+  lr_datatr ?= me->typed_context->datatrvn->collection_wrapper->get_current( ).
+
+* Begin of changes by VGORRELA
+* Get the contract number if it is still not available earlier
+* in DO_VIEW_INIT_ON_ACTIVATION
+  CALL METHOD lr_datatr->if_bol_bo_property_access~get_property_as_value
+    EXPORTING
+      iv_attr_name = 'BP_CONTRACT'
+    IMPORTING
+      ev_result    = lv_contr.
+*  IF lv_contr IS NOT INITIAL. ">>DEL vnagaraj-Defect 2991
+  IF lv_contr IS INITIAL.      ">>INS vnagaraj-Defect 2991
+* End of changes by VGORRELA
+
+* Get current Business agreement
+    lr_coco ?= me->comp_controller.
+    lr_ebill ?= lr_coco->typed_context->zebillallcnct->collection_wrapper->get_current( ).
+
+    CALL METHOD lr_ebill->get_property_as_string
+      EXPORTING
+        iv_attr_name = 'BUAG_ID'
+      RECEIVING
+        rv_result    = lv_buagstr.
+    CALL METHOD cl_iuiccon_utils=>find_buag
+      EXPORTING
+        iv_buag_id = lv_buagstr
+      RECEIVING
+        rf_buag    = lr_buag.
+
+    MOVE lv_buagstr TO lv_buagid.
+
+* Display the Business agreement
+    CALL METHOD lr_datatr->set_property
+      EXPORTING
+        iv_value     = lv_buagid
+        iv_attr_name = 'BUAG'.
+
+    IF lr_buag IS BOUND.
+* Display the contract number.
+      lr_contracts ?= cl_crm_iu_order_agent=>get_items_by_ref_entity( source = lr_buag
+                                                                      only_valid_contracts = lc_x ).
+* Begin of changes by VGORRELA Defect 2991
+*      CHECK lr_contracts IS BOUND.            ">>INS defect 1728
+*      lr_iter = lr_contracts->get_iterator( ).
+*      CHECK lr_iter IS BOUND.                 ">>INS defect 1728
+*      lr_ent ?= lr_iter->get_first( ).
+*      CHECK lr_ent IS BOUND.                  ">>INS defect 1728
+*      lv_guid_str = lr_ent->get_property_as_string( 'GUID' ).
+      IF lr_contracts IS BOUND.
+        lr_iter = lr_contracts->get_iterator( ).
+        IF lr_iter IS BOUND.
+          lr_ent ?= lr_iter->get_first( ).
+          IF lr_ent IS BOUND.
+            lv_guid_str = lr_ent->get_property_as_string( 'GUID' ).
+          ENDIF.
+        ENDIF.
+      ENDIF.
+* End of changes by VGORRELA Defect 2991
+      MOVE lv_guid_str TO lv_guid.
+    ENDIF.
+* Start of insert vnagaraj-Defect 2991
+    IF lv_guid IS INITIAL.
+      CLEAR lv_guid.
+      CALL METHOD lr_ebill->if_bol_bo_property_access~get_property_as_value
+        EXPORTING
+          iv_attr_name = 'CONTR_GUID'
+        IMPORTING
+          ev_result    = lv_guid.
+    ENDIF.
+    IF NOT lv_guid IS INITIAL.
+* End of insert vnagaraj-Defect 2991
+      CLEAR lv_contr.
+      SELECT SINGLE a4isucontr FROM crmd_isuexta4 INTO lv_contr WHERE guid EQ lv_guid.
+      IF sy-subrc EQ 0.
+* Display the contract number
+        CALL METHOD lr_datatr->set_property
+          EXPORTING
+            iv_value     = lv_contr
+            iv_attr_name = 'BP_CONTRACT'.
+      ELSE.
+* defect 2644 by jchakrav: try to contract number from entity itself
+        CLEAR lv_contr.
+        lv_contr = lr_ent->get_property_as_string( 'ISUCONTRACT_ID' ).
+        IF NOT lv_contr IS INITIAL.
+          CALL METHOD lr_datatr->set_property
+            EXPORTING
+              iv_value     = lv_contr
+              iv_attr_name = 'BP_CONTRACT'.
+        ENDIF.
+      ENDIF.
+
+    ENDIF.
+  ENDIF.  "VGORRELA
+
+* Begin of change by - Raghavendra Dasari - 11/24/2015 - Smart Energy R5
+* The CSDD eligibility check has been removed from this process as part of the development
+* PJT03030.R5.SAP.FS.DPP.ENH012.CSDD.Updates.For.Enrollment.Center.v.01
+* as it is now embedded in to the Program Enrollment Center component ZPGMENROLL_CNTR to handle all CSDD enrollments and de-enrollments
+
+* See if they are eligible for the CSDD (Customer Selects Due Date) program
+  IF iv_first_time = abap_true.
+*    offer_csdd( ).
+     chk_cust_prg_elig( ).
+  ENDIF.
+
+* End of change by - Raghavendra Dasari - 11/24/2015 - Smart Energy R5
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->DO_VIEW_INIT_ON_ACTIVATION
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD do_view_init_on_activation.
+******************************************************************
+*  Method Name               : DO_VIEW_INIT_ON_ACTIVATION
+*  Author                    : Rakhee Raj Bharamaraj
+*  Date                      : 05/05/2011
+*  FRICEW Id #               : CMENH140
+*  Original SAP Program Name : N/A
+*  SAP Transport Request #   : C3DK901218
+*----------------------------------------------------------------*
+*  Description: This method is triggered during initilization.
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   : C3DK903156
+*  Author                    : Vinoth Nagarajan
+*  Modification Date         : 08/23/2011
+*  Description               : Defect 1728 - Dump when navigating to AllConnect
+******************************************************************
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   : C3DK904777
+*  Author                    : Vinoth Nagarajan
+*  Modification Date         : 01/11/2012
+*  Description               : Defect 2991
+******************************************************************
+  CALL METHOD super->do_view_init_on_activation.
+* Start CM_ENH_140
+  DATA: lr_valuenode TYPE REF TO cl_bsp_wd_value_node,
+        lr_gdc       TYPE REF TO if_crm_ui_data_context,
+        lr_buag      TYPE REF TO cl_crm_bol_entity,
+        lr_premise   TYPE REF TO cl_crm_bol_entity,
+        lr_address   TYPE REF TO cl_crm_bol_entity,
+        lr_account   TYPE REF TO cl_crm_bol_entity,
+        lr_datatr    TYPE REF TO cl_bsp_wd_value_node,
+        lr_bpstdadd  TYPE REF TO cl_crm_bol_entity,
+        lr_contract  TYPE REF TO cl_crm_bol_entity,
+        lr_contracts TYPE REF TO if_bol_entity_col,
+        lv_address1  TYPE        char80,
+        lv_address2  TYPE        char80,
+        lv_apt       TYPE        ad_hsnm2, "VGORRELA Defect 2644
+        lv_houseno   TYPE        ad_hsnm1,
+        lv_city      TYPE        ad_city1,
+        lv_zipcode   TYPE        ad_pstcd1,
+        lv_street    TYPE        ad_street,
+        lv_region    TYPE        regio,
+        lv_name      TYPE        bu_name1tx,
+        lv_buagid    TYPE        crmt_buag_id,
+        lv_buagstr   TYPE        string,
+        lv_phone     TYPE        ad_telnrlg,
+        lr_coco      TYPE REF TO zl_zcmsummq_bspwdcomponen_impl, "Comp controller
+        lr_ebill     TYPE REF TO cl_bsp_wd_value_node.        "Ebill Value node
+
+  DATA : lr_ent TYPE REF TO cl_crm_bol_entity,
+         lv_guid_str TYPE string,
+         lv_guid TYPE crmt_object_guid,
+         lv_contr TYPE crm_isu_contract,
+         lr_iter TYPE REF TO if_bol_entity_col_iterator.
+
+  CONSTANTS : lc_x TYPE c VALUE 'X'.
+
+  lr_valuenode ?= me->typed_context->zcheckvn->collection_wrapper->get_current( ).
+* Make the yes checkbox as default
+* WTV 9/8/11 - Per defect # 1879, default both checkboxes to space.
+
+  CALL METHOD lr_valuenode->set_property
+    EXPORTING
+      iv_value     = space
+      iv_attr_name = 'YESFLAG'.
+
+  CALL METHOD lr_valuenode->set_property
+    EXPORTING
+      iv_value     = space
+      iv_attr_name = 'NOFLAG'.
+
+  lr_datatr ?= me->typed_context->datatrvn->collection_wrapper->get_current( ).
+
+* Get the confirmed BP details
+  lr_gdc = cl_crm_ui_data_context_srv=>get_instance( me ).
+  CHECK lr_gdc IS BOUND.
+
+* Get the confirmed premise
+  lr_premise ?= lr_gdc->get_entity( 'CURRENTPREMISE' ).     "#EC NOTEXT
+  CHECK lr_premise IS BOUND.
+* Begin of changes by VGORRELA Defect 2644
+* Get the apartment number
+* Get the house number
+  CALL METHOD lr_premise->get_property_as_value
+    EXPORTING
+      iv_attr_name = 'VS_HOUSE_NUM2'                        "#EC NOTEXT
+    IMPORTING
+      ev_result    = lv_apt.
+* End of changes by VGORRELA Defect 2644
+* Get the confirmed address.
+  lr_address = lr_premise->get_related_entity( iv_relation_name = 'PremiseAddressObjectRel' ). "#EC NOTEXT
+
+  CHECK  lr_address IS BOUND.
+
+* Get the house number
+  CALL METHOD lr_address->get_property_as_value
+    EXPORTING
+      iv_attr_name = 'HOUSE_NUM1'                           "#EC NOTEXT
+    IMPORTING
+      ev_result    = lv_houseno.
+
+* Get the street
+  CALL METHOD lr_address->get_property_as_value
+    EXPORTING
+      iv_attr_name = 'STREET'                               "#EC NOTEXT
+    IMPORTING
+      ev_result    = lv_street.
+
+* Get the city
+  CALL METHOD lr_address->get_property_as_value
+    EXPORTING
+      iv_attr_name = 'CITY1'                                "#EC NOTEXT
+    IMPORTING
+      ev_result    = lv_city.
+
+* Get the region
+  CALL METHOD lr_address->get_property_as_value
+    EXPORTING
+      iv_attr_name = 'REGION'                               "#EC NOTEXT
+    IMPORTING
+      ev_result    = lv_region.
+
+* Get the zip code
+  CALL METHOD lr_address->get_property_as_value
+    EXPORTING
+      iv_attr_name = 'POST_CODE1'                           "#EC NOTEXT
+    IMPORTING
+      ev_result    = lv_zipcode.
+* Begin of changes by VGORRELA Defect 2644
+* Concatenate apartnumber to address line 1
+*  CONCATENATE lv_houseno lv_street INTO lv_address1 SEPARATED BY space.
+  CONCATENATE lv_houseno lv_street lv_apt INTO lv_address1 SEPARATED BY space.
+* End of changes by VGORRELA Defect 2644
+  CONCATENATE lv_city lv_region lv_zipcode INTO lv_address2 SEPARATED BY space.
+
+* Display the address
+  CALL METHOD lr_datatr->set_property
+    EXPORTING
+      iv_value     = lv_address1
+      iv_attr_name = 'ADDRLINE1'.
+
+* Display the address
+  CALL METHOD lr_datatr->set_property
+    EXPORTING
+      iv_value     = lv_address2
+      iv_attr_name = 'ADDRLINE2'.
+
+* Get current Business agreement
+  lr_coco ?= me->comp_controller.
+  lr_ebill ?= lr_coco->typed_context->zebillallcnct->collection_wrapper->get_current( ).
+
+  CALL METHOD lr_ebill->get_property_as_string
+    EXPORTING
+      iv_attr_name = 'BUAG_ID'
+    RECEIVING
+      rv_result    = lv_buagstr.
+
+  CALL METHOD cl_iuiccon_utils=>find_buag
+    EXPORTING
+      iv_buag_id = lv_buagstr
+    RECEIVING
+      rf_buag    = lr_buag.
+
+  MOVE lv_buagstr TO lv_buagid.
+
+* Display the Business agreement
+  CALL METHOD lr_datatr->set_property
+    EXPORTING
+      iv_value     = lv_buagid
+      iv_attr_name = 'BUAG'.
+
+* Get the confirmed BP details
+  lr_account ?= lr_gdc->get_entity( 'CURRENTCUSTOMER' ).    "#EC NOTEXT
+
+* Check if the entity is initial.
+  CHECK lr_account IS BOUND.
+
+* Get the confirmed business partner name.
+  CALL METHOD lr_account->get_property_as_value
+    EXPORTING
+      iv_attr_name = 'FULLNAME'                             "#EC NOTEXT
+    IMPORTING
+      ev_result    = lv_name.
+
+* Display the Name
+  CALL METHOD lr_datatr->set_property
+    EXPORTING
+      iv_value     = lv_name
+      iv_attr_name = 'FULLNAME'.
+
+* Get the BP phone number
+
+  lr_bpstdadd = lr_account->get_related_entity( iv_relation_name = 'BuilStandardAddressRel').
+  IF lr_bpstdadd IS BOUND.
+* Get the confirmed business telephone number.
+    CALL METHOD lr_bpstdadd->get_property_as_value
+      EXPORTING
+        iv_attr_name = 'TEL_NOTEL'                          "#EC NOTEXT
+      IMPORTING
+        ev_result    = lv_phone.
+
+* Display the phone number
+    CALL METHOD lr_datatr->set_property
+      EXPORTING
+        iv_value     = lv_phone
+        iv_attr_name = 'BP_NOTEL'.
+
+  ENDIF.
+  IF lr_buag IS BOUND.
+* Display the contract number.
+    lr_contracts ?= cl_crm_iu_order_agent=>get_items_by_ref_entity( source = lr_buag
+                                                                    only_valid_contracts = lc_x ).
+* Begin of changes by VGORRELA Defect 2991
+*    CHECK lr_contracts IS BOUND.            ">>INS defect 1728
+*    lr_iter = lr_contracts->get_iterator( ).
+*    CHECK lr_iter IS BOUND.                 ">>INS defect 1728
+*    lr_ent ?= lr_iter->get_first( ).
+*    CHECK lr_ent IS BOUND.                  ">>INS defect 1728
+*    lv_guid_str = lr_ent->get_property_as_string( 'GUID' ).
+    IF lr_contracts IS BOUND.
+      lr_iter = lr_contracts->get_iterator( ).
+      IF lr_iter IS BOUND.
+        lr_ent ?= lr_iter->get_first( ).
+        IF lr_ent IS BOUND.
+          lv_guid_str = lr_ent->get_property_as_string( 'GUID' ).
+        ENDIF.
+      ENDIF.
+    ENDIF.
+* End of changes by VGORRELA Defect 2991
+
+    MOVE lv_guid_str TO lv_guid.
+  ENDIF.
+* Start of insert vnagaraj-Defect 2991
+  IF lv_guid IS INITIAL.
+    CLEAR lv_guid.
+    CALL METHOD lr_ebill->get_property_as_value
+      EXPORTING
+        iv_attr_name = 'CONTR_GUID'
+      IMPORTING
+        ev_result    = lv_guid.
+  ENDIF.
+  IF NOT lv_guid IS INITIAL.
+* End of insert vnagaraj-Defect 2991
+    CLEAR lv_contr.
+    SELECT SINGLE a4isucontr FROM crmd_isuexta4 INTO lv_contr WHERE guid EQ lv_guid.
+    IF sy-subrc EQ 0.
+* Display the contract number
+      CALL METHOD lr_datatr->set_property
+        EXPORTING
+          iv_value     = lv_contr
+          iv_attr_name = 'BP_CONTRACT'.
+    ELSE.
+* defect 2644 by jchakrav: try to contract number from entity itself
+      CLEAR lv_contr.
+      lv_contr = lr_ent->get_property_as_string( 'ISUCONTRACT_ID' ).
+      IF NOT lv_contr IS INITIAL.
+        CALL METHOD lr_datatr->set_property
+          EXPORTING
+            iv_value     = lv_contr
+            iv_attr_name = 'BP_CONTRACT'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+* End CM_ENH_140
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->EH_ONALLCONNECT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] HTMLB_EVENT                    TYPE REF TO CL_HTMLB_EVENT(optional)
+* | [--->] HTMLB_EVENT_EX                 TYPE REF TO IF_HTMLB_DATA(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+method EH_ONALLCONNECT.
+endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->EH_ONCLICK
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] HTMLB_EVENT                    TYPE REF TO CL_HTMLB_EVENT(optional)
+* | [--->] HTMLB_EVENT_EX                 TYPE REF TO IF_HTMLB_DATA(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD eh_onclick.
+******************************************************************
+*  Method Name               : EH_ONCLICK
+*  Author                    : Rakhee Raj Bharamaraj
+*  Date                      : 05/05/2011
+*  FRICEW Id #               : CMENH140
+*  Original SAP Program Name :  N/A
+*  SAP Transport Request #   : C3DK901218
+*----------------------------------------------------------------*
+*  Description:
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    : Firstname Lastname
+*  Modification Date         : MM/DD/YYYY
+*  Description               :
+******************************************************************
+
+  DATA: lr_valuenode TYPE REF TO cl_bsp_wd_value_node,
+        lv_no        TYPE        string,
+        lv_yes       TYPE        string.
+
+  lr_valuenode ?= me->typed_context->zcheckvn->collection_wrapper->get_current( ).
+
+* Obtain the selected checkbox
+  CALL METHOD lr_valuenode->get_property_as_string
+    EXPORTING
+      iv_attr_name = 'NOFLAG'
+    RECEIVING
+      rv_result    = lv_no.
+
+  CALL METHOD lr_valuenode->get_property_as_string
+    EXPORTING
+      iv_attr_name = 'YESFLAG'
+    RECEIVING
+      rv_result    = lv_yes.
+
+* Set a flag if the no check box is selected
+  IF lv_no IS NOT INITIAL.
+    me->gc_noflag = 'X'.
+
+* Uncheck the yes box
+    IF lv_yes IS NOT INITIAL.
+
+      CALL METHOD lr_valuenode->set_property
+        EXPORTING
+          iv_value     = ' '
+          iv_attr_name = 'YESFLAG'.
+    ENDIF.
+
+  ELSE.
+    me->gc_noflag = ' '.
+  ENDIF.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->EH_ONCUST_POPUP_CLOSE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] HTMLB_EVENT                    TYPE REF TO CL_HTMLB_EVENT(optional)
+* | [--->] HTMLB_EVENT_EX                 TYPE REF TO IF_HTMLB_DATA(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD eh_oncust_popup_close.
+* Added by wizard: Handler for event 'CUST_POPUP_CLOSE'
+
+*    DATA: lv_answer TYPE seocmpname.
+*
+*    lv_answer = gr_conf_popup->get_fired_outbound_plug( ).
+*
+*    CASE lv_answer.
+*
+*      WHEN cl_gs_ptc_bspwdcomponent_cn01=>co_event_ok.
+*
+*        op_toidentification( ).
+*
+*    ENDCASE.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->EH_ONEBILL
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] HTMLB_EVENT                    TYPE REF TO CL_HTMLB_EVENT(optional)
+* | [--->] HTMLB_EVENT_EX                 TYPE REF TO IF_HTMLB_DATA(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD eh_onebill.
+* Navigate to the Ebill questionnaires
+
+  DATA: lr_cuco       TYPE REF TO zl_zcmsummq_summqacuco_impl,   " Custom controller
+        lr_uces       TYPE REF TO cl_bsp_wd_value_node,          " UCES system details
+        lv_umeflag    TYPE        string.
+
+
+* Get the custom controller
+  lr_cuco ?= me->get_custom_controller( 'ZCMSUMMQA/SummQACuCo' ).
+  CHECK lr_cuco IS BOUND.
+
+  lr_uces ?= lr_cuco->typed_context->ucesinfo->collection_wrapper->get_current( ).
+
+* Get the user profile
+  CALL METHOD lr_uces->get_property_as_string
+    EXPORTING
+      iv_attr_name = 'USERPROFILE'
+    RECEIVING
+      rv_result    = lv_umeflag.
+
+  CASE lv_umeflag .
+    WHEN 'ocs'.
+      " OCS profile
+      " Navigate to Questionnaire 3
+      view_manager->navigate(
+      source_rep_view = rep_view
+      outbound_plug   = 'FromAllConnectToEbill3' ).         "#EC NOTEXT
+    WHEN 'noprofile'.
+      " Has no profile.
+      " Navigate to Questionnaire 2
+      view_manager->navigate(
+      source_rep_view = rep_view
+      outbound_plug   = 'FromAllConnectToEbill2' ).         "#EC NOTEXT
+    WHEN 'eservices'.
+      " UME profile.
+      " Navigate to Questionnaire 1
+      view_manager->navigate(
+      source_rep_view = rep_view
+      outbound_plug   = 'FromAllConnectToEbill1' ).         "#EC NOTEXT
+  ENDCASE.
+
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->EH_ONFINISH
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] HTMLB_EVENT                    TYPE REF TO CL_HTMLB_EVENT(optional)
+* | [--->] HTMLB_EVENT_EX                 TYPE REF TO IF_HTMLB_DATA(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD eh_onfinish.
+******************************************************************
+*  Method Name               : EH_ONFINISH
+*  Author                    : Rakhee Raj Bharamaraj
+*  Date                      : 05/09/2011
+*  FRICEW Id #               : (CMENH140
+*  Original SAP Program Name :  N/A
+*  SAP Transport Request #   : C3DK901218
+*----------------------------------------------------------------*
+*  Description: This method is triggered when the finish button
+*               is clicked
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   : C3DK902314
+*  Author                    : Aparna Chandra
+*  Modification Date         : 07/21/2011
+*  Description               : Defect 1309
+******************************************************************
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   : C3DK902314
+*  Author                    : Vinoth Nagarajan
+*  Modification Date         : 08/04/2011
+*  Description               : Defect 1538 - Contract id not updated
+*********************************************************************
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   : C3DK902314
+*  Author                    : Vinoth Nagarajan
+*  Modification Date         : 08/04/2011
+*  Description               : Defect * MODIFICATION HISTORY
+*************************************************************************
+*  SAP Transport  #          : C3DK905218
+*  Author                    : MSWilson
+*  Modification Date         : 03/23/2012
+*  Description               : Defect C000015981
+*                              Incorrect phone format sent to allconnect.
+*                              It was TEL_NOTEL.  It is now TELEPHONETEL.
+*************************************************************************
+
+*----------------------------------------------------------------*
+* Reference Declarations
+*----------------------------------------------------------------*
+  DATA: lr_valuenode     TYPE REF TO cl_bsp_wd_value_node,
+        lr_skip          TYPE REF TO cl_bsp_wd_value_node,
+        lr_gdc           TYPE REF TO if_crm_ui_data_context,
+        lr_account       TYPE REF TO cl_crm_bol_entity,
+        lr_premise       TYPE REF TO cl_crm_bol_entity,
+        lr_address       TYPE REF TO cl_crm_bol_entity,
+        lr_bpstdadd      TYPE REF TO cl_crm_bol_entity,
+        lr_buag          TYPE REF TO cl_crm_bol_entity,
+        lr_contract      TYPE REF TO cl_crm_bol_entity,
+        lr_contracts     TYPE REF TO if_bol_entity_col,
+        lref_msg_service TYPE REF TO cl_bsp_wd_message_service.
+
+*----------------------------------------------------------------*
+* Reference Declarations
+*----------------------------------------------------------------*
+  DATA:  lv_no           TYPE string,  " No Flag
+         lv_yes          TYPE string,  " Yes Flag
+         lv_reason       TYPE char255, " Reason Selected
+         lv_action_flag  TYPE char1,
+         lv_vertrag      TYPE crm_isu_vertrag,
+         lv_contract_str TYPE string,
+         lr_datatr       TYPE REF TO cl_bsp_wd_value_node,
+         lv_bp           TYPE bu_partner,
+         ls_r3dest       TYPE smof_erpsh,
+         lv_fname        TYPE bu_namep_f,
+         lv_mname        TYPE bu_namemid,
+         lv_lname        TYPE bu_namep_l,
+         lv_city         TYPE ad_city1,
+         lv_zipcode      TYPE ad_pstcd1,
+         lv_houseno      TYPE ad_hsnm1,
+         lv_street       TYPE ad_street,
+         lv_region       TYPE regio,
+         lv_buagid       TYPE crmt_buag_id,
+         lv_phone        TYPE ad_telnrlg,
+         lv_apt          TYPE ad_hsnm2, "VGORRELA Defect 2644
+         lv_str_suppl1   TYPE ad_strspp1,
+         lv_flag         TYPE char1.
+
+  CONSTANTS: lc_sitetypeid TYPE  smw1stid VALUE 'SMOF_ERPSITE'.
+
+* Begin of changes by VGORRELA - Defect 2991
+  DATA:
+    lr_coco           TYPE REF TO zl_zcmsummq_bspwdcomponen_impl, "Comp controller
+    lr_ebill          TYPE REF TO cl_bsp_wd_value_node,           "Ebill Value node
+    lv_start_date     TYPE crm_isu_contstart,                     "Contract start date
+    lv_date           TYPE sy-datum,                              "Date type
+    lv_division       TYPE crm_isu_division,                      "Divison
+    lv_ele_start_date TYPE sy-datum,                              "Electric start date
+    lv_gas_start_date TYPE sy-datum,                              "Gas start date
+    lv_hdr_guid       TYPE crmt_object_guid,                      "Header guid ">>INS vnagaraj-Defect 2991
+    lr_itm_entity     TYPE REF TO cl_crm_bol_entity,
+    lr_tmp_ent        TYPE REF TO cl_crm_bol_entity,
+    lr_hdr_entity     TYPE REF TO cl_crm_bol_entity,
+    lr_contr_col      TYPE REF TO if_bol_entity_col,
+    lr_iter           TYPE REF TO if_bol_entity_col_iterator,     ">>vnagaraj
+    lv_guid           TYPE crmt_object_guid.                      "Contract GUID
+* End of changes by VGORRELA - Defect 2991
+* Defect 1309 - achandra start changes
+  DATA: lv_reason_text TYPE char50.
+* Defect 1309 - achandra end changes
+
+  lr_valuenode ?= me->typed_context->zcheckvn->collection_wrapper->get_current( ).
+
+* Determine which checkbox is selected
+  CALL METHOD lr_valuenode->get_property_as_string
+    EXPORTING
+      iv_attr_name = 'NOFLAG'                     "ECC NOTEXT
+    RECEIVING
+      rv_result    = lv_no.
+
+  CALL METHOD lr_valuenode->get_property_as_string
+    EXPORTING
+      iv_attr_name = 'YESFLAG'                     "ECC NOTEXT
+    RECEIVING
+      rv_result    = lv_yes.
+
+* Defect 1542 - either YES or NO MUST be selected!
+  IF lv_no IS INITIAL AND lv_yes IS INITIAL.
+
+* Display an error message if no checkbox is selected and return.
+    lref_msg_service = me->view_manager->get_message_service( ).
+    lref_msg_service->add_message(
+      iv_msg_type   = 'E'
+      iv_msg_id     = 'ZSG_CRM'
+      iv_msg_number = '234'
+      iv_msg_v1     = space
+      iv_msg_v2     = space
+      iv_msg_v3     = space
+      iv_msg_v4     = space ).
+    RETURN.
+  ENDIF.
+* Check if no was selected
+  IF lv_no IS NOT INITIAL.
+* Check if a reason was selected
+    lr_skip ?= me->typed_context->zskipreason->collection_wrapper->get_current( ).
+    CALL METHOD lr_skip->get_property_as_string
+      EXPORTING
+        iv_attr_name = 'SKIPREASON'                     "ECC NOTEXT
+      RECEIVING
+        rv_result    = lv_reason.
+
+    IF lv_reason IS INITIAL.
+* Display an error message if no reason is selected and return.
+      lref_msg_service = me->view_manager->get_message_service( ).
+      lref_msg_service->add_message(
+        iv_msg_type   = 'E'
+        iv_msg_id     = 'ZSG_CRM'
+        iv_msg_number = '095'
+        iv_msg_v1     = space
+        iv_msg_v2     = space
+        iv_msg_v3     = space
+        iv_msg_v4     = space ).
+* Do not navigate to the identification view
+      RETURN.
+* get the reason text - Defect 1309 achandra - Start changes
+    ELSE.
+      SELECT SINGLE text FROM ztcm_sum_rsn1 INTO lv_reason_text WHERE zreason = lv_reason.
+* Defect 1309 achandra - End changes
+    ENDIF.
+
+  ENDIF.
+
+* Determine if the Action flag has to be checked.
+  IF lv_no IS NOT INITIAL.
+    lv_action_flag = '0'.
+  ELSEIF lv_yes IS NOT INITIAL.
+    lv_action_flag = '1'.
+  ENDIF.
+
+* Get the global data context
+  lr_gdc = cl_crm_ui_data_context_srv=>get_instance( me ).
+  CHECK lr_gdc IS BOUND.
+
+* Get the confirmed BP details
+  lr_account ?= lr_gdc->get_entity( 'CURRENTCUSTOMER' ).    "#EC NOTEXT
+
+* Check if the entity is initial.
+  CHECK lr_account IS BOUND.
+
+* Get the confirmed business partner name.
+  CALL METHOD lr_account->get_property_as_value
+    EXPORTING
+      iv_attr_name = 'BP_NUMBER'                            "#EC NOTEXT
+    IMPORTING
+      ev_result    = lv_bp.
+
+* Get current Business agreement
+  lr_buag ?= lr_gdc->get_entity( 'CURRENTBUAG' ).           "#EC NOTEXT
+  IF lr_buag IS BOUND.
+
+* Get the current business agreement.
+    CALL METHOD lr_buag->get_property_as_value
+      EXPORTING
+        iv_attr_name = 'BUAG_ID'                            "#EC NOTEXT
+      IMPORTING
+        ev_result    = lv_buagid.
+
+* Get the Contracts
+* Start of delete vnagaraj-Defect 1538
+*    lr_contracts ?= lr_buag->get_related_entities( iv_relation_name = 'BuAgIsuContractRel' ).
+*
+*    IF lr_contracts IS BOUND.
+*
+*      lr_contract = lr_contracts->get_first( ).
+*
+*      IF lr_contract IS BOUND.
+** Get the contract number
+*        CALL METHOD lr_contract->get_property_as_value
+*          EXPORTING
+*            iv_attr_name = 'VERTRAG'                        "#EC NOTEXT
+*          IMPORTING
+*            ev_result    = lv_vertrag.
+*
+*      ENDIF.
+*    ENDIF.
+* End of delete vnagaraj-Defect 1538
+  ENDIF.
+* Get the contract number
+  lr_datatr ?= me->typed_context->datatrvn->collection_wrapper->get_current( ).
+  IF lr_datatr IS BOUND.
+    CALL METHOD lr_datatr->get_property_as_string   "if_bol_bo_property_access~
+      EXPORTING
+        iv_attr_name = 'BP_CONTRACT'
+      RECEIVING
+        rv_result    = lv_contract_str.
+
+    MOVE lv_contract_str TO lv_vertrag.
+  ENDIF.
+* Call the RFC ZRFC_UPDATE_ALLCON_LOG to update the table ztfo_allcon_log in ECC.
+* Get the destination
+  CALL FUNCTION 'SMOF_READ_SMOFERPSH'
+    EXPORTING
+      i_sitetypeid = lc_sitetypeid
+    IMPORTING
+      e_smof_erpsh = ls_r3dest.
+
+  CALL FUNCTION 'ZRFC_UPDATE_ALLCON_LOG' DESTINATION ls_r3dest-rfcdest
+    EXPORTING
+      i_date        = sy-datum
+      i_time        = sy-uzeit
+      i_bupa        = lv_bp
+      i_contract    = lv_vertrag
+      i_action_flag = lv_action_flag
+      i_uname       = sy-uname
+      i_reason      = lv_reason_text    " Defect 1309 - achandra - text has to be passed instead of code.
+    EXCEPTIONS
+      update_failed = 1
+      OTHERS        = 2.
+  IF sy-subrc EQ 0.
+  ENDIF.
+* Transfer the data to All connect if the yes checkbox is selected
+  IF lv_yes IS NOT INITIAL .
+* Populate the importing parameters to call ALL Connect
+
+    CALL METHOD lr_account->get_property_as_value              " First Name
+      EXPORTING
+        iv_attr_name = 'FIRSTNAME'                          "#EC NOTEXT
+      IMPORTING
+        ev_result    = lv_fname.
+
+    CALL METHOD lr_account->get_property_as_value              " First Name
+      EXPORTING
+        iv_attr_name = 'MIDDLENAME'                           "#EC NOTEXT
+      IMPORTING
+        ev_result    = lv_mname.
+
+    CALL METHOD lr_account->get_property_as_value              " First Name
+      EXPORTING
+        iv_attr_name = 'LASTNAME'                             "#EC NOTEXT
+      IMPORTING
+        ev_result    = lv_lname.
+
+* Get the BP standard address
+    lr_bpstdadd = lr_account->get_related_entity( iv_relation_name = 'BuilStandardAddressRel').
+
+    IF lr_bpstdadd IS BOUND.
+* Get the confirmed business telephone number.
+      CALL METHOD lr_bpstdadd->get_property_as_value
+        EXPORTING
+          iv_attr_name = 'TELEPHONETEL' "#EC NOTEXT  Defect: C000015981  It was TEL_NOTEL.
+        IMPORTING
+          ev_result    = lv_phone.                          "Phone number
+    ENDIF.
+
+* Get the confirmed premise
+    lr_premise ?= lr_gdc->get_entity( 'CURRENTPREMISE' ).   "#EC NOTEXT
+    CHECK lr_premise IS BOUND.
+* Begin of changes by VGORRELA Defect 2644
+* Get the apartment number
+    CALL METHOD lr_premise->get_property_as_value
+      EXPORTING
+        iv_attr_name = 'VS_HOUSE_NUM2'                      "#EC NOTEXT
+      IMPORTING
+        ev_result    = lv_apt.
+* End of changes by VGORRELA Defect 2644
+* Get the confirmed address.
+    lr_address = lr_premise->get_related_entity( iv_relation_name = 'PremiseAddressObjectRel' ). "#EC NOTEXT
+
+    IF lr_address IS BOUND.
+
+* defect 2271 9/23/11 - also get the house no and pass with street
+* Get the house number
+      CALL METHOD lr_address->get_property_as_value
+        EXPORTING
+          iv_attr_name = 'HOUSE_NUM1'                       "#EC NOTEXT
+        IMPORTING
+          ev_result    = lv_houseno.
+
+* Get the street
+      CALL METHOD lr_address->get_property_as_value
+        EXPORTING
+          iv_attr_name = 'STREET'                           "#EC NOTEXT
+        IMPORTING
+          ev_result    = lv_street.
+
+      CONCATENATE lv_houseno lv_street INTO lv_street SEPARATED BY space.
+
+* end defect 2271
+
+* Get the city
+      CALL METHOD lr_address->get_property_as_value
+        EXPORTING
+          iv_attr_name = 'CITY1'                            "#EC NOTEXT
+        IMPORTING
+          ev_result    = lv_city.
+
+* Get the region
+      CALL METHOD lr_address->get_property_as_value
+        EXPORTING
+          iv_attr_name = 'REGION'                           "#EC NOTEXT
+        IMPORTING
+          ev_result    = lv_region.
+
+* Get the zip code
+      CALL METHOD lr_address->get_property_as_value
+        EXPORTING
+          iv_attr_name = 'POST_CODE1'                       "#EC NOTEXT
+        IMPORTING
+          ev_result    = lv_zipcode.
+
+* Get the street 1
+      CALL METHOD lr_address->get_property_as_value
+        EXPORTING
+          iv_attr_name = 'STR_SUPPL1'                       "#EC NOTEXT
+        IMPORTING
+          ev_result    = lv_str_suppl1.
+
+    ENDIF.
+* Begin of changes by VGORRELA - Defect 2991
+* Get contract number
+    lr_coco ?= me->comp_controller.
+    lr_ebill ?= lr_coco->typed_context->zebillallcnct->collection_wrapper->get_current( ).
+
+    CALL METHOD lr_ebill->if_bol_bo_property_access~get_property_as_value
+      EXPORTING
+        iv_attr_name = 'CONTR_GUID'
+      IMPORTING
+        ev_result    = lv_guid.
+* End of changes by VGORRELA - Defect 2991
+
+* Start of insert vnagaraj-Defect 2991 - Get all Contract guids.
+* Get Order Item entity
+    CALL METHOD cl_crm_iu_order_agent=>get_order_item_entity
+      EXPORTING
+        guid     = lv_guid
+      RECEIVING
+        instance = lr_itm_entity.
+
+* Get Order Header guid
+    CALL METHOD lr_itm_entity->get_property_as_value
+      EXPORTING
+        iv_attr_name = 'HEADER'
+      IMPORTING
+        ev_result    = lv_hdr_guid.
+
+* Get Order Header entity
+    CALL METHOD cl_crm_iu_order_agent=>get_order_header_entity
+      EXPORTING
+        guid     = lv_hdr_guid
+      RECEIVING
+        instance = lr_hdr_entity.
+
+* Get all Contract items
+    TRY.
+        lr_tmp_ent ?= lr_hdr_entity->get_related_entity( iv_relation_name = 'BTHeaderItemsExt' ).
+
+        CALL METHOD lr_tmp_ent->get_related_entities
+          EXPORTING
+            iv_relation_name = 'BTOrderItemAll'
+          RECEIVING
+            rv_result        = lr_contr_col.
+
+        IF lr_contr_col IS BOUND.
+          lr_iter = lr_contr_col->get_iterator( ).
+          lr_tmp_ent ?= lr_iter->get_first( ).
+          WHILE lr_tmp_ent IS BOUND.
+            CALL METHOD cl_crm_iu_order_agent=>get_order_item_ent_4_admini
+              EXPORTING
+                entity   = lr_tmp_ent
+              RECEIVING
+                instance = lr_tmp_ent.
+* Get the divison
+            CALL METHOD lr_tmp_ent->get_property_as_value
+              EXPORTING
+                iv_attr_name = 'DIVISION'
+              IMPORTING
+                ev_result    = lv_division.
+* Get contract start date
+            CASE lv_division.
+* Get electric contract start date
+              WHEN '01'.
+                CALL METHOD lr_tmp_ent->get_property_as_value
+                  EXPORTING
+                    iv_attr_name = 'CONTSTART'
+                  IMPORTING
+                    ev_result    = lv_ele_start_date.
+                EXIT.
+* Get gas contract start date
+              WHEN '02'.
+                CALL METHOD lr_tmp_ent->get_property_as_value
+                  EXPORTING
+                    iv_attr_name = 'CONTSTART'
+                  IMPORTING
+                    ev_result    = lv_gas_start_date.
+                EXIT.
+              WHEN OTHERS.
+            ENDCASE.
+* Access next entity
+            lr_tmp_ent ?= lr_iter->get_next( ).
+          ENDWHILE.
+        ENDIF.
+      CATCH cx_crm_genil_model_error .
+    ENDTRY.
+* End of insert vnagaraj-Defect 2991 - Get all Contract guids.
+
+    CALL FUNCTION 'Z_TRANSFER_ALLCONNECT_WRAPPER' DESTINATION ls_r3dest-rfcdest
+      EXPORTING
+        i_name_first      = lv_fname
+        i_namemiddle      = lv_mname
+        i_name_lst2       = lv_lname
+        i_street          = lv_street
+* Begin of changes by VGORRELA Defect 2644
+*       i_str_suppl1      = lv_str_suppl1
+        i_str_suppl1      = lv_apt
+* End of changes by VGORRELA Defect 2644
+        i_city1           = lv_city
+        i_region          = lv_region
+        i_post_code1      = lv_zipcode
+        i_zzbest_cont_no  = lv_phone
+        i_zzspecialist_id = sy-uname
+        i_zzdata_value    = lv_buagid
+        i_einzbeleg       = lv_vertrag
+* Begin of by changes VGORRELA - Defect 2991
+        i_start_date      = lv_ele_start_date
+        i_gas_start_date  = lv_gas_start_date
+* End of changes by VGORRELA - Defect 2991
+      IMPORTING
+        e_connect_flag    = lv_flag.
+
+  ENDIF.
+  IF lr_valuenode IS BOUND.
+    CLEAR lv_no.
+    CALL METHOD lr_valuenode->set_property_as_string
+      EXPORTING
+        iv_attr_name = 'NOFLAG'                     "ECC NOTEXT
+        iv_value     = lv_no.
+
+    CLEAR lv_yes.
+    CALL METHOD lr_valuenode->set_property_as_string
+      EXPORTING
+        iv_attr_name = 'YESFLAG'                     "ECC NOTEXT
+        iv_value     = lv_yes.
+  ENDIF.
+  IF lr_skip IS BOUND.
+    CALL METHOD lr_skip->set_property_as_string
+      EXPORTING
+        iv_attr_name = 'SKIPREASON'                     "ECC NOTEXT
+        iv_value     = lv_yes.                    "Just clearing the reason in value node
+  ENDIF.
+  CLEAR : gc_noflag, gc_spanish.
+
+* Navigate to the identification view
+  op_toidentification( ).
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->EH_ONSPANISHCHECK
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] HTMLB_EVENT                    TYPE REF TO CL_HTMLB_EVENT(optional)
+* | [--->] HTMLB_EVENT_EX                 TYPE REF TO IF_HTMLB_DATA(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD eh_onspanishcheck.
+******************************************************************
+*  Method Name               : EH_ONSPANISHCHECK
+*  Author                    : Rakhee Raj Bharamaraj
+*  Date                      : 05/05/2011
+*  FRICEW Id #               : CMENH140
+*  Original SAP Program Name :  N/A
+*  SAP Transport Request #   : C3DK901218
+*----------------------------------------------------------------*
+*  Description:
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    : Firstname Lastname
+*  Modification Date         : MM/DD/YYYY
+*  Description               :
+******************************************************************
+  DATA: lr_valuenode TYPE REF TO cl_bsp_wd_value_node,
+        lr_yesnonode TYPE REF TO cl_bsp_wd_value_node,
+        lv_no        TYPE        string,
+        lv_check     TYPE        string.
+
+  lr_valuenode ?= me->typed_context->spanscvn->collection_wrapper->get_current( ).
+
+  CALL METHOD lr_valuenode->get_property_as_string
+    EXPORTING
+      iv_attr_name = 'CHECKFLAG'
+    RECEIVING
+      rv_result    = lv_check.
+
+
+  IF lv_check IS NOT INITIAL. " The customer is a spanish speaking customer.
+* Set a flag if the check box is selected
+*    zl_zcmsummq_allconnectqef_impl=>gc_spanish = 'X'.  ">>DEL vnagaraj-Static variables
+     me->gc_spanish = 'X'.                               ">>INS vnagaraj-Static variables
+* Check if the no check box is selected.
+    lr_yesnonode ?= me->typed_context->zcheckvn->collection_wrapper->get_current( ).
+
+    CALL METHOD lr_yesnonode->get_property_as_string
+      EXPORTING
+        iv_attr_name = 'NOFLAG'
+      RECEIVING
+        rv_result    = lv_no.
+
+* Uncheck the box if the no check box is selected
+    IF lv_no IS NOT INITIAL.
+      CALL METHOD lr_yesnonode->set_property
+        EXPORTING
+          iv_value     = ' '
+          iv_attr_name = 'NOFLAG'.
+    ENDIF.
+  ELSE. " If the customer is not a spanish speaking customer.
+    " Clear the flag
+*    zl_zcmsummq_allconnectqef_impl=>gc_spanish = ' '. ">>DEL vnagaraj-Static variables
+    me->gc_spanish = ' '.                              ">>INS vnagaraj-Static variables
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->EH_ONYES
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] HTMLB_EVENT                    TYPE REF TO CL_HTMLB_EVENT(optional)
+* | [--->] HTMLB_EVENT_EX                 TYPE REF TO IF_HTMLB_DATA(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD eh_onyes.
+******************************************************************
+*  Method Name               : EH_ONYES
+*  Author                    : Rakhee Raj Bharamaraj
+*  Date                      : 05/05/2011
+*  FRICEW Id #               : CMENH140
+*  Original SAP Program Name :  N/A
+*  SAP Transport Request #   : C3DK901218
+*----------------------------------------------------------------*
+*  Description:
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    : Firstname Lastname
+*  Modification Date         : MM/DD/YYYY
+*  Description               :
+******************************************************************
+  DATA: lr_valuenode TYPE REF TO cl_bsp_wd_value_node,
+         lv_no       TYPE        string,
+        lv_yes       TYPE        string.
+
+ lr_valuenode ?= me->typed_context->zcheckvn->collection_wrapper->get_current( ).
+
+* Obtain the selected checkbox
+  CALL METHOD lr_valuenode->get_property_as_string
+    EXPORTING
+      iv_attr_name = 'NOFLAG'
+    RECEIVING
+      rv_result    = lv_no.
+
+   CALL METHOD lr_valuenode->get_property_as_string
+    EXPORTING
+      iv_attr_name = 'YESFLAG'
+    RECEIVING
+      rv_result    = lv_yes.
+
+* Uncheck the no flag
+  IF lv_yes IS NOT INITIAL.
+    IF lv_no IS NOT INITIAL.
+      CALL METHOD lr_valuenode->set_property
+        EXPORTING
+          iv_value     = ' '
+          iv_attr_name = 'NOFLAG'.
+* Clear flag
+     me->gc_noflag = ' '.
+    ENDIF.
+  ENDIF.
+
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->GET_DEVLOC
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IR_CURRENT                     TYPE REF TO IF_BOL_BO_PROPERTY_ACCESS
+* | [--->] IV_SPARTE                      TYPE        CRM_ISU_SPARTE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_devloc.
+    DATA: lr_coll   TYPE REF TO if_bol_bo_col,
+          lr_device TYPE REF TO if_bol_bo_property_access,
+          lr_inst   TYPE REF TO if_bol_bo_property_access,
+          ls_device TYPE crm_isu_device_attr,
+          lr_entity TYPE REF TO cl_crm_bol_entity.
+
+*   get collection of dependent nodes
+    lr_entity ?= ir_current.
+    CHECK lr_entity IS BOUND.
+    TRY.
+        lr_coll = lr_entity->get_related_entities(
+               iv_relation_name = 'IsuContractInstallationRel' ).
+
+      CATCH cx_crm_genil_model_error.
+*       should never happen
+        EXIT.
+      CATCH cx_sy_ref_is_initial.
+    ENDTRY.
+
+    CHECK lr_coll IS BOUND.
+    lr_inst ?= lr_coll->get_current( ).
+    CHECK lr_inst IS BOUND.
+
+*   get collection of dependent nodes
+    lr_entity ?= lr_inst.
+    CHECK lr_entity IS BOUND.
+    TRY.
+        lr_coll = lr_entity->get_related_entities(
+               iv_relation_name = 'IsuInstallationDeviceRel' ).
+
+        CHECK lr_coll IS BOUND.
+        lr_device ?= lr_coll->get_current( ).
+        CHECK lr_device IS BOUND.
+        lr_device->get_properties(
+          IMPORTING
+            es_attributes = ls_device
+        ).
+        IF iv_sparte = '01'.
+          gv_enrlsdp_el = ls_device-devloc.
+
+        ELSEIF iv_sparte = '02'.
+          gv_enrlsdp_gs = ls_device-devloc.
+
+        ENDIF.
+      CATCH cx_crm_genil_model_error.
+*       should never happen
+        EXIT.
+      CATCH cx_sy_ref_is_initial.
+    ENDTRY.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->GET_DEVLOC_FROM_PREMISE
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  method GET_DEVLOC_FROM_PREMISE.
+    DATA: lr_bdc      TYPE REF TO if_crm_ui_data_context,
+          lr_current  TYPE REF TO if_bol_bo_property_access,
+          lr_premise  TYPE REF TO cl_crm_bol_entity,
+          lr_pod      TYPE REF TO cl_crm_bol_entity,
+          ls_pod      TYPE crm_isu_tec_pd,
+          ls_devloc   TYPE crm_isu_devloc_attr,
+          lr_iterator TYPE REF TO if_bol_bo_col_iterator,
+          lr_iter     TYPE REF TO if_bol_bo_col_iterator,
+          lr_coll     TYPE REF TO if_bol_bo_col.
+
+    TRY.
+*       Get GDC
+        lr_bdc  = cl_crm_ui_data_context_srv=>get_instance( ).
+        CHECK lr_bdc IS BOUND.
+
+*       Get Confirmed Customer
+        lr_current = lr_bdc->get_entity( 'CURRENTPREMISE' ).
+
+*       Check for bound
+        IF lr_current IS BOUND.
+          lr_premise ?= lr_current.
+        ELSE.
+          EXIT.
+        ENDIF.
+
+*       Check for Bound
+        CHECK lr_premise IS BOUND.
+
+        lr_coll = lr_premise->get_related_entities(
+               iv_relation_name = 'PointOfDeliveryRel' ).
+
+        IF lr_coll IS NOT BOUND OR lr_coll->size( ) = 0.
+          EXIT.
+        ENDIF.
+
+*       Get iterator
+        lr_iterator ?= lr_coll->get_iterator( ).
+
+        CHECK lr_iterator IS BOUND.
+        lr_current ?= lr_iterator->get_first( ).
+
+        WHILE lr_current IS BOUND.
+*         Get Properties of POD
+          lr_current->get_properties(
+            IMPORTING
+              es_attributes = ls_pod ).
+          lr_pod ?= lr_current.
+
+
+*       Check for Bound
+          IF lr_pod IS BOUND.
+
+            lr_coll = lr_pod->get_related_entities(
+                   iv_relation_name = 'PoDIsuDevLocRel' ).
+
+            IF lr_coll IS NOT BOUND OR lr_coll->size( ) = 0.
+            ELSE.
+
+*       Get iterator
+              lr_iter ?= lr_coll->get_iterator( ).
+
+              CHECK lr_iter IS BOUND.
+              lr_current ?= lr_iter->get_first( ).
+
+              WHILE lr_current IS BOUND.
+*         Get Properties of DEVLOC
+                lr_current->get_properties(
+                  IMPORTING
+                    es_attributes = ls_devloc ).
+                IF ls_pod-pd_sparte = '01'.
+                  gv_enrlsdp_el = ls_devloc-devloc.
+
+                ELSEIF ls_pod-pd_sparte = '02'.
+                  gv_enrlsdp_gs = ls_devloc-devloc.
+
+                ENDIF.
+
+                lr_current ?= lr_iter->get_next( ).
+              ENDWHILE.
+            ENDIF.
+          ENDIF.
+          lr_current ?= lr_iterator->get_next( ).
+        ENDWHILE.
+
+      CATCH cx_root.
+    ENDTRY.
+  endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->IF_BSP_WD_HISTORY_STATE_DESCR~GET_STATE_DESCRIPTION
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_CURRENT_DESCRIPTION         TYPE        STRING(optional)
+* | [<-()] DESCRIPTION                    TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD if_bsp_wd_history_state_descr~get_state_description.
+******************************************************************
+*  Method Name               : IF_BSP_WD_HISTORY_STATE_DESCR~GET_STATE_DESCRIPTION
+*  Author                    : Rakhee Raj Bharamaraj
+*  Date                      : 05/09/2011
+*  FRICEW Id #               : CMENH140
+*  Original SAP Program Name : N/A
+*  SAP Transport Request #   : C3DK901218
+*----------------------------------------------------------------*
+*  Description:
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    : Firstname Lastname
+*  Modification Date         : MM/DD/YYYY
+*  Description               :
+******************************************************************
+* redefine this method with something that makes sense for the user
+* for all view(sets) that appear directly in the workarea
+* (Description should include state information as well! e.g. "Sales Order 4711")
+
+  CHECK: rep_view IS BOUND.
+  description = 'ALL Connect Questionnaire'.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->OFFER_CSDD
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] RE_CSDD_OFFERED                TYPE        ABAP_BOOL
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD offer_csdd.
+******************************************************************
+*  Method Name               : OFFER_CSDD
+*  Author                    : Eric Dietzel
+*  Date                      : 3/12/2015
+*  SAP Transport Request #   : C7DK900279
+*----------------------------------------------------------------*
+*  Description: Check to see if the user is eligible for the Customer
+*               Selects Due Date (CSDD) program. This method is
+*               also called from view AllConnectQEF. If you change it
+*               here it will also have to be changed there.
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    : Firstname Lastname
+*  Modification Date         : MM/DD/YYYY
+*  Description               :
+******************************************************************
+
+
+  CONSTANTS: lc_remote_meter_reading    TYPE crm_isu_e_ami_capabilities VALUE '0003',
+             lc_on_demand_meter_reading TYPE crm_isu_e_ami_capabilities VALUE '0005',
+             lc_event                   TYPE string VALUE 'CONFIRM_POPUP_CLOSED',
+             lc_contract_end            TYPE string VALUE '99991231',
+             lc_collective_account      TYPE string VALUE '02'.
+
+  DATA: lr_premise          TYPE REF TO cl_crm_bol_entity,
+        lr_device           TYPE REF TO cl_crm_bol_entity,
+        lr_cap              TYPE REF TO cl_crm_bol_entity,
+        lr_isupremise       TYPE REF TO cl_crm_bol_entity,
+        lr_install          TYPE REF TO cl_crm_bol_entity,
+        lr_pod              TYPE REF TO cl_crm_bol_entity,
+        lr_opt              TYPE REF TO cl_crm_bol_entity,
+        lr_item             TYPE REF TO cl_crm_bol_entity,
+        lr_install_col      TYPE REF TO if_bol_bo_col,
+        lr_device_col       TYPE REF TO if_bol_bo_col,
+        lr_cap_col          TYPE REF TO if_bol_bo_col,
+        lr_pod_col          TYPE REF TO if_bol_bo_col,
+        lr_coco             TYPE REF TO zl_zcmsummq_bspwdcomponen_impl,
+        lr_ebill            TYPE REF TO if_bol_bo_property_access,
+        lr_buag             TYPE REF TO if_bol_bo_property_access,
+        lv_rate_cat         TYPE crm_isu_tariftyp_anl,
+        lv_product_guid     TYPE crmt_ordered_prod_db,
+        lv_product          TYPE crmd_orderadm_i-ordered_prod,
+        lv_title            TYPE string,
+        lv_text             TYPE string,
+        lv_guid             TYPE crmd_isuexta4-guid,
+        lv_capability       TYPE crm_isu_e_ami_capabilities,
+        lv_buag_class       TYPE string,
+        lv_ok_popup_flg     TYPE boolean,
+        lv_yes_no_popup_flg TYPE boolean,
+        lv_opt_out          TYPE boolean.
+
+  DATA: lr_query        TYPE REF TO cl_crm_bol_query_service,
+        lr_results      TYPE REF TO if_bol_entity_col,
+        lr_contract     TYPE REF TO cl_crm_bol_entity,
+        lr_ent_buag     TYPE REF TO cl_crm_bol_entity,
+        lr_contract_col TYPE REF TO if_bol_bo_col.
+
+* Opt Out - Don't offer the CSDD popup if any of the accounts are Opt Out
+  lr_query = cl_crm_bol_query_service=>get_instance( 'BuAgQuery' ).
+
+  lr_query->set_property(
+    iv_attr_name = 'BUAG_ID'
+    iv_value     = typed_context->datatrvn->collection_wrapper->get_current( )->get_property_as_string( 'BUAG' ) ).
+
+  lr_results = lr_query->get_query_result( ).
+
+  CHECK lr_results IS BOUND AND lr_results->size( ) > 0.
+
+  lr_ent_buag = lr_results->get_first( ).
+
+  TRY.
+      lr_contract_col = lr_ent_buag->get_related_entities( EXPORTING iv_relation_name = 'BuAgIsuContractRel' ).
+    CATCH cx_root.
+  ENDTRY.
+
+  IF lr_contract_col IS BOUND.
+
+    TRY.
+
+        lr_contract ?= lr_contract_col->get_first( ).
+
+        WHILE lr_contract IS BOUND.
+
+          z_smartenergy_tools=>is_contract_opt_out( EXPORTING iv_contract = lr_contract IMPORTING ev_opt_out = lv_opt_out ).
+
+          IF lv_opt_out = abap_true.
+
+            re_csdd_offered = abap_false.
+
+            EXIT.
+
+          ENDIF.
+
+          lr_contract ?= lr_contract_col->get_next( ).
+
+        ENDWHILE.
+
+      CATCH cx_root.
+
+    ENDTRY.
+
+  ENDIF.
+
+  IF lv_opt_out = abap_false.
+
+* Check to see if we have a Collective Account
+    lr_buag = zcl_sge_util=>get_current_buag( ).
+
+    CHECK lr_buag IS BOUND.
+
+    lv_buag_class = lr_buag->get_property_as_string( 'BUAG_CLASS' ).
+
+* If a Collective Account, they are not eligible for CSDD
+    IF lv_buag_class <> lc_collective_account.
+
+      lr_premise ?= zcl_sge_util=>get_current_premise( ).
+
+      CHECK lr_premise IS BOUND.
+
+*Get Isu Premise
+      lr_isupremise ?= lr_premise->get_related_entity( iv_relation_name = 'PremiseIsuPremiseRel' ).
+
+      CHECK lr_isupremise IS BOUND.
+
+*Get Installation Collection
+      lr_install_col ?= lr_isupremise->get_related_entities( iv_relation_name = 'IsuPremiseInstallationRel' ).
+
+*Get the first Installation
+      lr_install ?= lr_install_col->get_first( ).
+
+      WHILE lr_install IS BOUND.
+
+        re_csdd_offered = abap_false.
+
+*Get Device Collection
+        lr_device_col ?= lr_install->get_related_entities( iv_relation_name = 'IsuInstallationDeviceRel').
+
+*Get the first Device
+        lr_device ?= lr_device_col->get_first( ).
+
+        WHILE lr_device IS BOUND.
+
+*Get Capabilities Collection
+          lr_cap_col ?= lr_device->get_related_entities( iv_relation_name = 'IsuDeviceDeviceCapabilitiesRel' ).
+
+*Get the first Capability
+          lr_cap ?= lr_cap_col->get_first( ).
+
+          WHILE lr_cap IS BOUND.
+
+            lv_capability = lr_cap->get_property_as_string( 'CAPABILITIES' ).
+
+*Check to see if we have an AMI/Smart Meter
+            IF lv_capability = lc_remote_meter_reading OR lv_capability = lc_on_demand_meter_reading.
+
+              IF lr_cap->get_property_as_string( iv_attr_name = 'AMS_RELEVANT' ) = abap_true AND
+                 lr_cap->get_property_as_string( iv_attr_name = 'AMCG_RELEVANT' ) = abap_true.
+
+*Get POD Collection
+                lr_pod_col ?= lr_install->get_related_entities( iv_relation_name = 'IsuInstallationPODRel' ).
+
+*Get the first POD
+                lr_pod ?= lr_pod_col->get_first( ).
+
+                WHILE lr_pod IS BOUND.
+
+                  lv_product_guid = lr_pod->get_property_as_string( EXPORTING iv_attr_name = 'PD_INT_UI' ).
+
+*Select the current guid
+                  SELECT guid
+                    FROM crmd_isuexta4
+                    INTO lv_guid
+                   WHERE a4podguid   = lv_product_guid
+*                 AND a4contstart <= sy-datum
+                     AND a4contend   = lc_contract_end
+                     AND a4cancelled <> 'X'.
+                  ENDSELECT.
+
+                  IF sy-subrc = 0.
+
+*Select the current Product
+                    SELECT ordered_prod
+                      FROM crmd_orderadm_i
+                      INTO lv_product
+                     WHERE guid = lv_guid.
+                    ENDSELECT.
+
+                    IF sy-subrc = 0.
+
+*Verify the Product that was selected is a valid one for the CSDD program
+                      SELECT tariftyp
+                        FROM zbi_csdd_rcat
+                        INTO lv_rate_cat
+                       WHERE tariftyp = lv_product.
+                      ENDSELECT.
+
+                      IF lv_rate_cat IS NOT INITIAL.
+
+                        lr_coco ?= me->comp_controller.
+
+                        lr_ebill = lr_coco->typed_context->zebillallcnct->collection_wrapper->get_current( ).
+
+                        lv_title = text-001.
+
+                        CONCATENATE text-002 text-003 INTO lv_text SEPARATED BY space.
+
+* Check to see what popup we want to show at the end of this method
+                        IF lr_ebill->get_property_as_string( 'ALLCNCT_FLAG' ) = abap_true.
+
+                          lv_ok_popup_flg = abap_true.
+
+                          re_csdd_offered = abap_true.
+
+                        ELSE.
+
+                          lv_yes_no_popup_flg = abap_true.
+
+                          re_csdd_offered = abap_true.
+
+                        ENDIF.
+                      ENDIF.
+                    ENDIF.
+                  ENDIF.
+
+                  lr_pod ?= lr_pod_col->get_next( ).
+
+                ENDWHILE.
+
+              ENDIF.
+
+            ENDIF.
+
+            lr_cap ?= lr_cap_col->get_next( ).
+
+          ENDWHILE.
+
+          lr_device ?= lr_device_col->get_next( ).
+
+        ENDWHILE.
+
+* If a combo account, both the electric and gas need to pass the CSDD validation
+        IF re_csdd_offered = abap_false.
+
+          RETURN.
+
+        ENDIF.
+
+        lr_install ?= lr_install_col->get_next( ).
+
+      ENDWHILE.
+
+      IF lv_ok_popup_flg = abap_true.
+
+        CALL METHOD comp_controller->window_manager->create_popup_2_confirm
+          EXPORTING
+            iv_title          = lv_title
+            iv_text           = lv_text
+            iv_btncombination = if_bsp_wd_window_manager=>co_btncomb_ok
+          RECEIVING
+            rv_result         = gr_conf_popup.
+
+      ELSEIF lv_yes_no_popup_flg = abap_true.
+
+        CALL METHOD comp_controller->window_manager->create_popup_2_confirm
+          EXPORTING
+            iv_title          = lv_title
+            iv_text           = lv_text
+            iv_btncombination = if_bsp_wd_window_manager=>co_btncomb_yesno
+          RECEIVING
+            rv_result         = gr_conf_popup.
+
+      ENDIF.
+
+*Set on close event for popup
+      CALL METHOD gr_conf_popup->set_on_close_event
+        EXPORTING
+          iv_view       = me
+          iv_event_name = lc_event.
+
+*Open popup
+      gr_conf_popup->open( ).
+
+    ENDIF.
+
+    re_csdd_offered = abap_false.
+
+  ENDIF.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZL_ZCMSUMMQ_ALLCONNECTQEF_IMPL->OP_TOIDENTIFICATION
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DATA_COLLECTION             TYPE REF TO IF_BOL_BO_COL(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD op_toidentification.
+******************************************************************
+*  Method Name               : OP_TOIDENTIFICATION
+*  Author                    : Rakhee Raj Bharamaraj
+*  Date                      : 05/19/2011
+*  FRICEW Id #               : CMENH140
+*  Original SAP Program Name : N/A
+*  SAP Transport Request #   : C3DK901218
+*----------------------------------------------------------------*
+*  Description:
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    : Firstname Lastname
+*  Modification Date         : MM/DD/YYYY
+*  Description               :
+******************************************************************
+
+
+  DATA:lr_window_controller TYPE REF TO cl_bsp_wd_window.
+
+  lr_window_controller = view_manager->get_window_controller( ).
+  lr_window_controller->call_outbound_plug( iv_outbound_plug   = 'TOIDENTIFICATION' ). "#EC NOTEXT
+
+ENDMETHOD.
+ENDCLASS.

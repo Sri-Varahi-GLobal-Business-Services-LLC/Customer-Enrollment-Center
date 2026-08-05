@@ -1,0 +1,163 @@
+*&---------------------------------------------------------------------*
+*& Report  ZBL_TRANSPROFILE_AUTOMATION
+*&
+*&---------------------------------------------------------------------*
+* Name              : Transaction Profile Automation               *
+* Author            : Riyas                                            *
+* Date              : 12/02/2014                                       *
+* FRICE ID          : BL_ENH_POST_005
+* Type of Program   : Report                                           *
+* Development Class : ZCC_ENH                                          *
+*----------------------------------------------------------------------*
+* Modification Log                Place latest at top :                *
+*----------------------------------------------------------------------*
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------*
+* Riyas    12/02/2014     Initial       E2DK934875                     *
+*----------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+
+REPORT  zbl_transprofile_automation.
+
+INCLUDE zbl_transprofile_sel.
+
+START-OF-SELECTION.
+
+* Call the Function Module to develop
+  CALL FUNCTION 'Z_REG_AMCG_PROFILE_UPDATE'
+    EXPORTING
+      iv_sernr            = gv_sernr
+      iv_matnr            = gv_matnr
+      iv_installation     = p_anlage
+      iv_devloc           = gv_devloc
+      iv_ami_amcg_cap_grp = gv_amcg_cap_grp
+      iv_actvt_date       = p_date
+      iv_devmodif         = r_devmod
+      iv_profcreate       = r_profcr
+      iv_profassign       = r_profal
+      iv_profsync         = r_profsy
+      iv_profdelloc       = r_profde
+      iv_appl_log         = 'X'
+    IMPORTING
+      et_return           = gt_return.
+
+  IF gt_return[] IS NOT INITIAL.
+
+    LOOP AT gt_return INTO gs_return.
+      WRITE:/ gs_return-message.
+    ENDLOOP.
+
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_MASTER_DATA
+*&---------------------------------------------------------------------*
+FORM get_master_data  USING    p_device TYPE equnr
+                               p_anlage TYPE anlage
+                               p_date   TYPE sy-datum.
+  TYPES: BEGIN OF ty_equi,
+           equnr TYPE equnr,
+           sernr TYPE gernr,
+           matnr TYPE matnr,
+         END   OF ty_equi.
+
+  TYPES: BEGIN OF ty_egerh,
+           logiknr      TYPE logiknr,
+           devloc       TYPE devloc,
+           amcg_cap_grp TYPE e_ami_amcg_cap_grp,
+         END   OF ty_egerh.
+
+  DATA: ls_equi  TYPE ty_equi,
+        ls_egerh TYPE ty_egerh,
+        lt_equi  TYPE STANDARD TABLE OF ty_equi,
+        lt_egerh TYPE STANDARD TABLE OF ty_egerh.
+
+  DATA: lv_equnr  TYPE equnr,
+        lv_count  TYPE i,
+        lv_anlage TYPE anlage.
+
+* Check Installation exists.
+  CLEAR: lv_anlage.
+  SELECT SINGLE anlage
+           FROM eanl
+           INTO lv_anlage
+         WHERE  anlage = p_anlage.
+  IF sy-subrc NE 0.
+    MESSAGE e000(zbill) WITH 'Installation given not valid'.
+  ENDIF.
+
+* Get Material Number
+  CLEAR: gv_matnr,gv_sernr.
+  SELECT   equnr sernr matnr
+           FROM equi
+           INTO TABLE lt_equi
+          WHERE sernr = p_device.
+  IF sy-subrc EQ 0.
+    CLEAR lv_count.
+    DESCRIBE TABLE lt_equi LINES lv_count.
+    IF lv_count GT 1.
+      IF p_matnr IS INITIAL.
+        MESSAGE e000(zbill) WITH 'More than one device for Serial No. Give Material'.
+      ELSE.
+        REFRESH: lt_equi[].
+        SELECT equnr sernr matnr
+               FROM equi
+               INTO TABLE lt_equi
+               WHERE matnr = p_matnr AND
+                     sernr = p_device.
+        IF sy-subrc NE 0.
+          MESSAGE e000(zbill) WITH 'No Device found'.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ELSE.
+    MESSAGE e000(zbill) WITH 'No Device found'.
+  ENDIF.
+
+  IF lt_equi[] IS NOT INITIAL.
+
+    CLEAR ls_equi.
+    READ TABLE lt_equi INTO ls_equi INDEX 1.
+
+* Get Device Locationa and AMCG Cap Group
+    SELECT   logiknr devloc amcg_cap_grp
+             INTO TABLE lt_egerh
+             FROM egerh
+            WHERE equnr =  ls_equi-equnr  AND
+                     ab LE p_date         AND
+                    bis GE p_date.
+
+    IF sy-subrc EQ 0.
+
+      CLEAR: ls_egerh.
+      READ TABLE lt_egerh INTO ls_egerh INDEX 1.
+
+      IF ls_egerh-logiknr IS INITIAL.
+        MESSAGE e000(zbill) WITH 'Device Not Installaed on Given date'.
+      ELSE.
+
+        CLEAR: lv_anlage.
+        SELECT SINGLE anlage
+                 INTO lv_anlage
+                 FROM eastl
+               WHERE  anlage  =  p_anlage         AND
+                      logiknr =  ls_egerh-logiknr AND
+                      bis     GE p_date           AND
+                      ab      LE p_date.
+        IF sy-subrc NE 0.
+          MESSAGE e000(zbill) WITH 'Device Not Installed on Installation on given date'.
+        ENDIF.
+      ENDIF.
+
+    ENDIF.
+
+* All validations are good . Pass Global parameters
+    gv_matnr         = ls_equi-matnr.
+    gv_sernr         = ls_equi-sernr.
+    gv_devloc        = ls_egerh-devloc.
+    gv_amcg_cap_grp  = ls_egerh-amcg_cap_grp.
+
+  ENDIF.
+
+ENDFORM.                    " GET_MASTER_DATA

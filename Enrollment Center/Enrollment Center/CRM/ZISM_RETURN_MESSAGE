@@ -1,0 +1,34 @@
+FUNCTION zism_return_message.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(IV_RETURN) TYPE  ZSPGM_BRF_RETURN
+*"  TABLES
+*"      MSG_TAB STRUCTURE  ZSPGM_BRF_RETURN
+*"----------------------------------------------------------------------
+
+  DATA: ls_msg    TYPE zspgm_brf_return.
+
+  MOVE-CORRESPONDING iv_return TO ls_msg.
+
+*  msg_tab-partner   = iv_partner.
+*  msg_tab-vkont     = iv_vkont.
+*  msg_tab-pgm_desc  = iv_pgm_desc.
+*  msg_tab-msgtype   = msgtype.
+*  msg_tab-msgid     = msgid.
+*  msg_tab-msgnumber = msgnumber.
+*  msg_tab-message_v1  = msgv1.
+*  msg_tab-message_v2  = msgv2.
+*  msg_tab-message_v3  = msgv3.
+*  msg_tab-message_v4  = msgv4.
+
+  MESSAGE ID iv_return-id TYPE iv_return-type NUMBER iv_return-number
+          WITH iv_return-message_v1
+               iv_return-message_v2
+               iv_return-message_v3
+               iv_return-message_v4
+          INTO ls_msg-message.
+
+  APPEND ls_msg TO msg_tab.
+
+ENDFUNCTION.

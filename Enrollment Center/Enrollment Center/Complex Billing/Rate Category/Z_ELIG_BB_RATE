@@ -1,0 +1,210 @@
+FUNCTION z_elig_bb_rate .
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(CONTRACT_ACCOUNT) TYPE  VKONT_KK
+*"     REFERENCE(SOURCE_SYSTEM) TYPE  ZELIG_SOURCE_SYSTEM OPTIONAL
+*"     VALUE(ENROLL_DATE) TYPE  DATS
+*"  EXPORTING
+*"     REFERENCE(ELIGIBLE_FLG) TYPE  BOOLEAN_FLG
+*"     REFERENCE(ERROR_MESSAGE) TYPE  STRING
+*"----------------------------------------------------------------------
+*
+*NEW: JKT          OCT 2011      Rework Budget Plan
+*
+  TYPES: BEGIN OF t_erch,
+           belnr          LIKE erch-belnr,
+           billing_period LIKE erch-billing_period,
+         END OF t_erch.
+
+  DATA: l_eanl            TYPE v_eanl,
+        v_avg_rate        TYPE zavg_rate,
+        l_line_cnt        TYPE i,
+        l_operand         LIKE ettifn-operand.
+
+  DATA: l_ettifn_tab      TYPE STANDARD TABLE OF ettifn,
+        l_ettifn_rec      LIKE LINE OF l_ettifn_tab,
+        l_erch_tab        TYPE STANDARD TABLE OF t_erch,
+        l_erch_rec        LIKE LINE OF l_erch_tab,
+        l_ever_tab        TYPE STANDARD TABLE OF ever,
+        l_ever_rec        LIKE LINE OF l_ever_tab.
+
+  DATA: l_enroll_dt           TYPE dats,
+        l_start_dt            TYPE dats,
+        l_billing_prd         LIKE erch-billing_period,
+        l_not_enough_hist     TYPE boolean.
+
+
+  "Get contract info to check if active and / or service types
+  SELECT *
+    FROM ever
+    INTO TABLE l_ever_tab
+    WHERE vkonto  = contract_account
+     AND einzdat <= sy-datum
+     AND auszdat >= sy-datum.
+  IF sy-subrc <> 0.
+    error_message = 'Current Contract not found'.
+    CLEAR eligible_flg.
+    RETURN.
+  ENDIF.
+
+
+
+*If any entries fail validation, entire Contract Account Fails
+  LOOP AT l_ever_tab INTO l_ever_rec.
+    CLEAR: l_not_enough_hist.
+
+    CALL FUNCTION 'ISU_DB_EANL_SELECT'
+      EXPORTING
+        x_anlage     = l_ever_rec-anlage
+        x_keydate    = sy-datum
+      IMPORTING
+        y_v_eanl     = l_eanl
+      EXCEPTIONS
+        not_found    = 1
+        system_error = 2
+        invalid_date = 3
+        OTHERS       = 4.
+    IF sy-subrc <> 0.
+      error_message = 'Installation not found'.
+      CLEAR eligible_flg.
+      RETURN.
+    ENDIF.
+
+    CASE l_eanl-tariftyp.
+      WHEN   'RT_2010'     OR
+             'RS_2000'     OR
+             'GSD_2150'    OR
+             'GSD_2140'    OR
+             'GSD_2130'    OR
+             'GSD_2120'    OR
+             'GS_2110'     OR
+             'GS_2100'     OR
+             'GP_2210'     OR
+             'GP_2200'     OR
+             'GPD_2220V1'  OR
+             'GPD_2220V2'  OR
+             'GPD_2220V3'  OR
+             'GPD_2230V1'  OR
+             'GPD_2230V2'  OR
+             'GPD_2230V3'.
+
+        error_message = 'ROA Account is Ineligible for Budget Plan'.
+        CLEAR eligible_flg.
+        RETURN.
+
+      WHEN OTHERS.
+    ENDCASE.
+
+
+    SELECT SINGLE avg_rate
+      FROM  ztca_avg_rate
+      INTO  v_avg_rate
+      WHERE tariftyp = l_eanl-tariftyp.
+
+
+*if tariftyp found in tariftyp OK
+*If not found, verify 12 months or greater of history
+    IF sy-subrc <> 0.
+
+      CLEAR: l_ettifn_tab, l_line_cnt.
+
+
+      IF l_ever_rec-sparte = '01'. "elec
+        l_operand = 'KWH_TOTAL'.
+      ELSEIF l_ever_rec-sparte = '02'. "gas
+        l_operand = 'ENERGY_MCF'.
+      ELSE.
+        error_message = 'Invalid division '.
+        CLEAR eligible_flg.
+        RETURN.
+      ENDIF.
+
+      "Get the premise history
+      SELECT *
+        FROM ettifn
+        INTO TABLE l_ettifn_tab
+        WHERE anlage = l_ever_rec-anlage
+        AND  operand = l_operand
+        AND  belnr  <> space.
+
+      CLEAR l_line_cnt.
+      DESCRIBE TABLE l_ettifn_tab LINES l_line_cnt.
+
+      IF l_line_cnt < 12.
+        "Already not enough history - ineligible
+        error_message = 'Account is not Eligible for Budget Plan'.
+        CLEAR eligible_flg.
+        RETURN.
+      ELSE.
+        "Now get the bill docs associated with these.
+        SELECT belnr
+               billing_period
+          FROM erch
+          INTO TABLE l_erch_tab
+          FOR ALL ENTRIES IN l_ettifn_tab
+         WHERE belnr       = l_ettifn_tab-belnr
+           AND simulation <> 'X'           "No simulated
+           AND stornodat  EQ '00000000'.   "Not reversed
+
+        SORT l_erch_tab BY billing_period ASCENDING.
+
+        "Subtract 1 year from the enrollment date and this is the period we need consumption for.
+        l_enroll_dt = enroll_date.
+        CALL FUNCTION 'Z_CALC_DATE'
+          EXPORTING
+            input_date  = l_enroll_dt
+            input_value = '-1'
+            input_type  = 'Y'
+          IMPORTING
+            output_date = l_start_dt.
+
+        l_start_dt+6(2) = '01'.
+        l_enroll_dt+6(2) = '01'.
+
+        "Make sure we have a bill for each month of the historical 12 month period
+        WHILE l_start_dt < l_enroll_dt.
+          "See if we have a matching bill record now for this bill period
+          CONCATENATE l_start_dt+0(4) '/' l_start_dt+4(2) INTO l_billing_prd.
+
+          CLEAR: l_erch_rec.
+          LOOP AT l_erch_tab INTO l_erch_rec WHERE billing_period = l_billing_prd.
+            EXIT.
+          ENDLOOP.
+
+          "did we find this record
+          IF l_erch_rec IS INITIAL.
+            "Didn't find it - no sense continuing since we don't have all the history
+            l_not_enough_hist = 'X'.
+            EXIT.
+          ENDIF.
+
+          "Get the next month for the next pass
+          CALL FUNCTION 'Z_CALC_DATE'
+            EXPORTING
+              input_date  = l_start_dt
+              input_value = '1'
+              input_type  = 'M'
+            IMPORTING
+              output_date = l_start_dt.
+        ENDWHILE.
+
+        IF l_not_enough_hist = 'X'.
+          error_message = 'Account is not Eligible for Budget Plan'.
+          CLEAR eligible_flg.
+          RETURN.
+        ENDIF.
+
+      ENDIF.  "l_line_cnt
+
+    ENDIF.  "ztca_avg_rate
+
+  ENDLOOP.  "l_ever_tab
+
+
+
+*If no error Validate Successful
+  eligible_flg = c_set_x.
+
+ENDFUNCTION.
+

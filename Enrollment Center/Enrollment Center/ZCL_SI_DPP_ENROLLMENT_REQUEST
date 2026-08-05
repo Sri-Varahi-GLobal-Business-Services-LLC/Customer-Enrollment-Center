@@ -1,0 +1,119 @@
+class ZCL_SI_DPP_ENROLLMENT_REQUEST definition
+  public
+  create public .
+
+public section.
+
+  interfaces ZII_SI_DPP_ENROLLMENT_REQUEST .
+protected section.
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_SI_DPP_ENROLLMENT_REQUEST IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_SI_DPP_ENROLLMENT_REQUEST->ZII_SI_DPP_ENROLLMENT_REQUEST~SI_ENROLLMENT_REQUEST_IN
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] INPUT                          TYPE        ZCREATE_END_DEVICE_SERVICE_RE1
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD zii_si_dpp_enrollment_request~si_enrollment_request_in.
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 10/13/2015
+*----------------------------------------------------------------*
+*  Description: This Method handles the Enrollment
+*               Request from Enrollment Vendor
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+*** **** INSERT IMPLEMENTATION HERE **** ***
+    DATA:
+      lo_protocol         TYPE REF TO if_wsprotocol,
+      lo_protocol_payload TYPE REF TO if_wsprotocol_payload,
+      lo_server_context   TYPE REF TO if_ws_server_context,
+      lo_msgid_protocol   TYPE REF TO if_wsprotocol_message_id,
+      lr_appldata_out     TYPE REF TO data,
+      l_msgid             TYPE e_se_msgid ##NEEDED,
+      lo_map              TYPE REF TO zif_dpp_map_basic,
+      lo_impl             TYPE REF TO zif_dpp_impl_basic.
+
+    FIELD-SYMBOLS: <fs_output> TYPE any ##FS_ASSIGN_OK.
+
+    IF input-create_end_device_service_requ-header-comment EQ 'Debug'.
+      DO.
+        DATA lv_debug TYPE boolean VALUE 'X'.
+        IF lv_debug IS INITIAL.
+          EXIT.
+        ENDIF.
+      ENDDO.
+    ENDIF.
+    TRY .
+        lo_server_context = cl_proxy_access=>get_server_context( ).
+
+        "Deactivate extended XML handling first
+        lo_protocol = lo_server_context->get_protocol( protocol_name = if_wsprotocol=>payload ).
+        lo_protocol_payload ?= lo_protocol.
+        CALL METHOD lo_protocol_payload->set_extended_xml_handling
+          EXPORTING
+            extended_xml_handling = abap_false.
+
+        "Set update task local
+        SET UPDATE TASK LOCAL.
+
+        "Receive a proxy message ID via message ID protocol
+        lo_msgid_protocol ?= lo_server_context->get_protocol( if_wsprotocol=>message_id ).
+        l_msgid = lo_msgid_protocol->get_message_id( ).
+      CATCH cx_ai_system_fault.
+        RAISE EXCEPTION TYPE cx_isu_standard_message_fault1.
+    ENDTRY.
+    TRY.
+        "Get proxy implementation and mapping object reference
+        CALL METHOD zcl_isu_dpp_dispatch=>create_map_impl_instance
+          EXPORTING
+            x_input         = input
+          CHANGING
+            y_instance_map  = lo_map
+            y_instance_impl = lo_impl
+            o_dataref       = lr_appldata_out.
+
+      CATCH cx_sy_create_object_error.
+        RAISE EXCEPTION TYPE cx_isu_standard_message_fault1.
+    ENDTRY.
+
+    IF lr_appldata_out IS BOUND.
+      ASSIGN lr_appldata_out->* TO <fs_output>.
+    ENDIF.
+
+    TRY. "Map interface data
+        CALL METHOD lo_map->map
+          EXPORTING
+            x_input   = input
+          CHANGING
+            xy_output = <fs_output>.
+
+      CATCH cx_sy_create_object_error.
+        RAISE EXCEPTION TYPE cx_isu_standard_message_fault1.
+    ENDTRY.
+
+    TRY. "Process
+        CALL METHOD lo_impl->process
+          EXPORTING
+            x_input = <fs_output>.
+
+      CATCH cx_sy_create_object_error.
+        RAISE EXCEPTION TYPE cx_isu_standard_message_fault1.
+    ENDTRY.
+
+
+  ENDMETHOD.
+ENDCLASS.

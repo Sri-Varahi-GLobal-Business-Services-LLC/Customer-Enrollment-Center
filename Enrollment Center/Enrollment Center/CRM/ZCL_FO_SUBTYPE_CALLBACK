@@ -1,0 +1,19 @@
+METHOD if_bsp_dlc_obj_type_callback~get_object_sub_types.
+
+  DATA:   lv_sub_object TYPE bsp_dlc_object_sub_type.
+
+  IF iv_object_type = 'ZFOPROP_SEARCH'.
+
+    lv_sub_object = 'ZPREMISE'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'ZBPART'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+  ENDIF.
+
+
+ENDMETHOD.
+

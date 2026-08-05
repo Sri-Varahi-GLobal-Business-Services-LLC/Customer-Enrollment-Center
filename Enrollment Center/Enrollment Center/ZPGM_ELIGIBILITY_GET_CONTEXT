@@ -1,0 +1,941 @@
+FUNCTION zpgm_eligibility_get_context .
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_PARTNER) TYPE  BU_PARTNER OPTIONAL
+*"     VALUE(IV_VKONT) TYPE  VKONT_KK OPTIONAL
+*"     VALUE(IV_DEVLOC) TYPE  DEVLOC OPTIONAL
+*"     VALUE(IV_PGM_TYPE) TYPE  ZPGM_TYPE OPTIONAL
+*"     VALUE(IV_DEVLOC_GAS) TYPE  DEVLOC OPTIONAL
+*"     VALUE(IV_ELECTRIC_ONLY) TYPE  BOOLEAN OPTIONAL
+*"     VALUE(IV_DB_RESTRICT) TYPE  ZSPGM_DB_RESTRICT OPTIONAL
+*"  EXPORTING
+*"     VALUE(ES_CONTEXT) TYPE  ZST_PROGRAM_ENROLL_CONTEXT
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Raghavendra Dasari
+*  Date                      : 11/02/2015
+*----------------------------------------------------------------*
+*  Description: This FM is used to get Business Partner/ Contract
+*               Account/ Installation/ Payment Plan from the Device
+*               loacation
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+
+  CONSTANTS :
+    lc_objtype_bp   TYPE swo_objtyp VALUE 'ISUPARTNER',
+    lc_objtype_ca   TYPE swo_objtyp VALUE 'ISUACCOUNT',
+    lc_objtype_pr   TYPE swo_objtyp VALUE 'PREMISES',
+    lc_meter        TYPE kombinat VALUE 'Z', " ##NEEDED
+    lc_3            TYPE c VALUE '3',
+    lc_maxbis       TYPE isu_timesl-ab VALUE '99991231',
+    lc_zahlkond(8)  TYPE c VALUE 'ZAHLKOND',
+    lc_dy(2)        TYPE c VALUE 'DY',
+    lc_ce21(4)      TYPE c VALUE 'CE21',
+    lc_zfac_cclass  TYPE bcont-cclass VALUE 'ZFAC',
+    lc_zmov_cclass  TYPE bcont-cclass VALUE 'ZMOV',
+    lc_ccinfo_01    TYPE bcont-custinfo VALUE '01',
+    lc_pir_act      TYPE bcont-activity VALUE 'PIR',
+    lc_zlfspt_typ   TYPE but0id-type VALUE 'ZLFSPT',
+    lc_zmedcl_typ   TYPE but0id-type VALUE 'ZMEDCL',
+    lc_elec_sparte  TYPE eanl-sparte VALUE '01',
+    lc_gas_sparte   TYPE eanl-sparte VALUE '02',
+    lc_hvorg        TYPE hvorg_kk VALUE '0080',
+    lc_devloc_class TYPE klah-klart VALUE '003',
+    lc_mafid_object TYPE kssk-mafid VALUE 'O'.
+
+  TYPES: BEGIN OF ty_cust_prefs,
+           contract_account TYPE vkont_kk,
+           msg_type         TYPE z2wcc_msg_type,
+           subscription     TYPE z2wcc_subscription,
+           threshold        TYPE z2wcc_threshold,
+         END OF ty_cust_prefs,
+         BEGIN OF ty_asp,
+           vbeln   TYPE vbeln,
+           auart   TYPE auart,
+           kunnr   TYPE kunag,
+           vbegdat TYPE dats,
+           venddat TYPE dats,
+         END OF ty_asp,
+         BEGIN OF ty_vbkd,
+           vkont TYPE vkont_kk,
+           vbeln TYPE vbeln,
+         END OF ty_vbkd.
+
+  DATA: lt_all_asp  TYPE STANDARD TABLE OF ty_asp,
+        lt_curr_asp TYPE STANDARD TABLE OF ty_asp,
+        lt_vbkd     TYPE STANDARD TABLE OF ty_vbkd,
+        ls_curr_asp TYPE zsppm_asp_accounts,
+        ls_vbkd     TYPE ty_vbkd,
+        ls_asp      TYPE ty_asp.
+
+  DATA: lwa_efindpar     TYPE efindpar,
+        lwa_ewffndtrac   TYPE ewffndtrac,
+        lt_efindres      TYPE STANDARD TABLE OF efindres,
+        lt_ewffndtrac    TYPE STANDARD TABLE OF ewffndtrac,
+        lt_ever          TYPE STANDARD TABLE OF ever,
+        ls_ever          TYPE ever,
+        ls_ever_ele      TYPE ever,
+        ls_ever_gas      TYPE ever,
+        lt_egerh         TYPE isuwa_egerh,
+        ls_egerh         TYPE egerh,
+        lt_fkkvkp        TYPE STANDARD TABLE OF fkkvkp,
+        lt_evbs          TYPE STANDARD TABLE OF evbs,
+        lv_gpart         TYPE gpart_kk,
+        lv_partner       TYPE bu_partner,
+        lv_vkont         TYPE vkont_kk,
+        lv_premise       TYPE vstelle,
+        lv_vertrag       TYPE ever-vertrag,
+        ls_ettifn        TYPE ettifn,
+        ls_evbs          TYPE evbs,
+        lt_pgm_enroll    TYPE STANDARD TABLE OF ztpgm_enroll,
+        lt_pgenrl_tmp    TYPE STANDARD TABLE OF ztpgm_enroll,
+        ls_pgm_enroll    TYPE ztpgm_enroll,
+        lv_lines         TYPE i,
+        lv_date          TYPE sy-datum,
+        lv_objek         TYPE ausp-objek,
+        lt_cust_prefs    TYPE STANDARD TABLE OF ty_cust_prefs,   "z2wcc_cust_pref_check,
+        lt_subscriptions TYPE STANDARD TABLE OF zt2wcc_msg_types,
+        ls_subscriptions TYPE zt2wcc_msg_types,
+        lwa_egerh        TYPE egerh,
+        lwa_eanl         TYPE eanl,
+        lwa_eastl        TYPE eastl.
+
+  CLEAR: lwa_efindpar, lwa_ewffndtrac, lt_efindres, lt_ewffndtrac, ls_ever, lt_fkkvkp, lt_evbs, lv_partner,
+         lv_vkont, lv_vertrag, ls_ettifn, ls_evbs, lt_pgm_enroll, lv_lines, lv_date, lv_objek, lt_cust_prefs,
+         lt_subscriptions, ls_subscriptions.
+
+* Get the Objects linked to the Device location
+  lwa_efindpar-l_devloc = iv_devloc.
+  lwa_efindpar-x_date   = sy-datum.
+
+  IF iv_devloc IS NOT INITIAL.
+
+
+* Get Device details
+    SELECT SINGLE *                  ##WARN_OK
+      FROM egerh
+      INTO lwa_egerh
+    WHERE devloc = iv_devloc
+    AND   kombinat = lc_meter
+    AND   bis      = lc_maxbis.
+
+*   Check Return code
+    IF sy-subrc = 0.
+*     Get Installation Details
+      SELECT SINGLE *                ##WARN_OK
+        FROM eastl
+        INTO lwa_eastl
+      WHERE logiknr = lwa_egerh-logiknr
+      AND   bis     = lc_maxbis.
+
+      IF sy-subrc = 0.
+*       Get Installation Details
+        SELECT SINGLE *                ##WARN_OK
+          FROM eanl
+          INTO lwa_eanl
+        WHERE anlage = lwa_eastl-anlage.
+        IF sy-subrc = 0.
+          lwa_efindpar-p_vstelle = lwa_eanl-vstelle.
+        ENDIF.
+
+      ENDIF.
+
+    ENDIF.
+
+  ENDIF.
+
+  CALL FUNCTION 'ISU_FINDER'
+    EXPORTING
+      x_objtype                   = lc_objtype_bp
+      x_findpar                   = lwa_efindpar
+    TABLES
+      yt_result                   = lt_efindres
+      yt_trace                    = lt_ewffndtrac
+    EXCEPTIONS
+      insufficient_selection      = 1
+      objtype_not_supported       = 2
+      additional_selection_needed = 3
+      OTHERS                      = 4.
+
+  IF sy-subrc IS INITIAL.
+    CLEAR lwa_ewffndtrac.
+    SORT lt_ewffndtrac BY objtype.
+    READ TABLE lt_ewffndtrac INTO lwa_ewffndtrac WITH KEY objtype = lc_objtype_bp
+                                                  BINARY SEARCH.
+    IF sy-subrc IS INITIAL.
+      lv_partner = lwa_ewffndtrac-objkey."Business Partner
+      SELECT SINGLE *
+               FROM but000
+               INTO es_context-s_but000
+              WHERE partner EQ lv_partner.
+    ENDIF.
+
+*   Retrieve Contract Account
+    CLEAR lwa_ewffndtrac.
+    READ TABLE lt_ewffndtrac INTO lwa_ewffndtrac WITH KEY objtype = lc_objtype_ca
+                                                          BINARY SEARCH.
+    IF sy-subrc IS INITIAL.
+      lv_vkont = lwa_ewffndtrac-objkey."Contract Account
+    ENDIF.
+  ENDIF.
+
+  IF lv_partner IS INITIAL.
+    lv_partner = iv_partner.
+  ENDIF.
+
+  IF lv_vkont IS INITIAL.
+    lv_vkont = iv_vkont.
+  ENDIF.
+
+  IF lv_vkont IS NOT INITIAL.
+
+    SELECT SINGLE *
+             FROM fkkvk
+             INTO es_context-s_fkkvk
+            WHERE vkont EQ lv_vkont.
+
+    SELECT *
+      FROM fkkvkp
+      INTO TABLE lt_fkkvkp
+      WHERE gpart = lv_partner.
+
+    IF sy-subrc = 0.
+      SORT lt_fkkvkp BY vkont.
+      READ TABLE lt_fkkvkp INTO es_context-s_fkkvkp WITH KEY vkont = lv_vkont
+                                                    BINARY SEARCH.
+
+      SELECT *
+        FROM ever
+        INTO TABLE es_context-t_ever
+         FOR ALL ENTRIES IN lt_fkkvkp
+       WHERE vkonto EQ lt_fkkvkp-vkont
+         AND auszdat  >= sy-datum.
+      IF sy-subrc = 0 .
+        CLEAR: lv_lines.
+        lt_ever[] = es_context-t_ever[].
+        SORT lt_ever BY vkonto.
+        DELETE ADJACENT DUPLICATES FROM lt_ever COMPARING vkonto.
+        DESCRIBE TABLE lt_ever LINES lv_lines.
+        IF lv_lines > 1.
+          es_context-v_oneactiveca = 'X'.
+        ENDIF.
+      ENDIF.
+
+    ENDIF.
+
+  ENDIF.
+
+  IF iv_electric_only IS NOT INITIAL.
+    DELETE es_context-t_ever WHERE sparte = lc_gas_sparte.
+  ENDIF.
+
+* Check for a valid customer
+* Retrieve Contracts
+  IF NOT lv_vkont IS INITIAL.
+    SORT es_context-t_ever BY vkonto.
+    DELETE es_context-t_ever WHERE vkonto <> lv_vkont.
+*    SORT es_context-t_ever BY auszdat.
+*    DELETE es_context-t_ever WHERE auszdat <> lc_maxbis.
+
+*    READ TABLE es_context-t_ever INTO es_context-s_ever INDEX 1.
+  ENDIF.
+
+* Retrieve Installations
+  IF NOT es_context-t_ever IS INITIAL.
+
+    SELECT *
+      FROM eanl
+      INTO TABLE es_context-t_eanl
+       FOR ALL ENTRIES IN es_context-t_ever
+     WHERE anlage EQ es_context-t_ever-anlage.
+    IF sy-subrc = 0.
+
+      SELECT *
+        FROM eanlh
+        INTO TABLE es_context-t_eanlh
+         FOR ALL ENTRIES IN es_context-t_eanl
+       WHERE anlage EQ es_context-t_eanl-anlage
+         AND bis    EQ lc_maxbis.
+      IF sy-subrc = 0.
+        SELECT *
+          FROM ettat
+          INTO TABLE es_context-t_ettat
+          FOR ALL ENTRIES IN es_context-t_eanlh
+          WHERE spras = sy-langu
+            AND tariftyp = es_context-t_eanlh-tariftyp.
+      ENDIF.
+
+      SELECT *
+        FROM evbs
+        INTO TABLE lt_evbs
+        FOR ALL ENTRIES IN es_context-t_eanl
+      WHERE vstelle = es_context-t_eanl-vstelle.
+
+      SELECT *
+        FROM ettifn
+        INTO TABLE es_context-t_ettifn
+         FOR ALL ENTRIES IN es_context-t_eanl
+       WHERE anlage EQ es_context-t_eanl-anlage
+         AND bis    > sy-datum.  " lc_maxbis.
+
+    ENDIF.
+  ENDIF.
+
+* Combo check
+  es_context-v_combo = 'X'.
+
+  SORT es_context-t_eanl BY sparte.
+  SORT es_context-t_ever BY sparte.
+
+* Electic only check
+  READ TABLE es_context-t_eanl INTO es_context-s_eanl_elec
+                               WITH KEY sparte = lc_elec_sparte
+                               BINARY SEARCH.
+
+  IF sy-subrc IS INITIAL.
+    es_context-v_elec_only = 'X'.
+    READ TABLE es_context-t_ever INTO es_context-s_ever_ele
+                                 WITH KEY sparte = lc_elec_sparte
+                                 BINARY SEARCH.
+  ELSE.
+    CLEAR es_context-v_combo.
+  ENDIF.
+
+* Gas Only Check
+  READ TABLE es_context-t_eanl INTO es_context-s_eanl_gas
+                               WITH KEY sparte = lc_gas_sparte
+                               BINARY SEARCH.
+  IF sy-subrc IS INITIAL.
+    es_context-v_gas_only = 'X'.
+    READ TABLE es_context-t_ever INTO es_context-s_ever_gas
+                                 WITH KEY sparte = lc_gas_sparte
+                                 BINARY SEARCH.
+  ELSE.
+    CLEAR es_context-v_combo.
+  ENDIF.
+
+  IF NOT es_context-v_combo IS INITIAL.
+    CLEAR:
+      es_context-v_elec_only,
+      es_context-v_gas_only.
+  ENDIF.
+
+  SORT es_context-t_ettifn BY anlage operand bis.
+  READ TABLE es_context-t_ettifn INTO ls_ettifn
+                        WITH KEY anlage = es_context-s_ever_ele-anlage"ls_ever_ele-anlage
+                                 operand = 'ESMOPT_OUT'
+                                 bis    = lc_maxbis
+                                 BINARY SEARCH.
+  IF sy-subrc IS INITIAL.
+    es_context-v_optout = ls_ettifn-string3.
+  ENDIF.
+
+  SORT es_context-t_eanlh BY anlage.
+  SORT es_context-t_ettat BY tariftyp.
+
+  READ TABLE es_context-t_eanlh INTO es_context-s_eanlh_elec WITH KEY anlage = es_context-s_eanl_elec-anlage
+                                                               BINARY SEARCH.
+  IF sy-subrc = 0.
+    READ TABLE es_context-t_ettat INTO es_context-s_ettat_elec WITH KEY tariftyp = es_context-s_eanlh_elec-tariftyp
+                                                               BINARY SEARCH.
+  ENDIF.
+
+  READ TABLE es_context-t_eanlh INTO es_context-s_eanlh_gas WITH KEY anlage = es_context-s_eanl_gas-anlage
+                                                               BINARY SEARCH.
+  IF sy-subrc = 0.
+    READ TABLE es_context-t_ettat INTO es_context-s_ettat_gas WITH KEY tariftyp = es_context-s_eanlh_gas-tariftyp
+                                                               BINARY SEARCH.
+  ENDIF.
+
+  SORT lt_evbs BY vstelle.
+  READ TABLE lt_evbs INTO ls_evbs WITH KEY vstelle = es_context-s_eanl_elec-vstelle BINARY SEARCH.
+  IF sy-subrc = 0 AND ls_evbs-zzcaploan IS NOT INITIAL.
+    es_context-v_cap_loan = 'X'.
+  ENDIF.
+
+  IF lwa_efindpar-p_vstelle IS NOT INITIAL.
+    READ TABLE lt_evbs
+      INTO es_context-s_evbs
+      WITH KEY vstelle = lwa_efindpar-p_vstelle
+    BINARY SEARCH.
+
+  ELSE.
+    READ TABLE lt_evbs
+      INTO es_context-s_evbs
+    INDEX 1.
+
+  ENDIF.
+
+  SELECT *
+    FROM bcont
+    INTO TABLE es_context-t_bcont
+   WHERE partner EQ lv_partner.
+  IF sy-subrc IS INITIAL.
+*   FACTA Contact check
+    SORT es_context-t_bcont BY cclass custinfo.
+    READ TABLE es_context-t_bcont TRANSPORTING NO FIELDS
+                         WITH KEY cclass    = lc_zfac_cclass
+                                  custinfo  = lc_ccinfo_01 "'ZFAC'
+                         BINARY SEARCH.
+    IF sy-subrc IS INITIAL.
+      es_context-v_fail_facta = 'X'.
+    ENDIF.
+
+*   PIR contact check
+    SORT es_context-t_bcont BY cclass activity custinfo.
+    READ TABLE es_context-t_bcont TRANSPORTING NO FIELDS
+                         WITH KEY cclass    = lc_zmov_cclass
+                                  activity  = lc_pir_act
+                                  custinfo  = lc_ccinfo_01
+                                  BINARY SEARCH.
+    IF sy-subrc IS INITIAL.
+      es_context-v_fail_pir = 'X'.
+    ENDIF.
+  ENDIF.
+
+  SELECT *
+    FROM but0id
+    INTO TABLE es_context-t_but0id
+   WHERE partner EQ lv_partner.
+  IF sy-subrc IS INITIAL.
+    SORT es_context-t_but0id BY type valid_date_to.
+
+*   Life Support
+    LOOP AT es_context-t_but0id TRANSPORTING NO FIELDS
+                                WHERE type = lc_zlfspt_typ
+                                  AND valid_date_to GE sy-datum.
+      EXIT.
+    ENDLOOP.
+    IF sy-subrc IS INITIAL.
+      es_context-v_life_supp = 'X'.
+    ENDIF.
+
+*   Medical Condition
+    LOOP AT es_context-t_but0id TRANSPORTING NO FIELDS
+                                WHERE type = lc_zmedcl_typ
+                                  AND valid_date_to GE sy-datum.
+      EXIT.
+    ENDLOOP.
+    IF sy-subrc IS INITIAL.
+      es_context-v_med_supp = 'X'.
+    ENDIF.
+  ENDIF.
+
+* Get Electric Device details
+  CLEAR: lt_egerh.
+
+  IF iv_devloc IS NOT INITIAL.
+    SELECT *
+      FROM egerh
+      INTO TABLE lt_egerh
+     WHERE bis      EQ lc_maxbis
+       AND kombinat EQ lc_meter
+       AND devloc   EQ iv_devloc.
+
+    DELETE lt_egerh WHERE zwgruppe = 'GDR'.
+    DELETE lt_egerh WHERE amcg_cap_grp IS INITIAL.
+
+    CLEAR: ls_egerh.
+    READ TABLE lt_egerh INTO ls_egerh INDEX 1.
+    IF sy-subrc = 0.
+      es_context-s_egerh = ls_egerh.
+    ENDIF.
+
+*   Check Return code
+    IF ls_egerh-amcg_cap_grp IS NOT INITIAL.
+      SELECT COUNT(*)
+        FROM teami_amcgcap
+       WHERE amcg_cap_grp = ls_egerh-amcg_cap_grp
+         AND amcg_cap     = lc_3.
+
+      IF sy-subrc IS INITIAL.
+        es_context-v_overtheair_ele = 'X'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  CLEAR: lt_egerh.
+
+* Get Device details
+  IF iv_devloc_gas IS NOT INITIAL.
+    SELECT *
+      FROM egerh
+      INTO TABLE lt_egerh
+     WHERE bis      EQ lc_maxbis
+       AND ( kombinat EQ 'M' OR kombinat EQ 'Z' )
+       AND devloc   EQ iv_devloc_gas.
+
+    DELETE lt_egerh WHERE amcg_cap_grp = '1001'.
+    DELETE lt_egerh WHERE amcg_cap_grp IS INITIAL.
+    DELETE lt_egerh WHERE zwgruppe = 'GDR'.
+
+    CLEAR: ls_egerh.
+    READ TABLE lt_egerh INTO ls_egerh INDEX 1.
+    IF sy-subrc = 0.
+      es_context-s_egerh = ls_egerh.
+    ENDIF.
+
+* Check Return code
+    IF ls_egerh-amcg_cap_grp IS NOT INITIAL.
+      SELECT COUNT(*)
+        FROM teami_amcgcap
+       WHERE amcg_cap_grp = ls_egerh-amcg_cap_grp
+         AND amcg_cap     = lc_3.
+
+      IF sy-subrc IS INITIAL.
+        es_context-v_overtheair_gas = 'X'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  IF es_context-v_combo = 'X' AND
+    ( es_context-v_overtheair_ele = 'X' AND es_context-v_overtheair_gas = 'X' ).
+    es_context-v_overtheair_combo = 'X'.
+  ENDIF.
+
+* Net Metering flag
+  IF es_context-v_elec_only = 'X' OR es_context-v_combo = 'X'.
+    READ TABLE es_context-t_ettifn INTO ls_ettifn
+                          WITH KEY anlage = es_context-s_ever_ele-anlage
+                                   operand = 'NET_METER'
+*                                   bis    = lc_maxbis
+                                   BINARY SEARCH.
+    IF sy-subrc = 0 AND ls_ettifn-bis > sy-datum.
+      es_context-v_netmeetering = ls_ettifn-string3 = 'X'.
+    ENDIF.
+  ENDIF.
+
+
+* New customer check
+  IF es_context-t_ever[] IS NOT INITIAL.
+    SELECT *
+      FROM erch
+      INTO TABLE es_context-t_erch
+       FOR ALL ENTRIES IN es_context-t_ever
+     WHERE vkont    EQ es_context-t_ever-vkonto
+       AND vertrag  EQ es_context-t_ever-vertrag.
+    IF NOT sy-subrc IS INITIAL.
+      es_context-v_new_cust = 'X'.
+    ENDIF.
+  ENDIF.
+
+* Installment plan check
+  SELECT COUNT(*)
+    FROM dfkkop
+   WHERE augst EQ space
+     AND vkont EQ es_context-s_fkkvkp-vkont
+     AND hvorg EQ lc_hvorg.
+  IF sy-subrc IS INITIAL.
+    es_context-v_inst_plan = 'X'.
+  ENDIF.
+
+  IF lv_partner IS NOT INITIAL AND
+     lv_vkont IS NOT INITIAL.
+
+    CLEAR:lv_gpart.
+    lv_gpart = lv_partner.
+
+*   Past due balance
+    CALL FUNCTION 'Z_FI_ACCTBALANCE'
+      EXPORTING
+        i_partner                = lv_gpart
+        i_account                = lv_vkont
+      IMPORTING
+        e_pastdue                = es_context-v_past_due
+      EXCEPTIONS
+        no_open_items            = 1
+        missing_import_parameter = 2
+        unknown_error            = 3
+        OTHERS                   = 4.
+    IF sy-subrc <> 0.
+*   Implement suitable error handling here
+    ENDIF.
+
+    IF es_context-v_elec_only = 'X' AND es_context-v_past_due >= 200.
+      es_context-v_elec_pastdue = 'X'.
+    ENDIF.
+
+    IF es_context-v_combo = 'X' AND es_context-v_past_due >= 400.
+      es_context-v_combo_pastdue = 'X'.
+    ENDIF.
+
+  ENDIF.
+
+* Is the customer enrolled on Care
+  SELECT COUNT(*)
+    FROM ztcc_care_enroll AS a
+    JOIN ztcc_care_enr_yy AS b
+      ON a~enroll_year = b~enroll_yr
+    WHERE a~vkont = lv_vkont
+      AND a~de_enroll = abap_false
+      AND b~start_date LE sy-datum
+      AND b~end_date GE sy-datum.
+
+  IF sy-subrc = 0.
+    es_context-v_care = 'X'.
+  ENDIF.
+
+* 2 Enrollments in the 12 month period
+  CLEAR: lv_premise.
+  IF es_context-v_combo = 'X' OR es_context-v_elec_only = 'X'.
+    lv_premise = es_context-s_eanl_elec-vstelle.
+  ENDIF.
+  IF es_context-v_combo IS INITIAL AND es_context-v_gas_only = 'X'.
+    lv_premise = es_context-s_eanl_gas-vstelle.
+  ENDIF.
+
+  lv_date = sy-datum.
+
+  CALL FUNCTION 'CCM_GO_BACK_MONTHS'
+    EXPORTING
+      currdate   = lv_date
+      backmonths = 12
+    IMPORTING
+      newdate    = lv_date.
+
+  SELECT *
+    FROM ztpgm_enroll
+    INTO TABLE lt_pgm_enroll
+    WHERE zenrlbp = lv_partner
+*      AND zpgm_type = iv_pgm_type
+*      AND zcrtdat BETWEEN lv_date AND sy-datum
+      AND zenrlstatus <> '003'.
+*      AND vstelle = lv_premise.
+
+  IF sy-subrc = 0.
+    lt_pgenrl_tmp[] = lt_pgm_enroll[].
+
+    DELETE lt_pgm_enroll WHERE zpgm_type <> 'PPM'.
+    DELETE lt_pgm_enroll WHERE vstelle <> lv_premise.
+
+    DELETE lt_pgm_enroll WHERE zcrtdat NOT BETWEEN lv_date AND sy-datum.
+
+    CLEAR: lv_lines.
+    DESCRIBE TABLE lt_pgm_enroll LINES lv_lines.
+    IF lv_lines > 1 .
+      es_context-v_2enroll12month = 'X'.
+    ENDIF.
+
+    DELETE lt_pgm_enroll WHERE zenrlca <> lv_vkont.
+
+*   Check De-enrollment Pending
+    READ TABLE lt_pgm_enroll
+      WITH KEY zenrlstatus = '005'
+    TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+      es_context-v_place_flg1 = abap_true." We will use V_PLACE_FLG1 FLAG for this Rule
+    ENDIF.
+
+    SORT lt_pgm_enroll BY zenrlca zenrlstatus.
+*   Check enrollment Pending
+    LOOP AT lt_pgm_enroll INTO ls_pgm_enroll WHERE zenrlca = lv_vkont.
+      IF ls_pgm_enroll-zenrlstatus = '001' OR ls_pgm_enroll-zenrlstatus = '002'.
+        es_context-v_place_flg2 = abap_true." We will use V_PLACE_FLG2 FLAG for this Rule
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    LOOP AT lt_pgenrl_tmp INTO ls_pgm_enroll WHERE ( zpgm_type = 'CPP'
+                                                OR zpgm_type = 'PTR' )
+                                               AND zenrlstatus = '001'.
+      IF es_context-s_eanlh_elec-tariftyp = 'RS_1000'.
+        es_context-v_dpp_rs1000 = 'X'.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+* Device Location Characteristics
+  lv_objek = iv_devloc.
+
+  SELECT
+      ausp~objek
+      cabn~atnam
+      ausp~atwrt
+    INTO TABLE es_context-t_devloc_char
+    FROM ausp
+    JOIN cabn ON
+      cabn~atinn = ausp~atinn
+    WHERE ausp~objek   = lv_objek
+      AND ausp~mafid   = lc_mafid_object
+      AND  ( ausp~klart   = lc_devloc_class ).
+*      AND  ( ( cabn~atnam = lc_comm ) OR ( cabn~atnam = lc_comm2 ) ).
+
+* Check whether the device location
+  READ TABLE es_context-t_devloc_char
+    WITH KEY name = 'SEOC_POOR_COMM'
+         value = 'Y'
+  TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+    es_context-v_place_flg3 = abap_true." We will use V_PLACE_FLG3 FLAG for this Rule
+  ENDIF.
+
+  ls_subscriptions-msg_type    = '0001'.
+  ls_subscriptions-description = 'DUNNING SHUTOFF'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0002'.
+  ls_subscriptions-description = 'DUNNING SHUTOFF PLAN'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0003'.
+  ls_subscriptions-description = 'DUNNING MID CYCLE'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0004'.
+  ls_subscriptions-description = 'DUNNING MID CYCLE PLAN'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0005'.
+  ls_subscriptions-description = 'DUNNING TURN OFF'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0007'.
+  ls_subscriptions-description = 'BILL READY'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0008'.
+  ls_subscriptions-description = 'PAYMENT REMINDER'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0009'.
+  ls_subscriptions-description = 'PAYMENT REMINDER AUTOPAY'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0014'.
+  ls_subscriptions-description = 'NON ENERGY FIRST'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0015'.
+  ls_subscriptions-description = 'NON ENERGY SECOND'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+  ls_subscriptions-msg_type    = '0028'.
+  ls_subscriptions-description = 'FINAL BILL IS READY'.
+  APPEND ls_subscriptions TO lt_subscriptions.
+
+  IF NOT lt_subscriptions[] IS INITIAL.
+* Ifactor
+    SELECT custpref~contract_acct
+           msg_types~msg_type
+           custpref~subscription
+           custpref~threshold
+        FROM zt2wcc_custprefa AS custpref
+        INNER JOIN zt2wcc_msg_types AS msg_types
+          ON msg_types~ifactor_name = custpref~subscription
+        INTO TABLE lt_cust_prefs
+        FOR ALL ENTRIES IN lt_subscriptions
+          WHERE msg_types~msg_type = lt_subscriptions-msg_type AND
+                custpref~contract_acct = lv_vkont.
+    IF sy-subrc = 0.
+      es_context-v_ifactor = 'X'.
+    ELSE.
+      SELECT custpref~contract_acct
+             msg_types~msg_type
+             custpref~subscription
+             custpref~threshold
+         FROM zt2wcc_custprefb AS custpref
+         INNER JOIN zt2wcc_msg_types AS msg_types
+           ON msg_types~ifactor_name = custpref~subscription
+         APPENDING TABLE lt_cust_prefs
+         FOR ALL ENTRIES IN lt_subscriptions
+           WHERE msg_types~msg_type = lt_subscriptions-msg_type AND
+                 custpref~contract_acct = lv_vkont.
+      IF sy-subrc = 0.
+        es_context-v_ifactor = 'X'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+* ASP check
+  SELECT vbak~vbeln
+         vbak~auart
+         vbak~kunnr
+         veda~vbegdat
+         veda~venddat
+    INTO TABLE lt_all_asp
+    FROM vbak
+    INNER JOIN veda ON
+      veda~vbeln = vbak~vbeln AND
+      veda~vposn = space
+   WHERE vbak~kunnr = lv_partner
+     AND vbak~auart IN ( 'ZCAS', 'ZASP', 'ZPAM', 'ZPAU', 'ZPAY' ).
+
+  LOOP AT lt_all_asp INTO ls_asp.
+*    IF sy-datum BETWEEN ls_asp-vbegdat AND ls_asp-venddat.
+    IF ls_asp-venddat GE sy-datum.
+      INSERT ls_asp INTO TABLE lt_curr_asp.
+    ENDIF.
+  ENDLOOP.
+
+  IF NOT lt_curr_asp[] IS INITIAL.
+*   Get the contract accounts related to the ASP contracts.
+    SELECT vkont vbeln
+      INTO TABLE lt_vbkd
+      FROM vbkd
+      FOR ALL ENTRIES IN lt_curr_asp
+      WHERE vkont = lv_vkont
+        AND vbeln = lt_curr_asp-vbeln.
+  ENDIF.
+
+  SORT lt_vbkd BY vkont vbeln.
+  DELETE ADJACENT DUPLICATES FROM lt_vbkd COMPARING ALL FIELDS.
+  CLEAR: lv_lines.
+  DESCRIBE TABLE lt_vbkd LINES lv_lines.
+  IF lv_lines > 0.
+    es_context-v_asp_acct = 'X'.
+  ENDIF.
+
+  SORT lt_all_asp BY vbeln.
+
+  LOOP AT lt_vbkd INTO ls_vbkd.
+    READ TABLE lt_all_asp INTO ls_asp WITH KEY vbeln = ls_vbkd-vbeln
+                                               BINARY SEARCH.
+    IF sy-subrc = 0.
+      ls_curr_asp-vkont = ls_vbkd-vkont.
+      ls_curr_asp-vbeln = ls_asp-vbeln.
+      ls_curr_asp-auart = ls_asp-auart.
+      ls_curr_asp-kunnr = ls_asp-kunnr.
+      ls_curr_asp-vbegdat = ls_asp-vbegdat.
+      ls_curr_asp-venddat = ls_asp-venddat.
+
+      APPEND ls_curr_asp TO es_context-t_curr_asp_accts.
+    ENDIF.
+  ENDLOOP.
+
+* Check futurdated CSDD
+  DATA:     lv_objectid TYPE cdhdr-objectid,
+            lv_to_date  TYPE datum,
+            lv_fr_date  TYPE dats,
+            lv_nr_from  TYPE pcdhdr-planchngnr VALUE '0',
+            lt_pcdhdr   TYPE TABLE OF pcdhdr,
+            ls_pcdhdr   TYPE pcdhdr,
+            lt_pc       TYPE TABLE OF cdshw.
+  FIELD-SYMBOLS: <pc> TYPE cdshw.
+
+  CLEAR: lv_objectid, lv_fr_date, lv_to_date, lt_pcdhdr, ls_pcdhdr, lt_pc.
+  UNASSIGN: <pc>.
+
+  lv_objectid = lv_vkont.
+
+  lv_fr_date = sy-datum - 30.
+  lv_to_date = sy-datum + 35.
+
+  CALL FUNCTION 'PLANNED_CHANGES_READ_HEADERS'
+    EXPORTING
+      date_of_change             = lv_fr_date
+      udate_to                   = lv_to_date
+      objectclass                = 'MKK_VKONT'
+      objectid                   = lv_objectid
+      planned_change_number_from = lv_nr_from
+      username                   = ''
+    TABLES
+      i_cdhdr                    = lt_pcdhdr
+    EXCEPTIONS
+      no_position_found          = 1
+      OTHERS                     = 2.
+
+  IF sy-subrc = 0.
+    LOOP AT lt_pcdhdr INTO ls_pcdhdr.
+      CLEAR lt_pc.
+      UNASSIGN <pc>.
+      CALL FUNCTION 'PLANNED_CHANGES_READ_POSITIONS'
+        EXPORTING
+          objectclas        = ls_pcdhdr-objectclas
+          objectid          = ls_pcdhdr-objectid
+          changenumber      = ls_pcdhdr-changenr
+          tablename         = 'FKKVKP'
+        TABLES
+          editpos           = lt_pc
+        EXCEPTIONS
+          no_position_found = 1
+          OTHERS            = 2.
+
+      IF sy-subrc = 0.
+        LOOP AT lt_pc ASSIGNING <pc> WHERE fname = lc_zahlkond
+                                       AND f_new CS lc_dy
+                                       AND f_old CS lc_dy.
+          es_context-s_fkkvkp-zahlkond = lc_dy.
+        ENDLOOP.
+        LOOP AT lt_pc ASSIGNING <pc> WHERE fname = lc_zahlkond
+                                       AND f_new CS lc_dy
+                                       AND f_old EQ lc_ce21.
+          es_context-s_fkkvkp-zahlkond = lc_dy.
+        ENDLOOP.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  DATA: lv_int_ui       TYPE int_ui,
+        ls_scenario     TYPE ederegscenario,
+        lv_scenario_txt TYPE e_deregscenariotxt,
+        lv_ele_ggen     TYPE flag,
+        lv_gas_ggen     TYPE flag.
+
+* Green Generation
+  IF es_context-s_eanl_elec-anlage IS NOT INITIAL.
+    SELECT SINGLE int_ui
+      FROM euiinstln
+      INTO lv_int_ui
+      WHERE anlage = es_context-s_eanl_elec-anlage.
+
+    IF lv_int_ui IS NOT INITIAL.
+      CALL FUNCTION 'ISU_O_SCENARIO_AT_POD_GET'
+        EXPORTING
+          x_int_ui      = lv_int_ui
+          x_keydate     = sy-datum
+        IMPORTING
+          y_scenario    = ls_scenario
+          y_scenariotxt = lv_scenario_txt
+        EXCEPTIONS
+          general_fault = 1
+          OTHERS        = 2.
+      IF ls_scenario-scenario = 952.
+        lv_ele_ggen = 'X'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  IF es_context-s_eanl_gas-anlage IS NOT INITIAL.
+    CLEAR:lv_int_ui.
+    SELECT SINGLE int_ui
+      FROM euiinstln
+      INTO lv_int_ui
+      WHERE anlage = es_context-s_eanl_gas-anlage.
+
+    IF lv_int_ui IS NOT INITIAL.
+      CLEAR:ls_scenario,lv_scenario_txt.
+      CALL FUNCTION 'ISU_O_SCENARIO_AT_POD_GET'
+        EXPORTING
+          x_int_ui      = lv_int_ui
+          x_keydate     = sy-datum
+        IMPORTING
+          y_scenario    = ls_scenario
+          y_scenariotxt = lv_scenario_txt
+        EXCEPTIONS
+          general_fault = 1
+          OTHERS        = 2.
+      IF ls_scenario-scenario = 952.
+        lv_gas_ggen = 'X'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  IF es_context-v_combo = 'X' AND ( lv_ele_ggen = 'X' OR lv_gas_ggen = 'X' ).
+    es_context-v_green_gen = 'X'.
+  ENDIF.
+
+  IF es_context-v_elec_only = 'X' AND lv_ele_ggen = 'X'.
+    es_context-v_green_gen = 'X'.
+  ENDIF.
+
+* Future Dated Move-Out
+  IF es_context-v_combo = 'X' AND ( ( es_context-s_ever_ele-auszdat < '99991231' AND es_context-s_ever_ele-auszdat IS NOT INITIAL ) OR
+                                    ( es_context-s_ever_gas-auszdat < '99991231' AND es_context-s_ever_gas-auszdat IS NOT INITIAL ) ).
+    es_context-v_future_mo = 'X'.
+  ENDIF.
+
+  IF es_context-v_elec_only = 'X' AND ( es_context-s_ever_ele-auszdat < '99991231' AND es_context-s_ever_ele-auszdat IS NOT INITIAL ).
+    es_context-v_future_mo = 'X'.
+  ENDIF.
+
+ENDFUNCTION.
+

@@ -1,0 +1,25 @@
+METHOD CALL_FROM_CASE.
+
+  DATA:
+    lv_export TYPE xstring,
+    lv_desc   TYPE ldq_unit_description,
+    lv_import TYPE xstring,
+    lt_import TYPE ztt_mdmod_parallel_job_return,
+    ls_import TYPE zst_mdmod_parallel_job_return.
+
+  me->t_input = it_input[].
+  me->zif_bc_parallel_unit~process_unit( EXPORTING
+                                           mc_import      = lv_export
+                                           mc_description = lv_desc
+                                         IMPORTING
+                                           mv_export      = lv_import ).
+
+  zcl_bc_parallel_job=>convert_xstring_to_data( EXPORTING mc_xstring  = lv_import
+                                                IMPORTING mv_data     = lt_import ).
+
+  READ TABLE lt_import INTO ls_import
+                       INDEX 1.
+
+  et_return = ls_import-t_return[].
+ENDMETHOD.
+

@@ -1,0 +1,42 @@
+FUNCTION zrfc_get_rate_category.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(I_ANLAGE) TYPE  ANLAGE OPTIONAL
+*"  EXPORTING
+*"     VALUE(E_DESC) TYPE  CHAR40
+*"----------------------------------------------------------------------
+  TYPES: BEGIN OF ty_vertrag,
+           vertrag TYPE vertrag,
+           sparte  TYPE sparte,
+           cokey   TYPE cokey_ee2,
+           auszdat TYPE auszdat,
+         END OF ty_vertrag.
+
+  DATA: lt_vertrag  TYPE TABLE OF ty_vertrag,
+        lwa_vertrag TYPE ty_vertrag,
+        lv_desc type char40.
+
+  SELECT vertrag
+         sparte
+         cokey
+         auszdat
+    FROM ever
+    INTO TABLE lt_vertrag
+    WHERE anlage = i_anlage.
+
+  IF sy-subrc = 0.
+    READ TABLE lt_vertrag INTO lwa_vertrag WITH KEY auszdat = '99991231'.
+    IF lwa_vertrag-sparte = '01'.
+      e_desc = lwa_vertrag-cokey.
+    ELSE.
+      SELECT SINGLE ttypbez
+        FROM ettat
+        INTO lv_desc
+        WHERE tariftyp = lwa_vertrag-cokey.
+        e_desc = lv_desc.
+    ENDIF.
+  ENDIF.
+
+
+ENDFUNCTION.

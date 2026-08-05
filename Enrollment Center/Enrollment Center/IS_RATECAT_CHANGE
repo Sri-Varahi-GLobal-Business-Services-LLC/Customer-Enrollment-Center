@@ -1,0 +1,11 @@
+  METHOD is_ratecat_change.
+
+*    IF me->get_register_group( ) NE 'ESM_A'
+*      AND my_tariftyp = 'RS_1000'
+*      AND my_old_tariftyp CP 'G*'.
+*      populate_status_return space co_error co_value_34 my_gernr my_anlage space space.
+*      rv_error_flg = abap_true.
+*      my_rate_cat_flg = abap_true.
+*    ENDIF.
+  ENDMETHOD.
+

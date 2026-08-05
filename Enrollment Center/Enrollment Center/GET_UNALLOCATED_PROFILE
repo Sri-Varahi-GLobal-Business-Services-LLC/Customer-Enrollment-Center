@@ -1,0 +1,26 @@
+METHOD get_unallocated_profile.
+
+  DATA  : lv_query TYPE char20.
+  CLEAR : lv_query,rv_profile.
+
+  lv_query  =  co_percent && my_devloc && co_percent.
+
+  "Get unallocated profile based on device location
+  SELECT SINGLE eprofheadt~profile                          "#EC WARNOK
+         INTO rv_profile
+         FROM eprofheadt
+         LEFT  JOIN eprofass  ON eprofheadt~profile  =  eprofass~profile
+         AND eprofass~profile EQ co_profile
+         JOIN eprofhead ON  eprofhead~profile  =  eprofheadt~profile
+         WHERE eprofheadt~proftext LIKE lv_query
+         AND   eprofhead~proftype = '61'
+         AND   eprofhead~intsizeid = my_tou_logikzw-intsizeid
+         AND   eprofhead~datefrom LE my_date.
+
+  IF sy-subrc NE 0.
+    CLEAR rv_profile.
+    populate_status_return space co_error co_value_31 my_devloc space space space.
+  ENDIF.
+
+ENDMETHOD.
+

@@ -1,0 +1,838 @@
+METHOD perform_dev_mod.
+  CONSTANTS:
+    lc_enq_eger TYPE swo_objtyp VALUE 'EGER',
+    lc_program  TYPE regen-programm VALUE 'SAPLEG42',
+    lc_module   TYPE regen-baustein VALUE 'isu_o_devicemod_close',
+    lc_maxbis   TYPE etdz-bis VALUE '99991231',
+    lc_wmode    TYPE regen-wmode VALUE '2',
+    lc_nodialog TYPE regen-no_dialog VALUE 'X',
+    lc_prorate  TYPE regen-kennzx VALUE 'X',
+    lc_periodic TYPE eablg-ablesgr VALUE '01',
+    lc_header   TYPE etdz-zwnummer VALUE '000',
+    lc_mr_11    TYPE eablg-ablesgr VALUE '11',
+    lc_mr_16    TYPE eablg-ablesgr VALUE '16',
+    lc_mr_17    TYPE eablg-ablesgr VALUE '17'..
+
+  DATA:
+    ls_input         TYPE ztdm_mass_devmod,
+    lv_equnr         TYPE equi-equnr,
+    ls_return        TYPE bapiret2,
+    lt_etdz_temp     TYPE STANDARD TABLE OF etdz,
+    lt_etdz          TYPE STANDARD TABLE OF etdz,
+    ls_etdz          TYPE etdz,
+    ls_auto          TYPE isu42_devmod_auto,
+    ls_obj           TYPE isu42_devmod,
+    ls_dev           TYPE reg42_dev,
+    ls_eabl          TYPE eabl,
+    ls_eablg         TYPE eablg,
+    ls_reg_mod       TYPE isu42_devmod_zw_m,
+    lit_reg_mod      TYPE STANDARD TABLE OF isu42_devmod_zw_m,
+    ls_regzw         TYPE reg42_zw,
+    ls_regzw_flag    TYPE reg42_zw_input_flag,
+    lv_update        TYPE regen-db_update,
+    lv_keydate       TYPE reg42_interface-keydate,
+    lv_upd_needed    TYPE boolean,
+    lv_tabix         TYPE syst-tabix,
+    lv_tabix_main    TYPE syst-tabix,
+    ls_integ         TYPE isu07_integration_data,
+    ls_eger_key      TYPE isu07_egerkey,
+    lt_eger_key      TYPE isu07_enq_eger_tab,
+    ls_ezwg          TYPE ezwg,
+    lt_etdz_old      TYPE STANDARD TABLE OF etdz,
+    lt_ezwg_new      TYPE STANDARD TABLE OF ezwg,
+    lt_ibreg_new     TYPE STANDARD TABLE OF ztcc_bilins_elec,
+    ls_ezwg_new      TYPE isu17_ezwg_new,
+    ls_dev_flag      TYPE reg42_dev_input_flag,
+    ls_reg_flag      TYPE reg42_zw_input_flag,
+    ls_newreg        TYPE zst_mdmod_new_register,
+    lv_mr_found      TYPE boolean,
+    lt_ablesgr_range TYPE RANGE OF eabld-ablesgr,
+    ls_ablesgr_range LIKE LINE OF lt_ablesgr_range,
+    lt_adat_range    TYPE RANGE OF eabld-adatsoll,
+    ls_adat_range    LIKE LINE OF lt_adat_range,
+    lv_anlage        TYPE eanl-anlage,
+    ls_egerh         TYPE egerh,
+    lv_added_new_reg TYPE boolean,
+    lv_transf_req    TYPE boolean,
+    lwa_ezuz         TYPE ezuz,
+    lwa_x_input      TYPE zdmod_input_complex.
+
+  DATA:
+    ls_reabld         TYPE reabld.
+
+* LAVieth 01/27/2016 start SE R5
+  TYPES: BEGIN OF ty_easts,
+           anlage    TYPE easts-anlage,
+           logikzw   TYPE easts-logikzw,
+           ab        TYPE easts-ab,
+           bis       TYPE easts-bis,
+           kondigr   TYPE easts-kondigr,
+           intsizeid TYPE etdz-intsizeid,
+         END OF ty_easts.
+
+  DATA: lt_easts  TYPE STANDARD TABLE OF ty_easts,
+        lwa_easts LIKE LINE OF lt_easts.
+
+  DATA : l_auto TYPE eprofass_auto.
+  DATA : l_wa_prof TYPE eprofass_auto_data.
+  DATA : l_profile TYPE e_profile.
+  DATA : l_date TYPE sy-datum.
+  DATA : lwa_eprofass TYPE eprofass.
+  DATA: lv_tabix_eabl TYPE syst-tabix,
+        lwa_eabl_obj TYPE EABL.
+
+* LAVieth 01/27/2016 End
+
+  REFRESH et_newreg.
+  READ TABLE it_input INTO ls_input INDEX 1.
+
+  CHECK sy-subrc IS INITIAL.
+
+
+  SELECT equnr
+    FROM equi
+    INTO lv_equnr
+   UP TO 1 ROWS
+   WHERE matnr EQ ls_input-matnr
+     AND sernr EQ ls_input-sernr.
+  ENDSELECT.
+
+  es_return-matnr  = ls_input-matnr.
+  es_return-sernr  = ls_input-sernr.
+  es_return-equnr  = lv_equnr.
+  es_return-devloc = ls_input-devloc.
+
+  CHECK sy-subrc IS INITIAL.
+  lv_keydate = iv_date.
+  CALL FUNCTION 'ISU_S_DEVICEMOD_PROVIDE'
+    EXPORTING
+      x_installation = ls_input-anlage
+      x_devloc       = ls_input-devloc
+      x_equnr        = lv_equnr
+      x_keydate      = lv_keydate
+      x_wmode        = lc_wmode
+      x_no_dialog    = lc_nodialog
+      x_prorate      = lc_prorate
+      x_auto         = ls_auto
+    IMPORTING
+      y_obj          = ls_obj
+      y_auto         = ls_auto
+    CHANGING
+      xy_integration = ls_integ
+    EXCEPTIONS
+      not_found      = 1
+      invalid        = 2
+      foreign_lock   = 3
+      input_error    = 4
+      system_error   = 5
+      internal_error = 6
+      not_qualified  = 7
+      not_customized = 8
+      cancelled      = 9
+      OTHERS         = 10.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            INTO ls_return-message.
+    msg_add ls_return es_return-t_return.
+    EXIT.
+  ENDIF.
+
+
+  LOOP AT ls_obj-obj-integration-meter_doc-ieabl INTO lwa_eabl_obj WHERE adatsoll = lv_keydate.
+    lv_tabix_eabl = sy-tabix.
+    READ TABLE it_input TRANSPORTING NO FIELDS WITH KEY zwnummer = lwa_eabl_obj-zwnummer
+                                                        donotuse = abap_true.
+    IF NOT SY-SUBRC IS INITIAL.
+      CONTINUE.
+    ENDIF.
+    DELETE ls_obj-obj-integration-meter_doc-ieabl[] WHERE ablbelnr EQ lwa_eabl_obj-ablbelnr.
+    DELETE ls_obj-obj-integration-meter_doc-ieablg[] WHERE ablbelnr EQ lwa_eabl_obj-ablbelnr.
+    DELETE ls_obj-obj-integration-meter_doc-i_reabld[] WHERE ablbelnr EQ lwa_eabl_obj-ablbelnr.
+  ENDLOOP.
+
+
+  LOOP AT ls_obj-obj-integration-db_data-iezuz
+                               INTO lwa_ezuz
+                               WHERE NOT logiknr2 IS INITIAL AND
+                                         zuart     EQ '2' AND
+                                         bis       EQ lc_maxbis AND
+                                         ab        LE lv_keydate.
+    lv_transf_req = abap_true.
+    EXIT.
+  ENDLOOP.
+
+
+* Header - Non Register details
+  READ TABLE it_input INTO ls_input
+                      WITH KEY zwnummer = lc_header.
+  IF sy-subrc IS INITIAL.
+    LOOP AT ls_auto-dev INTO ls_dev WHERE equnr EQ lv_equnr AND
+                                          bis   EQ lc_maxbis.
+      CLEAR lv_tabix.
+      lv_tabix = sy-tabix.
+
+*   Register Group
+      IF NOT ls_input-zwgruppe IS INITIAL.
+
+*       Old Registers
+        SELECT *
+          FROM etdz
+          INTO TABLE lt_etdz_old
+         WHERE equnr EQ ls_dev-equnr.
+
+*       New Registers
+        SELECT *
+        FROM ezwg
+        INTO TABLE lt_ezwg_new
+        FOR ALL ENTRIES IN it_bilinst
+          WHERE zwgruppe EQ ls_input-zwgruppe AND
+                zwgruppe EQ it_bilinst-register_group AND
+                zwnummer EQ it_bilinst-register.
+        ls_dev-zwgruppe = ls_input-zwgruppe.
+        READ TABLE ls_auto-dev_flag INTO ls_dev_flag
+                                    WITH KEY equnr = ls_dev-equnr
+                                             bis   = lc_maxbis.
+        IF sy-subrc IS INITIAL.
+          ls_dev_flag-zwgruppe = 'X'.
+          MODIFY ls_auto-dev_flag FROM ls_dev_flag INDEX sy-tabix.
+          ls_obj-obj-disp_input-zwgruppe = ls_input-zwgruppe.
+
+        ENDIF.
+
+      ENDIF.
+
+*   Capability Group
+      IF NOT ls_input-amcg_cap_grp IS INITIAL AND
+         NOT ls_dev-ams            IS INITIAL.
+        ls_dev-amcg_cap_grp = ls_input-amcg_cap_grp.
+        LOOP AT ls_auto-dev_flag INTO ls_dev_flag WHERE equnr EQ ls_dev-equnr
+                                                    AND bis   EQ lc_maxbis.
+          ls_dev_flag-amcg_cap_grp = 'X'.
+          MODIFY ls_auto-dev_flag FROM ls_dev_flag.
+        ENDLOOP.
+
+      ENDIF.
+      MODIFY ls_auto-dev FROM ls_dev
+                         INDEX lv_tabix.
+      lv_upd_needed = 'X'.
+    ENDLOOP.
+  ENDIF.
+  DO.
+*  Special Case here
+    IF lt_etdz_old IS INITIAL AND
+       NOT sy-subrc IS INITIAL.
+      READ TABLE ls_auto-dev INTO ls_dev
+                             WITH KEY equnr = lv_equnr
+                                      bis = lc_maxbis.
+
+*   Old Registers
+      SELECT *
+        FROM etdz
+        INTO TABLE lt_etdz_old
+       WHERE equnr EQ lv_equnr
+         AND bis   EQ lc_maxbis.
+
+      CLEAR lv_added_new_reg.
+      LOOP AT it_input INTO ls_input WHERE NOT zwnummer IS INITIAL AND
+                                               donotuse IS INITIAL.
+        READ TABLE lt_etdz_old TRANSPORTING NO FIELDS
+                               WITH KEY zwnummer = ls_input-zwnummer.
+        IF NOT sy-subrc IS INITIAL.
+*           Adding new registers for the same register group
+          lv_added_new_reg = 'X'.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+
+*     No Special Case!!
+      IF lv_added_new_reg IS INITIAL.
+        REFRESH lt_etdz_old.
+        EXIT.
+      ENDIF.
+
+*      Read Register Group
+      SELECT SINGLE *
+        FROM egerh
+        INTO ls_egerh
+       WHERE equnr EQ lv_equnr
+         AND bis   EQ lc_maxbis.
+
+*     This can't go wrong!!
+* Added an extra check to consider the proposal from Bill Install Table
+      SELECT *
+      FROM ezwg
+      INTO TABLE lt_ezwg_new
+      FOR ALL ENTRIES IN it_bilinst
+      WHERE zwgruppe EQ ls_egerh-zwgruppe AND
+            zwgruppe EQ it_bilinst-register_group AND
+            zwnummer EQ it_bilinst-register.
+
+      LOOP AT lt_ezwg_new INTO ls_ezwg.
+        CLEAR lv_tabix.
+        lv_tabix = sy-tabix.
+        READ TABLE lt_etdz_old TRANSPORTING NO FIELDS
+                               WITH KEY equnr    = lv_equnr
+                                        zwnummer = ls_ezwg-zwnummer.
+        IF NOT sy-subrc IS INITIAL.
+          CONTINUE.
+        ENDIF.
+
+        READ TABLE it_input TRANSPORTING NO FIELDS
+                            WITH KEY zwnummer = ls_ezwg-zwnummer
+                                     donotuse = space.
+        IF NOT sy-subrc IS INITIAL.
+          DELETE lt_ezwg_new INDEX lv_tabix.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+    EXIT.
+  ENDDO.
+
+  IF  NOT lt_etdz_old IS INITIAL
+  AND NOT ls_input-devloc IS INITIAL.
+    LOOP AT lt_ezwg_new INTO ls_ezwg.
+      READ TABLE lt_etdz_old TRANSPORTING NO FIELDS
+                             WITH KEY kennziff = ls_ezwg-kennziff.
+      IF sy-subrc IS INITIAL.
+        CLEAR: ls_regzw,
+               lv_tabix.
+        READ TABLE ls_auto-reg INTO ls_regzw
+                               WITH KEY kennziff = ls_ezwg-kennziff.
+        IF sy-subrc IS INITIAL.
+          lv_tabix = sy-tabix.
+          MOVE-CORRESPONDING ls_ezwg TO ls_regzw.
+          MODIFY ls_auto-reg FROM ls_regzw INDEX lv_tabix.
+        ENDIF.
+        CLEAR: ls_regzw,
+               lv_tabix.
+        READ TABLE ls_obj-obj-reg_all INTO ls_regzw
+                               WITH KEY kennziff = ls_ezwg-kennziff.
+        IF sy-subrc IS INITIAL.
+          lv_tabix = sy-tabix.
+          MOVE-CORRESPONDING ls_ezwg TO ls_regzw.
+          MODIFY ls_obj-obj-reg_all FROM ls_regzw INDEX lv_tabix.
+        ENDIF.
+        CLEAR : ls_regzw,
+                lv_tabix.
+        READ TABLE ls_obj-obj-reg_input INTO ls_regzw
+                               WITH KEY kennziff = ls_ezwg-kennziff.
+        IF sy-subrc IS INITIAL.
+          lv_tabix = sy-tabix.
+          MOVE-CORRESPONDING ls_ezwg TO ls_regzw.
+          MODIFY ls_obj-obj-reg_input FROM ls_regzw INDEX lv_tabix.
+        ENDIF.
+        CONTINUE.
+      ENDIF.
+      CLEAR: ls_regzw,
+             lv_tabix.
+      ls_regzw-equnr = lv_equnr.
+      ls_regzw-bis   = lc_maxbis.
+      ls_regzw-ab    = lv_keydate.
+      MOVE-CORRESPONDING ls_ezwg TO ls_regzw.
+      ls_regzw-meins = ls_ezwg-massread.
+      ls_regzw-zwnabr = 'X'.
+*      ls_regzw-nablesen = 'X'.
+      CALL FUNCTION 'ISU_LOGIKZW_GET'
+        IMPORTING
+          y_logikzw      = ls_regzw-logikzw
+        EXCEPTIONS
+          internal_error = 1
+          OTHERS         = 2.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+      CALL FUNCTION 'CONVERSION_EXIT_GERNR_INPUT'
+        EXPORTING
+          input  = ls_input-sernr
+        IMPORTING
+          output = ls_input-sernr.
+
+      ls_regzw-geraet      = ls_input-sernr.
+      ls_regzw-matnr       = ls_input-matnr.
+      ls_regzw-logikzw_mode = '3'.
+      APPEND ls_regzw TO ls_auto-reg.
+      APPEND ls_regzw TO ls_obj-obj-reg_all.
+      APPEND ls_regzw TO ls_obj-obj-reg_input.
+      ls_reg_flag-equnr = ls_dev-equnr.
+      ls_reg_flag-bis   = lc_maxbis.
+      ls_reg_flag-ab    = lv_keydate.
+      ls_reg_flag-zwnummer = ls_ezwg-zwnummer.
+      ls_reg_flag-kennziff = 'X'.
+      ls_reg_flag-nablesen = 'X'.
+      APPEND ls_reg_flag TO ls_auto-reg_flag.
+      CLEAR ls_newreg.
+      ls_newreg-equnr = ls_dev-equnr.
+      ls_newreg-zwnummer  = ls_ezwg-zwnummer.
+      ls_newreg-kennziff  = ls_ezwg-kennziff.
+      ls_newreg-intsizeid = ls_ezwg-intsizeid.
+      APPEND ls_newreg TO et_newreg.
+
+      LOOP AT ls_obj-obj-disp_tab INTO ls_dev WHERE bis EQ lc_maxbis.
+        ls_dev-zwgruppe = ls_ezwg-zwgruppe.
+        MODIFY ls_obj-obj-disp_tab FROM ls_dev.
+      ENDLOOP.
+    ENDLOOP.
+
+    REFRESH ls_obj-obj-integration-meter_doc-masterdata-iezwg_new.
+    ls_ezwg_new-equnr = lv_equnr.
+    ls_ezwg_new-ezwg = lt_ezwg_new.
+    APPEND ls_ezwg_new TO ls_obj-obj-integration-meter_doc-masterdata-iezwg_new.
+    ls_obj-obj-disp_input = ls_obj-obj-disp.
+    ls_obj-obj-disp_input-zwgruppe = ls_ezwg-zwgruppe.
+  ENDIF.
+* Remove Old Registers
+  LOOP AT it_input INTO ls_input WHERE donotuse = 'X'.
+    CLEAR lv_tabix.
+
+    DELETE ls_auto-reg  WHERE zwnummer = ls_input-zwnummer AND
+                              bis      = lc_maxbis.
+
+    DELETE ls_auto-reg_flag  WHERE zwnummer = ls_input-zwnummer AND
+                              bis      = lc_maxbis.
+
+    ls_reg_mod-equnr = lv_equnr.
+    ls_reg_mod-matnr = ls_input-matnr.
+    ls_reg_mod-zwnummer = ls_input-zwnummer.
+    ls_reg_mod-bis      = lc_maxbis.
+    ls_reg_mod-do_not_use = 'X'.
+
+    APPEND ls_reg_mod TO ls_auto-reg_mod.
+
+    " LAVieth 01/27/2016 Start - SE R5
+    lv_upd_needed = 'X'.
+
+    " Check if interval register with active profile allocation and end it if found
+    REFRESH lt_easts.
+    CLEAR lwa_easts.
+    SELECT anlage logikzw ab bis kondigr
+      FROM easts
+      INTO TABLE lt_easts
+      WHERE anlage = ls_input-anlage.
+
+    IF NOT lt_easts IS INITIAL.
+      SELECT *
+        FROM etdz
+        INTO TABLE lt_etdz_temp
+         FOR ALL ENTRIES IN lt_easts
+       WHERE bis      EQ lc_maxbis
+         AND logikzw  EQ lt_easts-logikzw.
+    ENDIF.
+    LOOP AT lt_easts INTO lwa_easts WHERE bis EQ lc_maxbis.
+      lv_tabix = sy-tabix.
+      READ TABLE lt_etdz_temp INTO ls_etdz
+                         WITH KEY bis     = lc_maxbis
+                                  logikzw = lwa_easts-logikzw.
+      IF sy-subrc IS INITIAL AND
+         NOT ls_etdz-intsizeid IS INITIAL.
+        lwa_easts-intsizeid = ls_etdz-intsizeid.
+        MODIFY lt_easts FROM lwa_easts INDEX lv_tabix.
+      ENDIF.
+    ENDLOOP.
+    LOOP AT lt_easts INTO lwa_easts WHERE ab <= lv_keydate AND bis >= lv_keydate
+                                    AND ( ( kondigr = 'INTERVAL' OR kondigr = 'INTERVAL60' )
+                                     OR ( NOT intsizeid IS INITIAL ) ).
+      CLEAR lwa_eprofass.
+      SELECT SINGLE *
+        FROM eprofass
+        INTO lwa_eprofass
+        WHERE logikzw = lwa_easts-logikzw
+          AND profrole = 'E001'
+          AND datefrom <= lv_keydate
+          AND dateto   >= lv_keydate.
+
+      IF sy-subrc = 0.
+        CLEAR : l_auto, l_wa_prof,l_profile.
+        l_profile = lwa_eprofass-profile.
+        l_wa_prof-profrole = lwa_eprofass-profrole.
+        l_auto-auto_key-profile = lwa_eprofass-profile.
+        l_wa_prof-logikzw = lwa_eprofass-logikzw.
+        l_wa_prof-profrole = lwa_eprofass-profrole.
+        l_wa_prof-dateto = lv_keydate - 1.
+        l_wa_prof-timeto = '235959'.
+        l_wa_prof-roleno = lwa_eprofass-roleno.
+        l_wa_prof-datefrom = lwa_eprofass-datefrom.
+        l_wa_prof-timefrom = lwa_eprofass-timefrom.
+        l_wa_prof-profile = lwa_eprofass-profile.
+        l_wa_prof-contextcategory = lwa_eprofass-contextcategory.
+        l_wa_prof-profrolecontext = lwa_eprofass-profrolecontext.
+        APPEND l_wa_prof TO l_auto-ieprofass_auto.
+        CLEAR l_wa_prof.
+*     Change Profile Allocation
+        CALL FUNCTION 'ISU_S_PROFASS_CHANGE'
+          EXPORTING
+            x_profile        = l_profile
+            x_keydate        = lv_keydate
+            x_upd_online     = ' '
+            x_no_dialog      = 'X'
+            x_auto           = l_auto
+          EXCEPTIONS
+            invalid_key      = 1
+            invalid_register = 2
+            foreign_lock     = 3
+            input_invalid    = 4
+            system_error     = 5
+            OTHERS           = 6.
+        IF sy-subrc <> 0.
+          MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+              INTO ls_return-message.
+          msg_add ls_return es_return-t_return.
+          CLEAR v_called_from_bjob.
+          EXIT.
+        ELSE.
+          COMMIT WORK AND WAIT.
+        ENDIF.
+      ENDIF.
+
+    ENDLOOP.
+    " LAVieth 01/27/2016  End
+
+*    READ TABLE ls_auto-reg INTO  ls_regzw
+*                        WITH KEY zwnummer = ls_input-zwnummer
+*                                 bis      = lc_maxbis .
+*    lv_tabix = sy-tabix.
+*    IF SY-SUBRC IS INITIAL.
+*
+*      ls_regzw-bis  = lv_keydate.
+*      MODIFY ls_auto-reg_flag FROM ls_reg_flag
+*                                INDEX lv_tabix.
+*
+*    ENDIF.
+  ENDLOOP.
+
+  LOOP AT ls_auto-reg INTO  ls_regzw
+                      WHERE equnr    EQ lv_equnr
+                        AND bis      EQ lc_maxbis.
+    CLEAR: lv_tabix_main,
+           lv_tabix.
+    lv_tabix_main = sy-tabix.
+    READ TABLE it_input INTO ls_input
+                        WITH KEY zwnummer = ls_regzw-zwnummer.
+    IF NOT sy-subrc IS INITIAL.
+      CONTINUE.
+    ENDIF.
+
+*   New Register Code
+    IF NOT ls_input-kennziff_new IS INITIAL.
+      ls_regzw-kennziff = ls_input-kennziff_new.
+      LOOP AT ls_auto-reg_flag INTO ls_reg_flag
+                               WHERE equnr    EQ lv_equnr
+                                 AND zwnummer EQ ls_regzw-zwnummer
+                                 AND bis      EQ lc_maxbis.
+        CLEAR lv_tabix.
+        lv_tabix = sy-tabix.
+        ls_reg_flag-kennziff = 'X'.
+        MODIFY ls_auto-reg_flag FROM ls_reg_flag
+                                INDEX lv_tabix.
+      ENDLOOP.
+    ENDIF.
+
+*   Interval Size ID
+    IF NOT ls_input-intsizeid IS INITIAL.
+      ls_regzw-intsizeid = ls_input-intsizeid.
+      LOOP AT ls_auto-reg_flag INTO ls_reg_flag
+                               WHERE equnr    EQ lv_equnr
+                                 AND zwnummer EQ ls_regzw-zwnummer
+                                 AND bis      EQ lc_maxbis.
+        CLEAR lv_tabix.
+        lv_tabix = sy-tabix.
+        ls_reg_flag-intsizeid = 'X'.
+        MODIFY ls_auto-reg_flag FROM ls_reg_flag
+                                INDEX lv_tabix_main.
+      ENDLOOP.
+
+    ENDIF.
+
+*   Time-Of-Usage Period
+    IF NOT ls_input-touperiod IS INITIAL.
+      ls_regzw-touperiod = ls_input-touperiod.
+      LOOP AT ls_auto-reg_flag INTO ls_reg_flag
+                               WHERE equnr    EQ lv_equnr
+                                 AND zwnummer EQ ls_regzw-zwnummer
+                                 AND bis      EQ lc_maxbis.
+
+        CLEAR lv_tabix.
+        lv_tabix = sy-tabix.
+        ls_reg_flag-touperiod = 'X'.
+        MODIFY ls_auto-reg_flag FROM ls_reg_flag
+                                INDEX lv_tabix.
+      ENDLOOP.
+
+    ENDIF.
+
+*   Do not Read
+    IF ls_input-nablesen EQ 'X'.
+      ls_regzw-nablesen = 'X'.
+      LOOP AT ls_auto-reg_flag INTO ls_reg_flag
+                               WHERE equnr    EQ lv_equnr
+                                 AND zwnummer EQ ls_regzw-zwnummer
+                                 AND bis      EQ lc_maxbis.
+        CLEAR lv_tabix.
+        lv_tabix = sy-tabix.
+        ls_reg_flag-nablesen = 'X'.
+        MODIFY ls_auto-reg_flag FROM ls_reg_flag
+                                INDEX lv_tabix.
+      ENDLOOP.
+
+    ELSEIF ls_input-nablesen EQ space.
+      CLEAR ls_regzw-nablesen.
+      LOOP AT ls_auto-reg_flag INTO ls_reg_flag
+                               WHERE equnr    EQ lv_equnr
+                                 AND zwnummer EQ ls_regzw-zwnummer
+                                 AND bis      EQ lc_maxbis.
+        CLEAR lv_tabix.
+        lv_tabix = sy-tabix.
+        ls_reg_flag-nablesen = 'X'.
+        MODIFY ls_auto-reg_flag FROM ls_reg_flag
+                                INDEX lv_tabix.
+      ENDLOOP.
+
+    ENDIF.
+    MODIFY ls_auto-reg FROM ls_regzw INDEX lv_tabix_main.
+    lv_upd_needed = 'X'.
+  ENDLOOP.
+
+  CLEAR lv_update.
+
+  CHECK NOT lv_upd_needed IS INITIAL.
+  ls_auto-contr-use-data = 'X'.
+  ls_auto-contr-use-okcode = 'X'.
+  ls_auto-contr-okcode = 'SAVE'.
+
+*  IF NOT et_newreg IS INITIAL AND
+*     v_called_from_bjob = abap_true.
+*    READ TABLE et_newreg TRANSPORTING NO FIELDS
+*        WITH KEY kennziff = '12'.
+*    IF sy-subrc = 0.
+*      MESSAGE ID '>0' TYPE 'E' NUMBER '000'
+*        WITH text-001
+*        INTO ls_return-message.
+*      msg_add ls_return es_return-t_return.
+*      RETURN.
+*    ENDIF.
+*  ENDIF.
+
+  fill_integration_data( EXPORTING
+                           iv_equnr  = lv_equnr
+                           iv_matnr  = ls_input-matnr
+                           iv_sernr  = ls_input-sernr
+                           it_input  = it_input
+                           it_regnew = et_newreg
+                           iv_date   = lv_keydate
+                         IMPORTING
+                           es_mtrdoc = ls_auto-meterdoc ).
+
+  ls_obj-auto = ls_auto.
+*  ls_integ-meter_doc = ls_auto-meterdoc.
+  CLEAR ls_obj-contr-device_prep.
+  IF NOT lv_transf_req IS INITIAL.
+
+    prepare_input_complex( EXPORTING iv_anlage = ls_input-anlage
+                                     iv_devloc = ls_input-devloc
+                                     iv_equnr = lv_equnr
+                                     iv_activty_date = lv_keydate
+                                     lwa_auto_dev_mod = ls_auto
+                           CHANGING cwa_input = lwa_x_input ).
+
+  ENDIF.
+
+  CALL FUNCTION 'Z_ISU_S_DEVICEMOD_CHANGE'
+    EXPORTING
+      x_installation = ls_input-anlage
+      x_devloc       = ls_input-devloc
+      x_equnr        = lv_equnr
+      x_keydate      = lv_keydate
+      x_wmode        = lc_wmode
+      x_no_dialog    = lc_nodialog
+      x_prorate      = lc_prorate
+      x_auto         = ls_auto
+      x_obj          = ls_obj
+      x_input        = lwa_x_input
+    IMPORTING
+      y_db_update    = lv_update
+    CHANGING
+      xy_integration = ls_integ
+    EXCEPTIONS
+      not_found      = 1
+      invalid        = 2
+      foreign_lock   = 3
+      input_error    = 4
+      system_error   = 5
+      internal_error = 6
+      not_qualified  = 7
+      not_customized = 8
+      cancelled      = 9
+      OTHERS         = 10.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            INTO ls_return-message.
+    msg_add ls_return es_return-t_return.
+    CLEAR v_called_from_bjob.
+    EXIT.
+  ELSEIF lv_update EQ 'X'.
+    MESSAGE ID '>0' TYPE 'S' NUMBER '000'
+         WITH 'Successfuly updated'
+         INTO ls_return-message.
+    msg_add ls_return es_return-t_return.
+  ENDIF.
+  DATA: lv_flag TYPE c.
+
+
+  COMMIT WORK AND WAIT.
+
+*  ELSE.
+*
+**  ls_obj-obj-integration-meter_doc = ls_auto-meterdoc.
+*    CALL FUNCTION 'ISU_S_DEVICEMOD_CHANGE'
+*      EXPORTING
+*        x_installation = ls_input-anlage
+*        x_devloc       = ls_input-devloc
+*        x_equnr        = lv_equnr
+*        x_keydate      = lv_keydate
+*        x_wmode        = lc_wmode
+*        x_no_dialog    = lc_nodialog
+*        x_prorate      = lc_prorate
+*        x_auto         = ls_auto
+*        x_obj          = ls_obj
+*      IMPORTING
+*        y_db_update    = lv_update
+*      CHANGING
+*        xy_integration = ls_integ
+*      EXCEPTIONS
+*        not_found      = 1
+*        invalid        = 2
+*        foreign_lock   = 3
+*        input_error    = 4
+*        system_error   = 5
+*        internal_error = 6
+*        not_qualified  = 7
+*        not_customized = 8
+*        cancelled      = 9
+*        OTHERS         = 10.
+*    IF sy-subrc <> 0.
+*      MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno
+*              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+*              INTO ls_return-message.
+*      msg_add ls_return es_return-t_return.
+*      CLEAR v_called_from_dm038.
+*      EXIT.
+*    ELSEIF lv_update EQ 'X'.
+*      MESSAGE ID '>0' TYPE 'S' NUMBER '000'
+*           WITH 'Successfuly updated'
+*           INTO ls_return-message.
+*      msg_add ls_return es_return-t_return.
+*    ENDIF.
+*    COMMIT WORK AND WAIT.
+
+  DO 10 TIMES.
+    SELECT COUNT(*)
+      FROM v_eabl
+ BYPASSING BUFFER
+     WHERE ablesgr  EQ lc_mr_11
+       AND equnr    EQ lv_equnr
+       AND adatsoll EQ lv_keydate.
+    IF sy-subrc IS INITIAL.
+      lv_mr_found = 'X'.
+      EXIT.
+    ELSE.
+      WAIT UP TO 5 SECONDS.
+    ENDIF.
+  ENDDO.
+*ENDIF.
+******* Need to Discuss with Srikanth/Sarath
+
+*  CHECK NOT lv_mr_found IS INITIAL.
+*
+** Range of MR Reasons
+*  IF lt_ablesgr_range IS INITIAL.
+*    CLEAR ls_ablesgr_range.
+*    ls_ablesgr_range-sign   = 'I'.
+*    ls_ablesgr_range-option = 'EQ'.
+*    ls_ablesgr_range-low    = lc_mr_11.
+*    APPEND ls_ablesgr_range TO lt_ablesgr_range.
+*
+*    CLEAR ls_ablesgr_range.
+*    ls_ablesgr_range-sign   = 'I'.
+*    ls_ablesgr_range-option = 'EQ'.
+*    ls_ablesgr_range-low    = lc_mr_16.
+*    APPEND ls_ablesgr_range TO lt_ablesgr_range.
+*
+*    CLEAR ls_ablesgr_range.
+*    ls_ablesgr_range-sign   = 'I'.
+*    ls_ablesgr_range-option = 'EQ'.
+*    ls_ablesgr_range-low    = lc_mr_17.
+*    APPEND ls_ablesgr_range TO lt_ablesgr_range.
+*  ENDIF.
+*
+** Range of MR date
+*  IF lt_adat_range IS INITIAL.
+*    CLEAR ls_adat_range.
+*    ls_adat_range-sign   = 'I'.
+*    ls_adat_range-option = 'EQ'.
+*    ls_adat_range-low    = lv_keydate.
+*    APPEND ls_adat_range TO lt_adat_range.
+*
+*    CLEAR ls_adat_range.
+*    ls_adat_range-sign   = 'I'.
+*    ls_adat_range-option = 'EQ'.
+*    ls_adat_range-low    = lv_keydate - 1.
+*    APPEND ls_adat_range TO lt_adat_range.
+*  ENDIF.
+*  IF NOT ls_input-anlage IS INITIAL.
+*    lv_anlage = ls_input-anlage.
+*  ELSE.
+*    lv_anlage = me->get_installation( lv_equnr ).
+*  ENDIF.
+*
+*  LOOP AT lt_ablesgr_range INTO ls_ablesgr_range.           "D00K926439
+*
+** Enqueue/Dequeue for not to block the queue
+*    CALL METHOD me->wait_until_lock
+*      EXPORTING
+*        pv_anlage = lv_anlage
+*      CHANGING
+*        et_return = es_return-t_return.
+*
+** Submit the report for reverse the meter reading orders
+**    SUBMIT releabl8
+**     WITH ablesgr  = '16'
+**     WITH adatsoll = lv_keydate
+**     WITH geraet   = xs_eger-geraet
+**     WITH equnr    = xs_eger-equnr
+**     WITH e_direct = 'X'
+**     WITH process  = 'CAWI'
+**     AND RETURN.
+**
+*    SUBMIT zrep_smi_wm017_releabl8
+*     WITH anlage   EQ lv_anlage
+*     WITH geraet   EQ ls_input-sernr
+*     WITH equnr    EQ lv_equnr
+*     WITH adatsoll IN lt_adat_range
+**     WITH sablesgr IN lt_ablesgr_range                     "D00K926439
+*     WITH ablesgr  EQ ls_ablesgr_range-low                  "D00K926439
+*     WITH process  EQ 'CAWI'
+*     WITH timevar  EQ ' '
+*     WITH e_direct EQ 'X'
+*     AND RETURN.
+*
+*    IF NOT sy-subrc IS INITIAL.
+*      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+*              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+*              INTO ls_return-message.
+*      msg_add ls_return es_return-t_return.
+*      EXIT.
+*    ENDIF.
+*
+** Enqueue/Dequeue for not to block the queue
+*    CALL METHOD me->wait_until_lock
+*      EXPORTING
+*        pv_anlage = lv_anlage
+*      CHANGING
+*        et_return = es_return-t_return.
+*  ENDLOOP.                                                  "D00K926439
+  CLEAR v_called_from_bjob.
+
+ENDMETHOD.
+

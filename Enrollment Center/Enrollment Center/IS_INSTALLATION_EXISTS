@@ -1,0 +1,16 @@
+METHOD is_installation_exists.
+  DATA lv_anlage TYPE anlage.
+  CLEAR : rv_error_flg.
+
+  SELECT SINGLE anlage INTO lv_anlage
+  FROM v_eanl
+  WHERE anlage = my_anlage
+  AND bis EQ co_date_infinite.
+
+  IF NOT sy-subrc IS INITIAL.
+    populate_status_return space co_error co_value_17 my_anlage space space space.
+    rv_error_flg = co_flag.
+  ENDIF.
+
+ENDMETHOD.
+

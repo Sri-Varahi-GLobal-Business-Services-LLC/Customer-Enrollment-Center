@@ -1,0 +1,32 @@
+method IF_BSP_DISPATCHER~REGISTER .
+
+INTERFACE IF_BSP_CONTROLLER LOAD.
+
+  data: subc type lbsp_controller_item.
+  data: subc_if type ref to if_bsp_controller. "#EC NEEDED
+  data: comp_id_lower type string,
+        c_id type string.
+  data: c_id_len type I.
+
+  try.
+    subc_if ?= comp_instance.
+  catch CX_SY_MOVE_CAST_ERROR.
+    return.
+  endtry.
+
+  comp_id_lower     = comp_id.
+  translate comp_id_lower to lower case. "#EC *
+  if me->component_id is not initial.
+    concatenate me->component_id IF_BSP_CONTROLLER=>CO_SEP into c_id.
+    translate c_id to lower case.
+
+    c_id_len = strlen( c_id ).
+    if comp_id_lower(c_id_len) = c_id.
+       comp_id_lower = comp_id_lower+c_id_len.
+    endif.
+  endif.
+  subc-component_id = comp_id_lower.
+  subc-instance     = comp_instance.
+  append subc to m_subcontrollers.
+endmethod.
+

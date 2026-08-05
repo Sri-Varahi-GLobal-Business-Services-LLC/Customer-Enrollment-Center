@@ -1,0 +1,246 @@
+METHOD synchronize_profiles.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(I_LOW) TYPE  C
+*"     REFERENCE(I_HIGH) TYPE  C
+*"     REFERENCE(I_FKKCOCC) TYPE  FKKCOCC OPTIONAL
+*"     REFERENCE(I_FKK_PROT) TYPE  FKKPROT OPTIONAL
+*"     REFERENCE(I_BASICS) TYPE  FKK_MAD_BASICS OPTIONAL
+*"  CHANGING
+*"     REFERENCE(C_TEST_NUM) TYPE  I
+*"     REFERENCE(C_SUCCESS_NUM) TYPE  I
+*"     REFERENCE(C_ERROR_NUM) TYPE  I
+*"----------------------------------------------------------------------
+*--------------------------------------------------------------------------
+* This method treats each interval for the mass activity eamiprofsync. It
+* first retrieves all the profiles from the interval and then build application
+* data used by the enterprise service UtilitiesTimeSeriesERPReplicationBulkRequest_Out.
+*-----------------------------------------------------------------------------
+
+  DATA: lv_addons               TYPE fkk_mad_profbatch,
+        lwa_range               TYPE isu_ranges,
+        lit_rprofiles           TYPE STANDARD TABLE OF isu_ranges,
+        lit_prof_alloc          TYPE tab_eami_profile_sync,
+        lwa_prof_alloc          TYPE eami_profile_sync,
+        lv_ok_flag              TYPE kennzx,
+        lit_eprofass            TYPE ieprofass,
+        lv_condition            TYPE string,
+        lwa_etdz                TYPE etdz,
+        loref_prof_man          TYPE REF TO cl_isu_ami_profile_manager,
+        lv_nb_profiles          TYPE i,
+        lit_eger                TYPE t_v_eger,
+        lv_xi_limit             TYPE xilimit_kk,
+        lv_from_ix              TYPE sytabix,
+        lv_to_ix                TYPE sytabix,
+        lit_prof_alloc2         TYPE tab_eami_profile_sync.
+
+
+  FIELD-SYMBOLS: <fs_eprofass> TYPE eprofass.
+  CLEAR : rv_success_profiles,
+          lv_addons,
+          lwa_range,
+          lit_rprofiles,
+          lit_prof_alloc,
+          lwa_prof_alloc,
+          lv_ok_flag,
+          lit_eprofass,
+          lv_condition,
+          lwa_etdz,
+          loref_prof_man,
+          lv_nb_profiles,
+          lit_eger,
+          lv_xi_limit,
+          lv_from_ix,
+          lv_to_ix,
+          lit_prof_alloc2.
+
+
+  "We verify that the switch EHP5 is active.
+  IF cl_isu_ami_basics=>ami_active-isu_ami_ehp5_active IS INITIAL.
+    RETURN.
+  ENDIF.
+
+
+*-------------------------Retrieve data for interval----------------------------
+  "In order to avoid exception
+  sy-tcode = co_fpma.                                     "#EC WRITE_OK
+
+* Set PROFILE range
+  IF iv_low = iv_high.
+    lwa_range-sign   = co_include.
+    lwa_range-option = co_eq.
+    lwa_range-low    = iv_low.
+  ELSE.
+    lwa_range-sign   = co_include.
+    lwa_range-option = co_bt.
+    lwa_range-low    = iv_low.
+    lwa_range-high   = iv_high.
+  ENDIF.
+
+  APPEND lwa_range TO lit_rprofiles.
+
+*-------------------------Select profiles----------------------------
+
+* We need to select all EPROFASS entries contained between i_low and
+* i_high
+* condition build
+  lv_condition = text-018.                                  "#EC NOTEXT
+
+  IF lv_addons-r_profile[] IS NOT INITIAL.
+    lv_condition = lv_condition && text-019.                "#EC NOTEXT
+  ENDIF.
+
+  SELECT *
+    FROM eprofass AS s
+    INTO CORRESPONDING FIELDS OF TABLE lit_eprofass
+    WHERE (lv_condition).
+
+* check if and send information message if no data is found.
+  READ TABLE lit_eprofass INDEX 1 TRANSPORTING NO FIELDS.
+  IF sy-subrc  <> 0.
+    IF 1 = 2. MESSAGE e035(e9). ENDIF.
+
+    CALL FUNCTION 'FKK_AKTIV2_APPL_LOG_MSG'
+      EXPORTING
+        i_msgty                  = co_info  " not an error .....
+        i_msgid                  = 'E9'
+        i_msgno                  = co_value_35
+        i_probclass_this_message = co_probcl1. " ..but important in log!
+  ENDIF.
+
+  CLEAR lv_condition.
+
+*-------------------Build Application Data-------------------------
+
+*for each entry in it_eprofass we verify if the attached device(s)
+*satisfy the selections
+* criteria
+  LOOP AT lit_eprofass ASSIGNING <fs_eprofass>.
+
+*   we first retrieve all the ETDZ entries for <fs_eprofass>-logikzw
+    lwa_etdz-logikzw           = <fs_eprofass>-logikzw.
+    lwa_etdz-ab                = <fs_eprofass>-datefrom.
+    lwa_etdz-bis               = <fs_eprofass>-dateto.
+    APPEND lwa_etdz TO lwa_prof_alloc-tetdz.
+    CALL FUNCTION 'ISU_DB_ETDZ_FORALL_LOGIKZW'
+      TABLES
+        t_etdz    = lwa_prof_alloc-tetdz
+      EXCEPTIONS
+        not_found = 1
+        OTHERS    = 2.
+
+    CHECK sy-subrc = 0.
+*   for each etdz entry, we retrieve all the corresponding devices
+
+    CHECK lwa_prof_alloc-tetdz IS NOT INITIAL.
+
+    SELECT *
+    FROM v_eger_h
+    INTO TABLE lit_eger   ##too_many_itab_fields
+    FOR ALL ENTRIES IN lwa_prof_alloc-tetdz
+    WHERE  equnr EQ  lwa_prof_alloc-tetdz-equnr  AND bis >=  lwa_prof_alloc-tetdz-ab AND ab <=  lwa_prof_alloc-tetdz-bis .
+
+    SELECT *
+    FROM egerr
+    APPENDING CORRESPONDING FIELDS OF TABLE lit_eger ##too_many_itab_fields
+    FOR ALL ENTRIES IN lwa_prof_alloc-tetdz
+    WHERE  equnr EQ  lwa_prof_alloc-tetdz-equnr  AND bis >=  lwa_prof_alloc-tetdz-ab AND ab <=  lwa_prof_alloc-tetdz-bis .
+
+    IF lines( lit_eger ) > 0.
+      lv_ok_flag = abap_true.
+      APPEND LINES OF lit_eger TO lwa_prof_alloc-tv_eger.
+    ENDIF.
+
+*we complete the application data structure and add it to it_prof_alloc
+*   only if the flag has been marked
+    IF lv_ok_flag = abap_true.
+
+      SORT lwa_prof_alloc-tv_eger BY bis equnr.
+      DELETE ADJACENT DUPLICATES FROM lwa_prof_alloc-tv_eger
+      COMPARING bis equnr.
+
+      MOVE <fs_eprofass> TO lwa_prof_alloc-eprofass.
+
+      CALL FUNCTION 'ISU_DB_EPROFHEAD_SINGLE'
+        EXPORTING
+          x_profile  = <fs_eprofass>-profile
+        IMPORTING
+          y_profhead = lwa_prof_alloc-eprofhead
+        EXCEPTIONS
+          NOT_FOUND             = 1
+          OTHERS                = 2.
+      IF SY-SUBRC IS INITIAL.
+        populate_status_return sy-msgid sy-msgty sy-msgno sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+      lwa_prof_alloc-ams = co_owce.
+
+      APPEND lwa_prof_alloc TO lit_prof_alloc.
+
+    ENDIF.
+
+    CLEAR lwa_etdz.
+    CLEAR lwa_prof_alloc.
+    CLEAR lv_ok_flag.
+  ENDLOOP.
+
+*--------------------Service call----------------------------------
+
+  lv_nb_profiles = lines( lit_prof_alloc ).
+
+* limit for XI bulk size, as future opt. from selscreen " note 1599912
+* e.g. by using i_basics-tech-xi_limit or a constant    " note 1599912
+  lv_xi_limit  = 0.                                      " note 1599912
+
+* service is called only if it is not a simulation
+  IF iv_simulation IS INITIAL.
+    CREATE OBJECT loref_prof_man.
+    IF lv_nb_profiles > 0.
+*     prepared for def. of bulkpack. size by XI_LIMIT   " note 1599912
+      IF lv_xi_limit   = 0  OR                           " note 1599912
+         lv_nb_profiles <= lv_xi_limit.                     " note 1599912
+        CALL METHOD loref_prof_man->ts_repl_blk_rq_out
+          CHANGING
+            xyt_appldata_out = lit_prof_alloc.
+*     begin of XI limit alternative                     " note 1599912
+      ELSE.  " build and send bulk packages according to l_xi_limit
+        lv_from_ix = 1.
+        lv_to_ix   = lv_xi_limit.
+        WHILE lv_from_ix <= lv_nb_profiles.
+          CLEAR lit_prof_alloc2.
+          IF lv_to_ix > lv_nb_profiles.
+            lv_to_ix = lv_nb_profiles.
+          ENDIF.
+          APPEND LINES OF lit_prof_alloc
+                 FROM lv_from_ix TO lv_to_ix
+                 TO lit_prof_alloc2.
+          CALL METHOD loref_prof_man->ts_repl_blk_rq_out
+            CHANGING
+              xyt_appldata_out = lit_prof_alloc2.
+          ADD lv_xi_limit TO lv_from_ix.
+          ADD lv_xi_limit TO lv_to_ix.
+        ENDWHILE. " l_from_ix <= nb_profiles
+      ENDIF. " l_xi_limit
+*     end of XI limit alternative / end of note ....    " note 1599912
+    ENDIF. " nb_profiles
+  ENDIF. " i_basisc-status-xsimu
+
+  CALL FUNCTION 'FKK_AKTIV2_APPL_LOG_MSG'
+    EXPORTING
+      i_msgty                  = co_info
+      i_msgid                  = 'EE_AMI'
+      i_msgno                  = co_value_60
+      i_msgv1                  = iv_low
+      i_msgv2                  = iv_high
+      i_msgv3                  = lv_nb_profiles
+      i_probclass_this_message = '2'.
+  IF 1 = 2. " Cross reference for message               " note 1599912
+    MESSAGE i060(ee_ami) WITH iv_low iv_high lv_nb_profiles. " note 1599912
+  ENDIF.
+
+  "c_test_num    = nb_profiles.                          " note 1599912
+  rv_success_profiles = lv_nb_profiles. " all profiles to ES     " note 1599912
+
+
+ENDMETHOD.
+

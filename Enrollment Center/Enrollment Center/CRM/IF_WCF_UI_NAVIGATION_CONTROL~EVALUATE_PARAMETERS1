@@ -1,0 +1,67 @@
+METHOD if_wcf_ui_navigation_control~evaluate_parameters.
+
+  DATA lv_cucoltx         TYPE REF TO cl_uicmp_lt_cucoltx_impl.
+  DATA lv_ltx_id          TYPE        crmt_ic_ltx_id.
+  DATA lv_navbar_srv      TYPE REF TO cl_crm_ui_navbar_srv.
+  DATA lv_data_collection TYPE REF TO if_bol_bo_col.
+
+  lv_ltx_id = iv_parameter.
+  lv_cucoltx ?= cl_crm_ui_ltx_cuco_access_srv=>get_instance( ).
+
+* stop navigation
+  IF lv_cucoltx->get_keep_work_area( lv_ltx_id ) EQ abap_true.
+    rv_result = abap_false. " interrupt navigation
+
+*   store the data collection of the navigation for later usage
+    lv_data_collection = iv_data_collection.
+    lv_navbar_srv = cl_crm_ui_navbar_srv=>get_instance( ).
+    lv_navbar_srv->execute_special_link_handling(
+      EXPORTING
+        iv_link_id         = iv_link_id
+      CHANGING
+        cv_data_collection = lv_data_collection ).
+    lv_cucoltx->set_nav_collection( iv_data_collection = lv_data_collection ).
+
+  ELSE.
+    rv_result = abap_true. " continue navigation
+  ENDIF.
+
+  DATA: __gdc    TYPE REF TO if_crm_ui_data_context,
+        __source TYPE        string,
+        __line   TYPE        string,
+        __path   TYPE        crmt_ic_ac_identify_path.
+
+  DATA: lr_account            TYPE REF TO cl_crm_bol_entity,  "to get confirmed business partner
+        lr_buag               TYPE REF TO cl_crm_bol_entity,  "to get confirmed business agreement
+        lr_msg_srv            TYPE REF TO cl_bsp_wd_message_service,  "to display messages
+        lr_ui_profile         TYPE REF TO if_crm_ui_profile,          "to identify business role used to login
+        lv_profile            TYPE        crmt_ic_configprof.
+
+  CONSTANTS: lc_profile TYPE string VALUE 'ZCRM7_TEAM',                    "allowed business role
+             lc_mes_type_i  TYPE symsgty VALUE 'I',                        " message type information
+             lc_mes_class   TYPE symsgid VALUE 'ZSG_CRM',                  " message class
+             lc_mes_no_029  TYPE symsgno VALUE '029'.                      " message number for unconfirmed BP
+
+  __gdc ?=
+  cl_crm_ui_data_context_srv=>get_instance( ).
+
+  lr_msg_srv = cl_bsp_wd_message_service=>get_instance( ).
+
+* Get confirmed account
+  lr_account ?= __gdc->get_entity( 'CURRENTCUSTOMER' ).
+
+  "If BP is confirmed, set gv_data_flow_complete to true so that transaction is launched
+  IF lr_account IS BOUND." AND lr_buag IS BOUND.
+    rv_result = abap_true.
+    "Otherwise set gv_data_flow_complete to false and display appropriate message
+  ELSE.
+    rv_result = abap_false.
+
+    lr_msg_srv->add_message( iv_msg_type       = lc_mes_type_i
+                             iv_msg_id         = lc_mes_class
+                             iv_msg_number     = lc_mes_no_029 ).
+*      RETURN.
+  ENDIF.
+
+ENDMETHOD.
+

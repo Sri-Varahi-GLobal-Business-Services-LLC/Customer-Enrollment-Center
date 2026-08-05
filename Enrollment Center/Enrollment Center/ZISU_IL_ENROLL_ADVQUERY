@@ -1,0 +1,117 @@
+FUNCTION zisu_il_enroll_advquery.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IT_FINDPAR) TYPE  GENILT_SELECTION_PARAMETER_TAB
+*"     VALUE(IV_MAX_HITS) TYPE  GENILT_UNSIGNED_INT4 OPTIONAL
+*"  TABLES
+*"      ET_PGM_ENROLL STRUCTURE  ZSPGM_KEY
+*"----------------------------------------------------------------------
+  DATA: lv_partner      TYPE bu_partner,
+        lv_ca           TYPE vkont_kk,
+        lv_devloc       TYPE zenrlsdp,
+        ls_par          TYPE genilt_selection_parameter,
+        i_where         TYPE rsds_where,
+        i_where_line    TYPE sychar72, " LIKE LINE OF i_where-where_tab[],
+        lt_where_clause TYPE comt_where_condition_tab.
+
+
+  DATA: lr_zenrlbp        TYPE isu_ranges_tab,
+        lr_zenrlca        TYPE isu_ranges_tab,
+        lr_zpgm_type      TYPE isu_ranges_tab,
+        lr_zenrl_reqdat   TYPE isu_ranges_tab,
+        lr_zenrl_dat      TYPE isu_ranges_tab,
+        lr_zenrl_dedat    TYPE isu_ranges_tab,
+        lr_zenrlstatus    TYPE isu_ranges_tab,
+        lr_zenrlsdp       TYPE isu_ranges_tab,
+        lr_zenrldrms_stat TYPE isu_ranges_tab,
+        lr_zdrms_dat      TYPE isu_ranges_tab,
+        lr_zcrtby         TYPE isu_ranges_tab,
+        lr_zcrtdat        TYPE isu_ranges_tab,
+        ls_range          TYPE isu_ranges,
+        lt_field_ranges   TYPE rsds_trange,
+        ls_field_ranges   TYPE rsds_range.
+
+  LOOP AT it_findpar INTO ls_par.
+    CLEAR ls_range.
+    CASE ls_par-attr_name.
+      WHEN'ZENRLBP'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zenrlbp.
+
+      WHEN'ZENRLCA'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zenrlca.
+
+      WHEN'ZPGM_TYPE'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zpgm_type.
+
+      WHEN'ZENRL_REQDAT'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zenrl_reqdat.
+
+      WHEN'ZENRL_DAT'.
+
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zenrl_dat.
+
+      WHEN'ZENRL_DEDAT'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zenrl_dedat.
+
+      WHEN'ZENRLSTATUS'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zenrlstatus.
+
+      WHEN'ZENRLSDP'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zenrlsdp.
+
+      WHEN'ZENRLDRMS_STAT'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zenrldrms_stat.
+
+      WHEN'ZDRMS_DAT'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zdrms_dat.
+
+      WHEN'ZCRTBY'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zcrtby.
+
+      WHEN'ZCRTDAT'.
+        MOVE-CORRESPONDING ls_par TO ls_range.
+        APPEND ls_range TO lr_zcrtdat.
+
+    ENDCASE.
+
+  ENDLOOP.
+
+  CLEAR: et_pgm_enroll[].
+
+  IF iv_max_hits IS NOT INITIAL.
+    g_maxrows = iv_max_hits.
+  ELSE.
+    g_maxrows = 500.
+  ENDIF.
+
+* Get Enrollment Data
+  SELECT zenrlbp zenrlca zpgm_type zenrl_reqdat
+    INTO TABLE et_pgm_enroll
+    FROM ztpgm_enroll
+  WHERE zenrlbp IN lr_zenrlbp
+  AND zenrlca IN lr_zenrlca
+  AND zpgm_type IN lr_zpgm_type
+  AND zenrl_reqdat IN lr_zenrl_reqdat
+  AND zenrl_dat IN lr_zenrl_dat
+  AND zenrl_dedat IN lr_zenrl_dedat
+  AND zenrlstatus IN lr_zenrlstatus
+  AND zenrlsdp IN lr_zenrlsdp
+  AND zenrldrms_stat IN lr_zenrldrms_stat
+  AND zdrms_dat IN lr_zdrms_dat
+  AND zcrtby IN lr_zcrtby
+  AND zcrtdat IN lr_zcrtdat.
+
+ENDFUNCTION.
+

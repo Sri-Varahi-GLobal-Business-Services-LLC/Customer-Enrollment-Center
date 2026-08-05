@@ -1,0 +1,171 @@
+*---------------------------------------------------------------------*
+*    generated viewmaintenance function pool top
+*   generation date: 02/07/2007 at 13:33:57 by user CDESSENM
+*   view maintenance generator version: #001407#
+*---------------------------------------------------------------------*
+FUNCTION-POOL zelig_rules                MESSAGE-ID sv.
+
+
+INCLUDE lsvimdat                                . "general data decl.
+INCLUDE lzelig_rulest00                         . "view rel. data dcl.
+
+*----------------------------------------------------------------------*
+*                      CONSTANTS                                       *
+*----------------------------------------------------------------------*
+
+CONSTANTS : c_rule_rt_cat      TYPE zelig_rule_name VALUE 'RT_CATEGORY',
+            c_rule_ci_rt_cat   TYPE zelig_rule_name VALUE 'RT_CATEGORY_CI',
+            c_rule_rt_fact     TYPE zelig_rule_name VALUE 'RT_FACTS',
+            c_rule_dec         TYPE zelig_rule_name VALUE 'DECEASED',
+            c_rule_dunlock     TYPE zelig_rule_name VALUE 'DUNNINGLOCK',
+            c_rule_dunlockdays TYPE zelig_rule_name VALUE 'DUNNINGLOCKDAYS',
+            c_rule_nsf_n       TYPE zelig_rule_name VALUE 'NSFNUMBER',
+            c_rule_nsf_m       TYPE zelig_rule_name VALUE 'NSFMONTHS',
+            c_rule_nsf_pon     TYPE zelig_rule_name VALUE 'NON-NSFRETURNS',
+            c_rule_dev_rd      TYPE zelig_rule_name VALUE 'DEVESTIMATEDRD',
+            c_rule_theftbp     TYPE zelig_rule_name VALUE 'THEFTFRAUDBP',
+            c_rule_theftdev    TYPE zelig_rule_name VALUE 'THEFTFRAUDDEV',
+            c_rule_dflt_reason TYPE zelig_rule_name VALUE 'DEFAULTREASON',
+            c_rule_dflt_months TYPE zelig_rule_name VALUE 'DEFAULTMONTHS',
+            c_rule_dflt_nbr    TYPE zelig_rule_name VALUE 'DEFAULTNBR',
+            c_rule_snp         TYPE zelig_rule_name VALUE 'SNP',
+            c_bank_rule        TYPE zelig_rule_name VALUE 'BANKRUPT',
+            c_cust_rule        TYPE zelig_rule_name VALUE 'CUSTTYPE',
+            c_pay_rule         TYPE zelig_rule_name VALUE 'PAYMETHOD',
+            c_pay_type         TYPE zelig_rule_name VALUE 'PAYPLANTYPE',
+            c_active_plan_rule TYPE zelig_rule_name VALUE 'ACTIVEIP',
+            c_employee_rule    TYPE zelig_rule_name VALUE 'EMPLOYEE',
+            c_devtype_rule     TYPE zelig_rule_name VALUE 'DEVTYPE',
+            c_credit_rule      TYPE zelig_rule_name VALUE 'CREDITBAL',
+            c_field_rule       TYPE zelig_rule_name VALUE 'FIELDWORK',
+            c_past_rule        TYPE zelig_rule_name VALUE 'PASTDUE',
+            c_acct_type_rule   TYPE zelig_rule_name VALUE 'ACCOUNTTYPE',
+            c_multipe_dev_rule TYPE zelig_rule_name VALUE 'MULTIPEDEVICES',
+            c_fm_rate(13)      TYPE c VALUE ' Z_ELIG_RATE.',
+            c_fm_est(18)       TYPE c VALUE ' Z_ELIG_ESTIMATES.',
+            c_fm_dec(17)       TYPE c VALUE ' Z_ELIG_DECEASED.',
+            c_fm_dun(20)       TYPE c VALUE ' Z_ELIG_DUNNINGLOCK.',
+            c_fm_inst(23)      TYPE c VALUE ' Z_ELIG_INSTLPLAN_DFLT.',
+            c_fm_theft(19)     TYPE c VALUE ' Z_ELIG_THEFTFRAUD.',
+            c_fm_snp(12)       TYPE c VALUE ' Z_ELIG_SNP.',
+            c_fm_bankrupt(17)  TYPE c VALUE ' Z_ELIG_BANKRUPT.',
+            c_fm_creditbal(19) TYPE c VALUE ' Z_ELIG_CREDIT_BAL.',
+            c_fm_custtype(17)  TYPE c VALUE ' Z_ELIG_CUSTTYPE.',
+            c_fm_fieldwork(18) TYPE c VALUE ' Z_ELIG_FIELDWORK.',
+            c_fm_nsf(12)       TYPE c VALUE ' Z_ELIG_NSF.',
+            c_fm_pastdue(16)   TYPE c VALUE ' Z_ELIG_PASTDUE.',
+            c_fm_paymethod(18) TYPE c VALUE ' Z_ELIG_PAYMETHOD.',
+            c_fm_payplans(17)  TYPE c VALUE ' Z_ELIG_PAYPLANS.',
+            c_fm_ip(20)        TYPE c VALUE ' Z_ELIG_IP_ELIGIBLE.',
+            c_fm_bb(20)        TYPE c VALUE ' Z_ELIG_BB_ELIGIBLE.', "pm886512
+            c_fm_unmeter(16)   TYPE c VALUE 'z_elig_unmetered', "pm886512
+            c_type_m(1)        TYPE c VALUE 'M',
+            c_type_d(1)        TYPE c VALUE 'D',
+            c_objtype_3(1)     TYPE c VALUE '3',
+            c_category_mr      TYPE zelig_category VALUE 'MR',
+            c_end_date         TYPE sy-datum VALUE '99991231',
+            c_begin_date       TYPE sy-datum VALUE '00000000',
+            c_ablesart_02(2)   TYPE c VALUE '02',
+            c_ablesart_03(2)   TYPE c VALUE '03',
+            c_set_x(1)         TYPE c VALUE 'X',
+*Chenges done on 10/17/2007--------
+            c_space(1)         TYPE c VALUE '',
+*---end of changes---------------------------------
+            c_value_y(1)       TYPE c VALUE 'Y',
+            c_set_space(1)     TYPE c VALUE space,
+            c_esnp(4)          TYPE c VALUE 'ESNP',
+            c_gsnp(4)          TYPE c VALUE 'GSNP',
+            c_clos(4)          TYPE c VALUE 'CLOS',
+            c_canc(4)          TYPE c VALUE 'CANC',
+            c_cncl(4)          TYPE c VALUE 'CNCL',
+            c_nocheck(6)       TYPE c VALUE 'ZNOCHK'.
+*----------------------------------------------------------------------*
+*                    TYPE DECLARATIONS                                 *
+*----------------------------------------------------------------------*
+TYPES : BEGIN OF t_logikzw,
+          logikzw TYPE etdz-logikzw,
+        END OF t_logikzw.
+
+TYPES : BEGIN OF t_type_of_bp,
+          butype TYPE bu_type,
+        END OF t_type_of_bp.
+
+TYPES : BEGIN OF t_pay_method,
+          ezawe TYPE ezawe_kk,
+        END OF t_pay_method.
+
+TYPES : BEGIN OF t_pay_plan,
+          pyplt TYPE e_pyplt,
+        END OF t_pay_plan.
+
+TYPES : BEGIN OF t_rpnum,
+          rpnum TYPE fkk_instpln_head-rpnum,
+        END OF t_rpnum.
+
+TYPES : BEGIN OF t_deagd,
+          deagd TYPE fkk_instpln_head-deagd,
+        END OF t_deagd.
+
+TYPES : BEGIN OF t_vkont,
+          vkont TYPE vkont_kk,
+        END OF t_vkont.
+
+TYPES : BEGIN OF t_anlage,
+          anlage TYPE ever-anlage,
+        END OF t_anlage.
+
+TYPES : BEGIN OF t_logiknr,
+          logiknr TYPE eastl-logiknr,
+        END OF t_logiknr.
+
+*----------------------------------------------------------------------*
+*                    DATA DECLARATIONS                                 *
+*----------------------------------------------------------------------*
+
+
+DATA : i_rpnum            TYPE STANDARD TABLE OF t_rpnum,
+       i_logikzw          TYPE STANDARD TABLE OF t_logikzw,
+       i_type_of_bp       TYPE STANDARD TABLE OF t_type_of_bp,
+       i_butype           TYPE STANDARD TABLE OF t_type_of_bp,
+       i_paymthd          TYPE STANDARD TABLE OF t_pay_method,
+       i_paymethod        TYPE STANDARD TABLE OF t_pay_method,
+       i_payplan          TYPE STANDARD TABLE OF t_pay_plan,
+       i_deagd            TYPE STANDARD TABLE OF t_deagd,
+       i_vkont            TYPE STANDARD TABLE OF t_vkont,
+       i_anlage           TYPE STANDARD TABLE OF t_anlage,
+       i_logiknr          TYPE STANDARD TABLE OF t_logiknr,
+       i_zelig_rules      TYPE zelig_value_tab,
+       i_zelig_rules2     TYPE zelig_value_tab,
+       i_zelig_rules3     TYPE zelig_value_tab,
+       wa_zelig_rules3    LIKE LINE OF i_zelig_rules3,
+       i_ediscact         TYPE STANDARD TABLE OF ediscact,
+       wa_deagd           TYPE t_deagd,
+       wa_zelig_rules     TYPE LINE OF zelig_value_tab,
+       wa_ediscact        TYPE ediscact,
+       wa_ediscdoc        TYPE ediscdoc,
+       v_installation     TYPE ever-anlage,
+       v_tariftyp         TYPE eanlh-tariftyp,
+       v_operand          TYPE ettaf-operand,
+       v_lines            TYPE i,
+       v_pastdue          TYPE betrw_kk,
+       v_totalbal         TYPE betrw_kk,
+       v_unappliedcredits TYPE betrw_kk,
+       v_bpartner         TYPE gpart_kk,
+       v_devloc_tab       TYPE STANDARD TABLE OF egerh-devloc,
+       v_devloc           TYPE egerh-devloc,
+       v_vkont            TYPE vkont_kk,
+       v_dunning          TYPE mahnv_kk,
+       v_date             TYPE sy-datum,
+       v_ablbelnr         TYPE eabl-ablbelnr,
+       v_err_obj          TYPE REF TO cx_root,
+       v_disc_docno       TYPE discno,
+       v_aufnr            TYPE aufnr,
+       v_objnr            TYPE j_objnr,
+       v_stat             TYPE j_status,
+       v_ord_stat         TYPE j_stext, "pm874717 Kennedy June 2009 j_txt04,
+       v_discno           TYPE discno,
+       v_value(8)         TYPE c.
+
+RANGES: r_rlgrd FOR dfkkrh-rlgrd.
+*DATA:   wa_rlgrd LIKE LINE OF r_rlgrd.
+

@@ -1,0 +1,55 @@
+FUNCTION z_rate_category_category_info.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(RATE_CAT) TYPE  TARIFTYP_ANL OPTIONAL
+*"     REFERENCE(RATE_CAT_CAT) TYPE  Z_RATE_CAT_CAT OPTIONAL
+*"  TABLES
+*"      RATE_CAT_CAT_INFO STRUCTURE  ZTFO_RATECATCAT OPTIONAL
+*"  EXCEPTIONS
+*"      NOT_FOUND
+*"----------------------------------------------------------------------
+
+  CLEAR: rate_cat_cat_info, rate_cat_cat_info[].
+
+  IF rate_cat IS INITIAL AND rate_cat_cat IS INITIAL.
+* Get all rate category category information
+    SELECT *
+      FROM ztfo_ratecatcat
+      INTO TABLE rate_cat_cat_info.
+
+    IF sy-subrc <> 0.
+      MESSAGE e058(zfo_pmi) RAISING not_found.
+    ENDIF.
+  ELSEIF rate_cat IS INITIAL.
+* Get all rate categories for the given rate category category
+    SELECT *
+      FROM ztfo_ratecatcat
+      INTO TABLE rate_cat_cat_info
+      WHERE rate_cat_cat = rate_cat_cat.
+
+    IF sy-subrc <> 0.
+      MESSAGE e055(zfo_pmi) WITH rate_cat_cat RAISING not_found.
+    ENDIF.
+  ELSEIF rate_cat_cat IS INITIAL.
+* Get all rate category categories for the given rate category
+    SELECT *
+      FROM ztfo_ratecatcat
+      INTO TABLE rate_cat_cat_info
+      WHERE tariftyp = rate_cat.
+
+    IF sy-subrc <> 0.
+      MESSAGE e056(zfo_pmi) WITH rate_cat RAISING not_found.
+    ENDIF.
+  ELSE.
+* Check whether the given rate category is in the given rate category category
+    SELECT COUNT(*)
+      FROM ztfo_ratecatcat
+      WHERE tariftyp     = rate_cat
+        AND rate_cat_cat = rate_cat_cat.
+
+    IF sy-subrc <> 0.
+      MESSAGE e057(zfo_pmi) WITH rate_cat rate_cat_cat RAISING not_found.
+    ENDIF.
+  ENDIF.
+ENDFUNCTION.

@@ -1,0 +1,103 @@
+FUNCTION zisu_il_enroll_change.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_KEY) TYPE  ZSPGM_KEY
+*"     VALUE(IS_ENROLL) TYPE  ZTPGM_ENROLL
+*"  EXPORTING
+*"     VALUE(ES_ENROLL) TYPE  ZTPGM_ENROLL
+*"  TABLES
+*"      IT_CHANGED_FIELDS STRUCTURE  FIELDNAMES
+*"      ET_RETURN STRUCTURE  BAPIRET2 OPTIONAL
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM is created for DPP Enrollment
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  CONSTANTS co_false TYPE c VALUE '-'.
+  CONSTANTS co_true  TYPE c VALUE 'X'.
+
+  DATA: ls_enroll_change TYPE ztpgm_enroll,
+        ls_buf_enroll    LIKE LINE OF gt_buf_enroll,
+        ls_error_message TYPE bapiret2,
+        lt_app_buffer_error_message like  TABLE OF ls_error_message,
+        lt_all_error_message like TABLE OF ls_error_message.
+
+  DATA: l_changed_field     TYPE REF TO fieldnames.
+
+  FIELD-SYMBOLS: <previous_value> TYPE any,
+                 <changed_value>  TYPE any.
+
+
+
+*  first check if order exists in app buffer
+  PERFORM get_enroll_from_app_buffer
+            USING
+               iv_key
+            CHANGING
+               ls_buf_enroll
+               ls_error_message.
+
+IF ls_error_message IS INITIAL.
+
+*For each changed object
+   ls_enroll_change = is_enroll.
+   LOOP AT it_changed_fields REFERENCE INTO l_changed_field.
+
+      ASSIGN COMPONENT l_changed_field->*
+                       OF STRUCTURE ls_enroll_change TO <changed_value>.
+
+      IF sy-subrc = 0 .
+        IF <changed_value> IS ASSIGNED.
+
+        ASSIGN COMPONENT l_changed_field->*
+                         OF STRUCTURE ls_buf_enroll-attr TO <previous_value>.
+
+*            - If the new value is different from the buffer value
+*                    store the new value in the buffer
+            IF sy-subrc = 0     .
+                IF <previous_value> IS ASSIGNED .
+
+                    IF <changed_value> <> <previous_value>.
+
+                          <previous_value> = <changed_value>.
+*                          this will be checked in ISU_IL_ORDER_CHECK
+                          ls_buf_enroll-has_attr_struc_values_changed = abap_true.
+
+                    ENDIF.
+
+                ENDIF.
+*
+            ENDIF.
+
+
+        ENDIF.
+      ENDIF.
+  ENDLOOP.
+
+
+*Put the changed order record back in the buffer
+   ls_buf_enroll-bufkey = iv_key.
+
+  MODIFY TABLE gt_buf_enroll FROM ls_buf_enroll.
+
+else.
+  APPEND ls_error_message to lt_app_buffer_error_message.
+  PERFORM add_messages USING c_error_like_messages
+                                lt_app_buffer_error_message
+                          CHANGING lt_all_error_message[].
+ENDIF.
+
+ENDFUNCTION.
+

@@ -1,0 +1,56 @@
+FUNCTION z_elig_table_lookup.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(PI_SOURCE_SYSTEM) TYPE  ZELIG_SOURCE_SYSTEM
+*"     VALUE(PI_CATEGORY) TYPE  ZELIG_CATEGORY
+*"     VALUE(PI_RULE_NAME) TYPE  ZELIG_RULE_NAME
+*"  EXPORTING
+*"     VALUE(PE_VALUES) TYPE  ZELIG_VALUE_TAB
+*"----------------------------------------------------------------------
+*
+  DATA: r_err_obj      TYPE REF TO cx_root,
+        l_column       TYPE string,
+        l_result_tab   TYPE STANDARD TABLE OF zelig_cic_value,
+        l_result_rec   LIKE LINE OF l_result_tab.
+
+  TRY.
+*     Determine which column we are looking up
+      CASE pi_source_system.
+        WHEN 'WEB'.
+          l_column = 'WEB_VALUE'.
+        WHEN 'IVR'.
+          l_column = 'IVR_VALUE'.
+        WHEN 'CIC' OR 'CR7'.
+          l_column = 'CIC_VALUE'.
+        WHEN 'VRC'.
+          l_column = 'IVRCA_VALUE'.
+        WHEN OTHERS.
+          EXIT.
+      ENDCASE.
+
+*     Lookup table
+      SELECT (l_column)
+        FROM zelig_rules
+        INTO TABLE l_result_tab
+       WHERE rule_name = pi_rule_name
+         AND category = pi_category.
+
+*     Check results - only return those with a value
+      IF l_result_tab IS NOT INITIAL.
+        LOOP AT l_result_tab INTO l_result_rec.
+          IF strlen( l_result_rec ) > 0.
+            APPEND l_result_rec TO pe_values.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+
+    CATCH cx_root INTO r_err_obj.
+      "Don't raise and error, just return nothing
+      CLEAR pe_values.
+  ENDTRY.
+
+
+
+ENDFUNCTION.
+

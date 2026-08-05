@@ -1,0 +1,112 @@
+FUNCTION zisu_il_enroll_save.
+*"----------------------------------------------------------------------
+*"*"Global Interface:
+*"  IMPORTING
+*"     VALUE(IS_KEY) TYPE  ZSPGM_KEY
+*"     VALUE(I_CREATE_SAVE_NEEDED) TYPE  CHAR1 OPTIONAL
+*"  TABLES
+*"      ET_RETURN STRUCTURE  BAPIRET2 OPTIONAL
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM is created for DPP Enrollment
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  DATA:         lt_return2 TYPE bapiret2_t,
+                ls_return2 TYPE bapiret2,
+                lr_impl    TYPE REF TO zcl_isu_se_impl_dpp,
+                lr_dimpl   TYPE REF TO zcl_isu_se_impl_dpp_drms,
+                lv_ok      LIKE sy-batch,
+                lv_error   TYPE boolean,
+                lv_input   TYPE zsdpp_int_data.
+  DATA: ls_buf_enroll    LIKE LINE OF gt_buf_enroll,
+        ls_error_message TYPE bapiret2.
+
+
+* Create Object
+  CREATE OBJECT: lr_impl, lr_dimpl.
+
+* Check for Bound
+  CHECK lr_impl IS BOUND.
+
+*  first check if order exists in app buffer
+  PERFORM get_enroll_from_app_buffer
+            USING
+               is_key
+            CHANGING
+               ls_buf_enroll
+               ls_error_message.
+
+  IF ls_buf_enroll IS NOT INITIAL.
+    CLEAR: lv_input, lv_error.
+    IF ls_buf_enroll-new_record = abap_true.
+      lv_input-pgm_enroll = ls_buf_enroll-attr.
+      lv_input-pgm_int_data = ls_buf_enroll-int_attr.
+
+      PERFORM check_already_exist
+              CHANGING lv_input.
+
+*     Add entries in Enrollment table if there are no errors
+      lr_impl->add_enrollment( lv_input ).
+
+*     Send confirmation to EV.
+*      lr_impl->send_crm_enrollment_to_ev( lv_input ).
+    ELSE.
+      lv_input-pgm_enroll = ls_buf_enroll-attr.
+      lv_input-pgm_int_data = ls_buf_enroll-int_attr.
+      IF lv_input-pgm_enroll-zenrlstatus = '004' OR
+         lv_input-pgm_enroll-zenrlstatus = '003'.
+        lv_input-pgm_enroll-zenrl_dedat = sy-datum.
+      ENDIF.
+*      lv_input-pgm_int_data = ls_buf_enroll-int_attr.
+      lv_error =  lr_dimpl->process_outbound_proxy( CHANGING x_input = lv_input ). "Call DRMS Enrollment Request Outbound
+
+      IF lv_error = abap_true.
+        lv_input-pgm_enroll-zenrldrms_stat = '5'.
+        lv_input-pgm_enroll-zdrms_dat = sy-datum.
+      ELSE.
+
+*        lv_input-pgm_enroll-zenrldrms_stat = '4'.
+*        lv_input-pgm_enroll-zdrms_dat = sy-datum.
+
+        IF lv_input-pgm_enroll-zenrlstatus = '004'.
+          lv_input-pgm_enroll-zenrldrms_stat = '4'.
+          lv_input-pgm_enroll-zdrms_dat = sy-datum.
+          lv_input-pgm_enroll-zenrl_msg = 'Account De-Enrolled Successfully'(001).
+
+        ELSE.
+          CLEAR: lv_input-pgm_enroll-zenrldrms_stat,
+                 lv_input-pgm_enroll-zdrms_dat.
+          lv_input-pgm_enroll-zenrl_msg = 'Account Enrolled Cancelled Successfully'(001).
+
+        ENDIF.
+
+      ENDIF.
+      lv_input-pgm_enroll-zenrl_msgtyp = 'S'.
+*      lv_input-pgm_enroll-zenrl_msg = 'Account De-Enrolled Successfully'(001).
+
+*     Add entries in Enrollment table if there are no errors
+      lr_dimpl->update_enrollment( lv_input ).
+
+    ENDIF.
+*   clear buffer
+    DELETE gt_buf_enroll WHERE bufkey = is_key.
+
+  ELSE.
+  ENDIF.
+
+* Export messages
+  et_return[] = lt_return2[].
+
+ENDFUNCTION.
+

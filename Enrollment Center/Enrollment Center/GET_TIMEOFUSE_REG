@@ -1,0 +1,20 @@
+METHOD get_timeofuse_reg.
+
+  CLEAR rv_tou_reg_cd.
+  SELECT SINGLE                                             "#EC WARNOK
+         logikzw intsizeid INTO rv_tou_reg_cd
+         FROM etdz
+         WHERE equnr EQ my_equnr AND
+               bis   EQ co_date_infinite AND
+               ab    LE my_date AND
+               kennziff EQ co_tou_reg_cd.
+  IF NOT sy-subrc IS INITIAL.
+    IF my_is_profdelloc EQ abap_true.
+      populate_status_return space co_warning co_value_23 my_gernr space space space.
+    ELSE.
+      populate_status_return space co_error co_value_23 my_gernr space space space.
+    ENDIF.
+  ENDIF.
+
+ENDMETHOD.
+

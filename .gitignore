@@ -1,0 +1,15 @@
+# Office temporary/lock files
+~$*
+*.tmp
+Thumbs.db
+desktop.ini
+
+# OneDrive sync artifacts
+*.laccdb
+
+# Heavy reference material — exceeds GitHub size limits, remains in OneDrive only
+/SO-Appointment/
+/FSM and EAM/
+/DRMS/
+/Implementation and Business Process/
+*.mp4

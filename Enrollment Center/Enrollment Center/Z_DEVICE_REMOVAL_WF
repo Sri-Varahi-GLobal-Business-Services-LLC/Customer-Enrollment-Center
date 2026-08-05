@@ -1,0 +1,1307 @@
+FUNCTION z_device_removal_wf.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(P_AUFNR) TYPE  AUFK-AUFNR
+*"     REFERENCE(P_REFDATA) TYPE  ZTDM_WF_TRIGGER
+*"  EXPORTING
+*"     REFERENCE(V_ERR) TYPE  AUFK-ASTKZ
+*"     REFERENCE(V_SPARTE) TYPE  ETYP-SPARTE
+*"     REFERENCE(V_ERR_TXT) TYPE  SOLISTI1-LINE
+*"     REFERENCE(V_ERR_BODY) TYPE  SOLISTI1-LINE
+*"  EXCEPTIONS
+*"      ORDER_LOCKED
+*"----------------------------------------------------------------------
+
+  DATA:
+    lv_original_activity_date TYPE dats.
+
+  CLEAR: v_error, v_error_txt, v_error_body.
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_aufnr
+    IMPORTING
+      output = v_aufnr.
+* Initialize the values
+  PERFORM initialize_parameters.
+* Get the work order details
+  PERFORM get_work_order_data USING v_aufnr
+                              CHANGING wa_caufvd.
+  IF wa_caufvd-qmnum IS INITIAL.
+* Notification number could not be fetched
+    MESSAGE e090(zsc_rf).
+  ENDIF.
+* Get the noftification details
+  PERFORM get_notification_details USING wa_caufvd-qmnum
+                                   CHANGING i_notif_item.
+* Get activity date of device removal
+  PERFORM get_activity_date_time USING v_aufnr
+                                         wa_caufvd-qmnum
+                                CHANGING v_actdate
+                                         v_error
+                                         v_error_body
+                                         v_error_txt
+                                         v_acttime.
+
+  IF v_error = 'X'.
+    v_valid_err = 'X'.
+  ELSE.
+*   Get the decimal separator from USR01
+    PERFORM get_decimal_separator CHANGING v_decimal.
+    v_read_initial = c_num_initial.
+    PERFORM modify_ref CHANGING wa_caufvd.
+
+*   Use order type from table as reference
+    CASE p_refdata-old_auart.
+      WHEN c_auart_emtr.
+        v_sparte = c_sparte_01.
+
+        PERFORM validate_meter USING c_class_eemi
+                                     wa_caufvd
+                                     i_notif_item
+                                     v_anlage
+                                     v_logiknr
+                                     v_actdate
+                            CHANGING i_char_val_eemi
+                                     wa_klah_eemi
+                                     wa_equi_meter
+                                     v_error
+                                     v_valid_err.
+
+        PERFORM check_activity_date USING wa_caufvd-equnr
+                                 CHANGING v_actdate
+                                          v_error
+                                          v_error_body
+                                          v_error_txt.
+
+        IF v_error NE 'X'.
+          PERFORM get_installation_number USING wa_caufvd-equnr
+                                                wa_caufvd-tplnr
+                                                v_actdate
+                                       CHANGING v_anlage
+                                                v_logiknr
+                                                v_anlart
+                                                v_error.
+          IF v_error NE 'X'.
+            PERFORM reverse_meter_read USING v_anlage
+                                             v_actdate
+                                             c_reason_09
+                                    CHANGING v_error.
+          ENDIF.
+
+          PERFORM remove_device_meter USING wa_caufvd
+                                            c_class_eemi
+                                            v_anlage
+                                            v_actdate
+                                            c_action_02
+                                            wa_equi_meter
+                                            i_char_val_eemi
+                                            wa_klah_eemi
+                                            v_acttime
+                                   CHANGING v_error.
+        ENDIF.
+
+      WHEN c_auart_gmtr.
+*   For Gas installation
+*   Process depending on prority
+        PERFORM get_priority_from USING wa_caufvd
+                               CHANGING v_priok.
+        v_sparte = c_sparte_02.
+
+        CASE v_priok.
+          WHEN c_priok_1. " Removal of Gas Meter
+            IF v_error NE 'X'. " validate_meter
+              PERFORM validate_meter USING c_class_egmi
+                                           wa_caufvd
+                                           i_notif_item
+                                           v_anlage
+                                           v_logiknr
+                                           v_actdate
+                                  CHANGING i_char_val_egmi
+                                           wa_klah_egmi
+                                           wa_equi_meter
+                                           v_error
+                                           v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_caufvd-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number, reverse_meter_read, remove_device_meter
+              PERFORM get_installation_number USING wa_caufvd-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                           CHANGING v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+              IF v_error NE 'X'.
+                PERFORM reverse_meter_read USING v_anlage
+                                                 v_actdate
+                                                 c_reason_09
+                                        CHANGING v_error.
+              ENDIF.
+
+              PERFORM remove_device_meter USING wa_caufvd
+                                                c_class_egmi
+                                                v_anlage
+                                                v_actdate
+                                                c_action_02
+                                                wa_equi_meter
+                                                i_char_val_egmi
+                                                wa_klah_egmi
+                                                v_acttime
+                                       CHANGING v_error.
+
+            ENDIF.
+          WHEN c_priok_2. " Removal of Gas Meter + Regulator
+            IF v_error NE 'X'. " validate_meter
+              PERFORM validate_meter USING c_class_egmi
+                                           wa_caufvd
+                                           i_notif_item
+                                           v_anlage
+                                           v_logiknr
+                                           v_actdate
+                                  CHANGING i_char_val_egmi
+                                           wa_klah_egmi
+                                           wa_equi_meter
+                                           v_error
+                                           v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_regulator
+              PERFORM validate_regulator USING c_class_effr
+                                                wa_caufvd
+                                                i_notif_item
+                                                c_kombinat_d
+                                                v_actdate
+                                       CHANGING v_anlage    "CR 2767
+                                                v_anlart
+                                                v_logiknr
+                                                i_char_val_effr
+                                                wa_klah_effr
+                                                wa_equi_reg
+                                                v_error
+                                                v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_caufvd-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number, reverse_meter_read, remove_device_meter
+              PERFORM get_installation_number USING wa_caufvd-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                           CHANGING v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+
+              IF v_error NE 'X'.
+                PERFORM reverse_meter_read USING v_anlage
+                                                 v_actdate
+                                                 c_reason_09
+                                        CHANGING v_error.
+              ENDIF.
+
+              PERFORM remove_device_meter USING wa_caufvd
+                                                c_class_egmi
+                                                v_anlage
+                                                v_actdate
+                                                c_action_02
+                                                wa_equi_meter
+                                                i_char_val_egmi
+                                                wa_klah_egmi
+                                                v_acttime
+                                       CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_regulator
+              PERFORM remove_device_regulator USING c_class_effr
+                                                    wa_caufvd
+                                                    c_anlage_initial
+                                                    v_anlage "9728
+                                                    v_logiknr
+                                                    c_kombinat_d
+                                                    v_actdate
+                                                   c_action_02 "CR 2767
+                                                    i_char_val_effr
+                                                    wa_klah_effr
+                                                    wa_equi_reg
+                                                    i_notif_item
+                                                    v_anlart
+                                           CHANGING v_error.
+            ENDIF.
+          WHEN c_priok_3. " Removal of Regulator
+            IF v_error NE 'X'. " validate_regulator
+              PERFORM validate_regulator USING c_class_effr
+                                               wa_caufvd
+                                               i_notif_item
+                                               c_kombinat_d
+                                               v_actdate
+                                      CHANGING v_anlage
+                                               v_anlart
+                                               v_logiknr
+                                               i_char_val_effr
+                                               wa_klah_effr
+                                               wa_equi_reg
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number
+              PERFORM get_installation_number USING c_equnr_initial
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                           CHANGING v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+            ENDIF.
+            IF v_error NE 'X'. " reverse_meter_read
+              PERFORM reverse_meter_read USING v_anlage
+                                               v_actdate
+                                               c_reason_09
+                                      CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_regulator
+              PERFORM remove_device_regulator USING c_class_effr
+                                                    wa_caufvd
+                                                    c_anlage_initial
+                                                    v_anlage "9728
+                                                    v_logiknr
+                                                    c_kombinat_d
+                                                    v_actdate
+                                                    c_action_02 "CR 2767
+                                                    i_char_val_effr
+                                                    wa_klah_effr
+                                                    wa_equi_reg
+                                                    i_notif_item
+                                                    v_anlart
+                                           CHANGING v_error.
+            ENDIF.
+          WHEN c_priok_4. " Removal of Corrector
+            IF v_error NE 'X'. " validate_corrector
+              PERFORM validate_corrector USING c_class_evci
+                                               wa_caufvd
+                                               i_notif_item
+                                               c_kombinat_m
+                                               v_actdate
+                                      CHANGING v_anlage
+                                               v_anlart
+                                               v_logiknr
+                                               i_char_val_evci
+                                               wa_klah_evci
+                                               wa_equi_corr
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_equi_corr-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number
+              PERFORM get_installation_number USING c_equnr_initial
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                           CHANGING v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+            ENDIF.
+            IF v_error NE 'X'. " reverse_meter_read
+              PERFORM reverse_meter_read USING v_anlage
+                                               v_actdate
+                                               c_reason_09
+                                      CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_corrector
+              PERFORM remove_device_corrector USING c_class_evci
+                                                    wa_caufvd
+                                                    v_anlage
+                                                    v_logiknr
+                                                    c_kombinat_m
+                                                    v_actdate
+                                                    c_action_02
+                                                    i_char_val_evci
+                                                    wa_klah_evci
+                                                    wa_equi_corr
+                                                    i_notif_item
+                                           CHANGING v_error.
+            ENDIF.
+          WHEN c_priok_5. " Removal of Gas Meter + Corrector
+            IF v_error NE 'X'. " validate_corrector
+              PERFORM validate_corrector USING c_class_evci
+                                               wa_caufvd
+                                               i_notif_item
+                                               c_kombinat_m
+                                               v_actdate
+                                      CHANGING v_anlage
+                                               v_anlart
+                                               v_logiknr
+                                               i_char_val_evci
+                                               wa_klah_evci
+                                               wa_equi_corr
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_meter
+              PERFORM validate_meter USING c_class_egmi
+                                           wa_caufvd
+                                           i_notif_item
+                                           v_anlage
+                                           v_logiknr
+                                           v_actdate
+                                  CHANGING i_char_val_egmi
+                                           wa_klah_egmi
+                                           wa_equi_meter
+                                           v_error
+                                           v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_equi_corr-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number, reverse_meter_read, remove_device_corrector
+              PERFORM get_installation_number USING wa_caufvd-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                          CHANGING  v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+
+              IF v_error NE 'X'.
+                PERFORM reverse_meter_read USING v_anlage
+                                                 v_actdate
+                                                 c_reason_09
+                                        CHANGING v_error.
+              ENDIF.
+
+              PERFORM remove_device_corrector USING c_class_evci
+                                                    wa_caufvd
+                                                    v_anlage
+                                                    v_logiknr
+                                                    c_kombinat_m
+                                                    v_actdate
+                                                    c_action_02
+                                                    i_char_val_evci
+                                                    wa_klah_evci
+                                                    wa_equi_corr
+                                                    i_notif_item
+                                           CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_meter
+              PERFORM remove_device_meter USING wa_caufvd
+                                                c_class_egmi
+                                                v_anlage
+                                                v_actdate
+                                                c_action_02
+                                                wa_equi_meter
+                                                i_char_val_egmi
+                                                wa_klah_egmi
+                                                v_acttime
+                                       CHANGING v_error.
+            ENDIF.
+          WHEN c_priok_6. " Removal of Gas Meter + Corrector + Regulator
+            IF v_error NE 'X'. " validate_corrector
+              PERFORM validate_corrector USING c_class_evci
+                                               wa_caufvd
+                                               i_notif_item
+                                               c_kombinat_m
+                                               v_actdate
+                                      CHANGING v_anlage
+                                               v_anlart
+                                               v_logiknr
+                                               i_char_val_evci
+                                               wa_klah_evci
+                                               wa_equi_corr
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_meter
+              PERFORM validate_meter USING c_class_egmi
+                                           wa_caufvd
+                                           i_notif_item
+                                           v_anlage
+                                           v_logiknr
+                                           v_actdate
+                                  CHANGING i_char_val_egmi
+                                           wa_klah_egmi
+                                           wa_equi_meter
+                                           v_error
+                                           v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_regulator
+              PERFORM validate_regulator USING c_class_effr
+                                               wa_caufvd
+                                               i_notif_item
+                                               c_kombinat_d
+                                               v_actdate
+                                      CHANGING v_anlage
+                                               v_anlart
+                                               v_logiknr
+                                               i_char_val_effr
+                                               wa_klah_effr
+                                               wa_equi_reg
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_equi_corr-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number, reverse_meter_read, remove_device_corrector
+              PERFORM get_installation_number USING wa_caufvd-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                          CHANGING  v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+
+              IF v_error NE 'X'.
+                PERFORM reverse_meter_read USING v_anlage
+                                                 v_actdate
+                                                 c_reason_09
+                                        CHANGING v_error.
+              ENDIF.
+
+              PERFORM remove_device_corrector USING c_class_evci
+                                                    wa_caufvd
+                                                    v_anlage
+                                                    v_logiknr
+                                                    c_kombinat_m
+                                                    v_actdate
+                                                    c_action_02
+                                                    i_char_val_evci
+                                                    wa_klah_evci
+                                                    wa_equi_corr
+                                                    i_notif_item
+                                           CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_meter
+              PERFORM remove_device_meter USING wa_caufvd
+                                                c_class_egmi
+                                                v_anlage
+                                                v_actdate
+                                                c_action_02
+                                                wa_equi_meter
+                                                i_char_val_egmi
+                                                wa_klah_egmi
+                                                v_acttime
+                                       CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_regulator
+              PERFORM remove_device_regulator USING c_class_effr
+                                                    wa_caufvd
+                                                    c_anlage_initial "CR 2767
+                                                    v_anlage "9728
+                                                    v_logiknr
+                                                    c_kombinat_d
+                                                    v_actdate
+                                                  c_action_02 "CR 2767
+                                                    i_char_val_effr
+                                                    wa_klah_effr
+                                                    wa_equi_reg
+                                                    i_notif_item
+                                                    v_anlart
+                                           CHANGING v_error.
+            ENDIF.
+          WHEN c_priok_a. " Removal of Gas Meter + GCM(considered as a corrector)
+            PERFORM get_installation_type_gas
+              USING
+                wa_caufvd-tplnr
+                v_actdate
+                c_bypass_buffer-yes
+              CHANGING
+                wa_gas_installation_type_data.
+
+            IF v_error NE 'X'. " validate_gcm
+              PERFORM validate_gcm USING c_class_egcm
+                                         wa_caufvd
+                                         i_notif_item
+                                         c_kombinat_m
+                                         v_actdate
+                                CHANGING v_anlage
+                                         v_anlart
+                                         v_logiknr
+                                         i_char_val_egcm
+                                         wa_klah_egcm
+                                         wa_equi_corr
+                                         v_error
+                                         v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_gas_meter
+              PERFORM validate_gas_meter USING c_class_egmi
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_anlage
+                                               v_logiknr
+                                               v_actdate
+                                      CHANGING i_char_val_egmi
+                                               wa_klah_egmi
+                                               wa_equi_meter
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_equi_corr-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number, reverse_meter_read, remove_device_corrector (gcm)
+              PERFORM get_installation_number USING wa_caufvd-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                          CHANGING  v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+              IF v_error NE 'X'.
+                PERFORM reverse_meter_read USING v_anlage
+                                                 v_actdate
+                                                 c_reason_09
+                                        CHANGING v_error.
+              ENDIF.
+              PERFORM remove_device_corrector USING c_class_egcm
+                                                    wa_caufvd
+                                                    v_anlage
+                                                    v_logiknr
+                                                    c_kombinat_m
+                                                    v_actdate
+                                                    c_action_02
+                                                    i_char_val_egcm
+                                                    wa_klah_egcm
+                                                    wa_equi_corr
+                                                    i_notif_item
+                                           CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_meter
+              WAIT UP TO 60 SECONDS.
+*       unlock the installation
+              DO 1000 TIMES.
+                CALL FUNCTION 'ENQUEUE_E_EANL'
+                  EXPORTING
+                    mode_eanl      = 'E'
+                    anlage         = v_anlage
+                  EXCEPTIONS
+                    foreign_lock   = 1
+                    system_failure = 2
+                    OTHERS         = 3.
+                IF sy-subrc <> 0.
+* Implement suitable error handling here
+                ELSE.
+                  CALL FUNCTION 'DEQUEUE_E_EANL'
+                    EXPORTING
+                      mode_eanl = 'E'
+                      mandt     = sy-mandt
+                      anlage    = v_anlage.
+                  EXIT.
+                ENDIF.
+              ENDDO.
+
+              PERFORM remove_device_meter USING wa_caufvd
+                                                c_class_egmi
+                                                v_anlage
+                                                v_actdate
+                                                c_action_02
+                                                wa_equi_meter
+                                                i_char_val_egmi
+                                                wa_klah_egmi
+                                                v_acttime
+                                       CHANGING v_error.
+            ENDIF.
+          WHEN c_priok_d. " Removal of Gas Meter + Fixed Regulator + GCM(considered as a corrector)
+            PERFORM get_installation_type_gas
+              USING
+                wa_caufvd-tplnr
+                v_actdate
+                c_bypass_buffer-yes
+              CHANGING
+                wa_gas_installation_type_data.
+
+            IF v_error NE 'X'. " validate_gcm
+              PERFORM validate_gcm USING c_class_egcm
+                                         wa_caufvd
+                                         i_notif_item
+                                         c_kombinat_m
+                                         v_actdate
+                                CHANGING v_anlage
+                                         v_anlart
+                                         v_logiknr
+                                         i_char_val_egcm
+                                         wa_klah_egcm
+                                         wa_equi_corr
+                                         v_error
+                                         v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_gas_meter
+              PERFORM validate_gas_meter USING c_class_egmi
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_anlage
+                                               v_logiknr
+                                               v_actdate
+                                      CHANGING i_char_val_egmi
+                                               wa_klah_egmi
+                                               wa_equi_meter
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_regulator
+              PERFORM validate_regulator USING c_class_effr
+                                               wa_caufvd
+                                               i_notif_item
+                                               c_kombinat_d
+                                               v_actdate
+                                      CHANGING v_anlage
+                                               v_anlart
+                                               v_logiknr
+                                               i_char_val_effr
+                                               wa_klah_effr
+                                               wa_equi_reg
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_equi_corr-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number, reverse_meter_read, remove_device_corrector (gcm)
+              PERFORM get_installation_number USING wa_caufvd-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                          CHANGING  v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+              IF v_error NE 'X'.
+                PERFORM reverse_meter_read USING v_anlage
+                                                 v_actdate
+                                                 c_reason_09
+                                        CHANGING v_error.
+              ENDIF.
+              PERFORM remove_device_corrector USING c_class_egcm
+                                                    wa_caufvd
+                                                    v_anlage
+                                                    v_logiknr
+                                                    c_kombinat_m
+                                                    v_actdate
+                                                    c_action_02
+                                                    i_char_val_egcm
+                                                    wa_klah_egcm
+                                                    wa_equi_corr
+                                                    i_notif_item
+                                           CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_meter
+              WAIT UP TO 30 SECONDS.
+*       unlock the installation
+              DO 1000 TIMES.
+                CALL FUNCTION 'ENQUEUE_E_EANL'
+                  EXPORTING
+                    mode_eanl      = 'E'
+                    anlage         = v_anlage
+                  EXCEPTIONS
+                    foreign_lock   = 1
+                    system_failure = 2
+                    OTHERS         = 3.
+                IF sy-subrc <> 0.
+* Implement suitable error handling here
+                ELSE.
+                  CALL FUNCTION 'DEQUEUE_E_EANL'
+                    EXPORTING
+                      mode_eanl = 'E'
+                      mandt     = sy-mandt
+                      anlage    = v_anlage.
+                  EXIT.
+                ENDIF.
+              ENDDO.
+              PERFORM remove_device_meter USING wa_caufvd
+                                                c_class_egmi
+                                                v_anlage
+                                                v_actdate
+                                                c_action_02
+                                                wa_equi_meter
+                                                i_char_val_egmi
+                                                wa_klah_egmi
+                                                v_acttime
+                                       CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_regulator
+              WAIT UP TO 30 SECONDS.
+*       unlock the installation
+              DO 1000 TIMES.
+                CALL FUNCTION 'ENQUEUE_E_EANL'
+                  EXPORTING
+                    mode_eanl      = 'E'
+                    anlage         = v_anlage
+                  EXCEPTIONS
+                    foreign_lock   = 1
+                    system_failure = 2
+                    OTHERS         = 3.
+                IF sy-subrc <> 0.
+* Implement suitable error handling here
+                ELSE.
+                  CALL FUNCTION 'DEQUEUE_E_EANL'
+                    EXPORTING
+                      mode_eanl = 'E'
+                      mandt     = sy-mandt
+                      anlage    = v_anlage.
+                  EXIT.
+                ENDIF.
+              ENDDO.
+              PERFORM remove_device_regulator USING c_class_effr
+                                                    wa_caufvd
+                                                    c_anlage_initial "CR 2767
+                                                    v_anlage "9728
+                                                    v_logiknr
+                                                    c_kombinat_d
+                                                    v_actdate
+                                                    c_action_02 "CR 2767
+                                                    i_char_val_effr
+                                                    wa_klah_effr
+                                                    wa_equi_reg
+                                                    i_notif_item
+                                                    v_anlart
+                                           CHANGING v_error.
+            ENDIF.
+          WHEN c_priok_c. " Removal of GCM only(considered as a corrector)
+            PERFORM get_installation_type_gas
+              USING
+                wa_caufvd-tplnr
+                v_actdate
+                c_bypass_buffer-yes
+              CHANGING
+                wa_gas_installation_type_data.
+
+            IF v_error NE 'X'. " validate_gcm
+              PERFORM validate_gcm USING c_class_egcm
+                                         wa_caufvd
+                                         i_notif_item
+                                         c_kombinat_m
+                                         v_actdate
+                                CHANGING v_anlage
+                                         v_anlart
+                                         v_logiknr
+                                         i_char_val_egcm
+                                         wa_klah_egcm
+                                         wa_equi_gcm
+                                         v_error
+                                         v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_gas_meter
+              PERFORM validate_gas_meter USING c_class_egmi
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_anlage
+                                               v_logiknr
+                                               v_actdate
+                                      CHANGING i_char_val_egmi
+                                               wa_klah_egmi
+                                               wa_equi_meter
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_corrector
+              IF wa_gas_installation_type_data-corrector IS NOT INITIAL.
+                PERFORM validate_corrector USING c_class_evci
+                                                 wa_caufvd
+                                                 i_notif_item
+                                                 c_kombinat_m
+                                                 v_actdate
+                                        CHANGING v_anlage
+                                                 v_anlart
+                                                 v_logiknr
+                                                 i_char_val_evci
+                                                 wa_klah_evci
+                                                 wa_equi_corr
+                                                 v_error
+                                                 v_valid_err.
+              ENDIF.
+            ENDIF.
+            IF v_error NE 'X'. " validate_gcm_read_variance
+              IF wa_gas_installation_type_data-corrector IS NOT INITIAL.
+                PERFORM validate_gcm_read_variance USING c_chara_egcm_elec_read
+                                                         i_char_val_egcm
+                                                         c_chara_evci_vcrind
+                                                         i_char_val_evci
+                                                CHANGING v_error
+                                                         v_valid_err.
+              ENDIF.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_equi_gcm-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number
+              PERFORM get_installation_number USING wa_equi_gcm-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                           CHANGING v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+            ENDIF.
+            IF v_error NE 'X'. " reverse_meter_read
+              PERFORM reverse_meter_read USING v_anlage
+                                               v_actdate
+                                               c_reason_09
+                                      CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " device_meter_change_reggroup
+              IF wa_gas_installation_type_data-corrector IS INITIAL.
+                PERFORM device_meter_change_reggroup USING wa_equi_meter
+                                                           wa_equi_gcm
+                                                           wa_caufvd
+                                                           i_char_val_egmi
+                                                           v_actdate
+                                                           v_anlage
+                                                  CHANGING v_error.
+              ENDIF.
+            ENDIF.
+            IF v_error NE 'X'. " make_bill_relevant
+              IF wa_gas_installation_type_data-corrector IS NOT INITIAL.
+                PERFORM make_readable USING wa_gas_installation_type_data-corrector
+                                            wa_equi_gcm-equnr                         "rparashu
+                                            c_register_id-gas-corrected_standard_cubic_feet
+                                            v_actdate
+                                   CHANGING v_error.
+              ENDIF.
+            ENDIF.
+            IF v_error NE 'X'. " make_readable
+              IF wa_gas_installation_type_data-corrector IS NOT INITIAL.
+                PERFORM make_bill_relevant USING wa_gas_installation_type_data-corrector
+                                            c_register_id-gas-corrected_standard_cubic_feet
+                                            v_actdate
+                                   CHANGING v_error.
+
+              ENDIF.
+            ENDIF.
+            IF v_error NE 'X'. " align_gm_logical_register
+              IF wa_gas_installation_type_data-corrector IS INITIAL.
+                PERFORM align_gm_logical_register USING wa_equi_meter
+                                                        wa_equi_gcm
+                                                        v_actdate
+                                                        v_anlage
+                                                        wa_caufvd
+                                                        i_char_val_egmi
+                                                        c_class_egmi
+                                                        i_char_val_egcm
+                                                        c_class_egcm
+                                                        c_action_02
+                                               CHANGING v_error.
+              ELSE.
+                PERFORM align_gm_logical_register USING wa_equi_corr
+                                                        wa_equi_gcm
+                                                        v_actdate
+                                                        v_anlage
+                                                        wa_caufvd
+                                                        i_char_val_evci
+                                                        c_class_evci
+                                                        i_char_val_egcm
+                                                        c_class_egcm
+                                                        c_action_02
+                                               CHANGING v_error.
+              ENDIF.
+            ENDIF.
+
+            lv_original_activity_date = v_actdate.
+            " Using this original activity date approach just in case
+            " one of the called subroutines directly access v_actdate,
+            " rather than the parameter being passed.
+            IF  wa_gas_installation_type_data-corrector IS NOT INITIAL
+            AND wa_gas_installation_type_data-gcm_active = abap_false.
+              " Moving back a day since the removal cannot be done on
+              " the activity date because of the 29 meter read entered
+              " for the logical register adjustment.
+              v_actdate = v_actdate + 1.
+            ENDIF.
+
+            IF v_error NE 'X'. " remove_device_corrector (gcm)
+              PERFORM remove_device_corrector USING c_class_egcm
+                                                    wa_caufvd
+                                                    v_anlage
+                                                    v_logiknr
+                                                    c_kombinat_m
+                                                    v_actdate
+                                                    c_action_02
+                                                    i_char_val_egcm
+                                                    wa_klah_egcm
+                                                    wa_equi_gcm
+                                                    i_notif_item
+                                           CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_type_gas, create_device_allocation, change_installation_type
+              PERFORM get_installation_type_gas
+                USING
+                  wa_caufvd-tplnr
+                  v_actdate
+                  c_bypass_buffer-yes
+                CHANGING
+                  wa_gas_installation_type_data.
+
+              IF  wa_gas_installation_type_data-corrector IS NOT INITIAL
+              AND wa_gas_installation_type_data-regulator IS NOT INITIAL.
+                wa_equi_reg-equnr = wa_gas_installation_type_data-regulator.
+
+                PERFORM create_device_allocation USING wa_caufvd-tplnr
+                                                       v_anlage
+                                                       wa_equi_reg
+                                                       v_actdate.
+              ENDIF.
+
+              PERFORM change_installation_type USING v_anlage
+                                                     wa_gas_installation_type_data-installation_type
+                                                     v_actdate
+                                            CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " delete_giu_association
+              PERFORM delete_giu_association USING wa_equi_meter
+                                                   wa_equi_gcm
+                                          CHANGING v_error.
+            ENDIF.
+
+            v_actdate = lv_original_activity_date.
+          WHEN c_priok_b_demolition_wo_ffreg. " Removal of meter, corrector, and GCM (and non-fixed factor regulator if applicable)
+            PERFORM get_installation_type_gas
+              USING
+                wa_caufvd-tplnr
+                v_actdate
+                c_bypass_buffer-yes
+              CHANGING
+                wa_gas_installation_type_data.
+
+            IF v_error NE 'X'. " validate_gcm
+              PERFORM validate_gcm USING c_class_egcm
+                                         wa_caufvd
+                                         i_notif_item
+                                         c_kombinat_m
+                                         v_actdate
+                                CHANGING v_anlage
+                                         v_anlart
+                                         v_logiknr
+                                         i_char_val_egcm
+                                         wa_klah_egcm
+                                         wa_equi_gcm
+                                         v_error
+                                         v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_gas_meter
+              PERFORM validate_gas_meter USING c_class_egmi
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_anlage
+                                               v_logiknr
+                                               v_actdate
+                                      CHANGING i_char_val_egmi
+                                               wa_klah_egmi
+                                               wa_equi_meter
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_corrector
+              PERFORM validate_corrector USING c_class_evci
+                                               wa_caufvd
+                                               i_notif_item
+                                               c_kombinat_m
+                                               v_actdate
+                                      CHANGING v_anlage
+                                               v_anlart
+                                               v_logiknr
+                                               i_char_val_evci
+                                               wa_klah_evci
+                                               wa_equi_corr
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_gcm_read_variance
+              PERFORM validate_gcm_read_variance USING c_chara_egcm_elec_read
+                                                       i_char_val_egcm
+                                                       c_chara_evci_vcrind
+                                                       i_char_val_evci
+                                              CHANGING v_error
+                                                       v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_equi_gcm-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number, reverse_meter_read, remove_device_corrector (gcm)
+              PERFORM get_installation_number USING wa_caufvd-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                          CHANGING  v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+              IF v_error NE 'X'.
+                PERFORM reverse_meter_read USING v_anlage
+                                                 v_actdate
+                                                 c_reason_09
+                                        CHANGING v_error.
+              ENDIF.
+              PERFORM remove_device_corrector USING c_class_egcm
+                                                    wa_caufvd
+                                                    v_anlage
+                                                    v_logiknr
+                                                    c_kombinat_m
+                                                    v_actdate
+                                                    c_action_02
+                                                    i_char_val_egcm
+                                                    wa_klah_egcm
+                                                    wa_equi_gcm
+                                                    i_notif_item
+                                           CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_corrector
+              PERFORM remove_device_corrector USING c_class_evci
+                                        wa_caufvd
+                                        v_anlage
+                                        v_logiknr
+                                        c_kombinat_m
+                                        v_actdate
+                                        c_action_02
+                                        i_char_val_evci
+                                        wa_klah_evci
+                                        wa_equi_corr
+                                        i_notif_item
+                               CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_meter
+              PERFORM remove_device_meter USING wa_caufvd
+                                                c_class_egmi
+                                                v_anlage
+                                                v_actdate
+                                                c_action_02
+                                                wa_equi_meter
+                                                i_char_val_egmi
+                                                wa_klah_egmi
+                                                v_acttime
+                                       CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " delete_giu_association
+              PERFORM delete_giu_association USING wa_equi_meter
+                                                   wa_equi_gcm
+                                          CHANGING v_error.
+            ENDIF.
+          WHEN c_priok_e_demolition_w_ffreg. " Removal of meter, fixed factor regulator, corrector, and GCM
+            PERFORM get_installation_type_gas
+              USING
+                wa_caufvd-tplnr
+                v_actdate
+                c_bypass_buffer-yes
+              CHANGING
+                wa_gas_installation_type_data.
+
+            IF v_error NE 'X'. " validate_gcm
+              PERFORM validate_gcm USING c_class_egcm
+                                         wa_caufvd
+                                         i_notif_item
+                                         c_kombinat_m
+                                         v_actdate
+                                CHANGING v_anlage
+                                         v_anlart
+                                         v_logiknr
+                                         i_char_val_egcm
+                                         wa_klah_egcm
+                                         wa_equi_gcm
+                                         v_error
+                                         v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_gas_meter
+              PERFORM validate_gas_meter USING c_class_egmi
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_anlage
+                                               v_logiknr
+                                               v_actdate
+                                      CHANGING i_char_val_egmi
+                                               wa_klah_egmi
+                                               wa_equi_meter
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_regulator
+              PERFORM validate_regulator USING c_class_effr
+                                               wa_caufvd
+                                               i_notif_item
+                                               c_kombinat_d
+                                               v_actdate
+                                      CHANGING v_anlage
+                                               v_anlart
+                                               v_logiknr
+                                               i_char_val_effr
+                                               wa_klah_effr
+                                               wa_equi_reg
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_corrector
+              PERFORM validate_corrector USING c_class_evci
+                                               wa_caufvd
+                                               i_notif_item
+                                               c_kombinat_m
+                                               v_actdate
+                                      CHANGING v_anlage
+                                               v_anlart
+                                               v_logiknr
+                                               i_char_val_evci
+                                               wa_klah_evci
+                                               wa_equi_corr
+                                               v_error
+                                               v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " validate_gcm_read_variance
+              PERFORM validate_gcm_read_variance USING c_chara_egcm_elec_read
+                                                       i_char_val_egcm
+                                                       c_chara_evci_vcrind
+                                                       i_char_val_evci
+                                              CHANGING v_error
+                                                       v_valid_err.
+            ENDIF.
+            IF v_error NE 'X'. " check_activity_date
+              PERFORM check_activity_date USING wa_equi_gcm-equnr
+                          CHANGING v_actdate
+                                   v_error
+                                   v_error_body
+                                   v_error_txt.
+            ENDIF.
+            IF v_error NE 'X'. " get_installation_number, reverse_meter_read, remove_device_corrector (gcm)
+              PERFORM get_installation_number USING wa_caufvd-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                          CHANGING  v_anlage
+                                                    v_logiknr
+                                                    v_anlart
+                                                    v_error.
+              IF v_error NE 'X'.
+                PERFORM reverse_meter_read USING v_anlage
+                                                 v_actdate
+                                                 c_reason_09
+                                        CHANGING v_error.
+              ENDIF.
+              PERFORM remove_device_corrector USING c_class_egcm
+                                                    wa_caufvd
+                                                    v_anlage
+                                                    v_logiknr
+                                                    c_kombinat_m
+                                                    v_actdate
+                                                    c_action_02
+                                                    i_char_val_egcm
+                                                    wa_klah_egcm
+                                                    wa_equi_gcm
+                                                    i_notif_item
+                                           CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_corrector
+              PERFORM remove_device_corrector USING c_class_evci
+                                        wa_caufvd
+                                        v_anlage
+                                        v_logiknr
+                                        c_kombinat_m
+                                        v_actdate
+                                        c_action_02
+                                        i_char_val_evci
+                                        wa_klah_evci
+                                        wa_equi_corr
+                                        i_notif_item
+                               CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_meter
+              PERFORM remove_device_meter USING wa_caufvd
+                                                c_class_egmi
+                                                v_anlage
+                                                v_actdate
+                                                c_action_02
+                                                wa_equi_meter
+                                                i_char_val_egmi
+                                                wa_klah_egmi
+                                                v_acttime
+                                       CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " remove_device_regulator
+              PERFORM remove_device_regulator USING c_class_effr
+                                                    wa_caufvd
+                                                    c_anlage_initial "CR 2767
+                                                    v_anlage "9728
+                                                    v_logiknr
+                                                    c_kombinat_d
+                                                    v_actdate
+                                                    c_action_02 "CR 2767
+                                                    i_char_val_effr
+                                                    wa_klah_effr
+                                                    wa_equi_reg
+                                                    i_notif_item
+                                                    v_anlart
+                                           CHANGING v_error.
+            ENDIF.
+            IF v_error NE 'X'. " delete_giu_association
+              PERFORM delete_giu_association USING wa_equi_meter
+                                                   wa_equi_gcm
+                                          CHANGING v_error.
+            ENDIF.
+          WHEN OTHERS.
+        ENDCASE.
+      WHEN OTHERS.
+    ENDCASE.
+  ENDIF.
+
+  IF v_error IS INITIAL AND (
+      p_refdata-old_ilart = c_dln_activity_type_1 OR
+      p_refdata-old_ilart = c_dln_activity_type_2 ).
+    PERFORM add_inst_devloc_note USING wa_caufvd-aufnr
+                                       wa_caufvd-tplnr
+                                       v_anlage
+                              CHANGING v_error
+                                       v_error_txt
+                                       v_error_body.
+  ENDIF.
+
+  IF v_error IS INITIAL.
+    CALL FUNCTION 'Z_UPDATE_DEVLOC_NOTE'
+      EXPORTING
+        p_aufnr      = p_aufnr
+      IMPORTING
+        v_err_txt    = v_error_txt
+        v_err        = v_error
+        v_err_body   = v_error_body
+        v_sparte     = v_sparte
+      EXCEPTIONS
+        order_locked = 1
+        OTHERS       = 2.
+  ENDIF.
+
+  v_err = v_error.
+  CONCATENATE v_error_txt p_aufnr INTO v_err_txt SEPARATED BY space.
+  IF v_error_body NE c_err_initial.
+    v_err_body = v_error_body.
+  ELSE.
+    v_err_body = v_err_txt.
+  ENDIF.
+ENDFUNCTION.

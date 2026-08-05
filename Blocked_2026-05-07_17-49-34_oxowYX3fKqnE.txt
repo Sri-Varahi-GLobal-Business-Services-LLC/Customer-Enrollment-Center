@@ -1,0 +1,7 @@
+The file was blocked since it contained data that is not allowed to be downloaded.
+----------------------------------------------------------------------------------
+Original file name: Customer Move-IN Screen details.docx
+Original file size in bytes: 4253172
+Original file sha256 checksum: 0594f26fc92c276697513013e9bfc8cab8064e523ff01bc7ce89ff7d20dcedf2
+----------------------------------------------------------------------------------
+File downloads from a device that is not owned by the company have been restricted. Please contact the IT Service Desk for more information.

@@ -1,0 +1,156 @@
+FUNCTION zpgm_ec_getenrollment.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IS_ATTR) TYPE  ZSPGMEN_ATTR
+*"  TABLES
+*"      ET_RETURN STRUCTURE  BAPIRET2 OPTIONAL
+*"      ET_ENROLL STRUCTURE  ZTPGM_ENROLL
+*"      ET_ENROLL_HIS STRUCTURE  ZTPGM_ENROLL
+*"----------------------------------------------------------------------
+  DATA:
+*        lv_zahlkond TYPE kondzahl,
+    ls_csdd     TYPE zscsdd_eligible,
+    ls_plan     TYPE zsplan_changecsdd,
+    ls_chdoc    TYPE cdred,
+    ls_chdoc_hi TYPE cdred,
+    ls_chdoc_h1 TYPE cdred,
+    lv_tabix    TYPE sytabix,
+    ls_enroll   TYPE ztpgm_enroll.
+  CONSTANTS: lc_dy(2)   TYPE c VALUE 'DY',
+             lc_ce(2)   TYPE c VALUE 'CE',
+             lc_ce21(4) TYPE c VALUE 'CE21'.
+
+  REFRESH: gt_csdd, gt_pay_terms, gt_enroll, gt_chdoc,
+           gt_plan.
+
+  CALL FUNCTION 'ZPGM_EC_GETPGMID'.
+
+  CHECK gt_progid[] IS NOT INITIAL.
+
+* Get Enrollment
+  SELECT *
+    INTO TABLE gt_enroll
+    FROM ztpgm_enroll
+    FOR ALL ENTRIES IN gt_progid
+  WHERE zenrlbp = is_attr-zenrlbp
+  AND   zenrlca = is_attr-zenrlca
+  AND   zpgm_type = gt_progid-zpgm_type
+  AND   zenrlstatus IN ( '001', '002' ).
+
+  ls_csdd-vkont = is_attr-zenrlca.
+  APPEND ls_csdd TO gt_csdd.
+
+* Get CSDD
+  READ TABLE gt_progid
+    WITH KEY zpgm_type = 'CSDD'
+  TRANSPORTING NO FIELDS.
+  IF sy-subrc = 0.
+* Get CSDD Enrollment
+    CALL FUNCTION 'ZRFC_BIBL_CSDD_ELIGIBLE'
+      EXPORTING
+        iv_all_pay_terms = abap_true
+      TABLES
+        lt_chdoc         = gt_chdoc
+        lt_plan          = gt_plan
+      CHANGING
+        ct_eligible      = gt_csdd
+        ct_pay_terms     = gt_pay_terms.
+
+    SORT gt_chdoc BY udate utime DESCENDING.
+    DELETE gt_pay_terms
+    WHERE payment_terms = lc_ce21.
+
+** Get Contract account payment plan
+*    SELECT SINGLE zahlkond
+*      INTO lv_zahlkond
+*      FROM fkkvkp
+*    WHERE vkont = is_attr-zenrlca
+*    AND   gpart = is_attr-zenrlbp.
+*
+** Check return code
+*    IF sy-subrc = 0.
+    READ TABLE gt_pay_terms
+      WITH KEY payment_terms = is_attr-tofpaym
+    TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0.
+
+      IF gt_plan[] IS INITIAL.
+        CLEAR ls_chdoc.
+        LOOP AT gt_chdoc INTO ls_chdoc
+          WHERE f_old EQ lc_ce21
+          AND   f_new CS lc_dy.
+          EXIT.
+        ENDLOOP.
+        ls_enroll-zenrlbp      = is_attr-zenrlbp.
+        ls_enroll-zenrlca      = is_attr-zenrlca.
+        ls_enroll-zpgm_type    = 'CSDD'.
+        ls_enroll-zenrlstatus  = '002'.
+        ls_enroll-zenrl_reqdat = ls_chdoc-udate.
+        ls_enroll-zenrl_dat    = ls_chdoc-udate.
+        APPEND ls_enroll TO gt_enroll.
+      ELSE.
+        CLEAR ls_plan.
+        LOOP AT gt_plan INTO ls_plan
+          WHERE f_old EQ lc_ce21
+          AND   f_new CS lc_dy.
+          EXIT.
+        ENDLOOP.
+        ls_enroll-zenrlbp      = is_attr-zenrlbp.
+        ls_enroll-zenrlca      = is_attr-zenrlca.
+        ls_enroll-zpgm_type    = 'CSDD'.
+        ls_enroll-zenrlstatus  = '002'.
+        ls_enroll-zenrl_reqdat = ls_plan-udate.
+        ls_enroll-zenrl_dat    = ls_plan-udate.
+        APPEND ls_enroll TO gt_enroll.
+
+      ENDIF.
+
+    ENDIF.
+*    ENDIF.
+  ENDIF.
+
+  et_enroll[] = gt_enroll[].
+
+* Get History
+  SELECT *
+    INTO TABLE et_enroll_his
+    FROM ztpgm_enroll
+ FOR ALL ENTRIES IN gt_progid
+  WHERE zenrlbp = is_attr-zenrlbp
+  AND   zenrlca = is_attr-zenrlca
+  AND   zpgm_type = gt_progid-zpgm_type
+  AND   zenrlstatus NOT IN ( '001', '002' ).
+
+  delete et_enroll_his where zenrlstatus = '003'.
+
+  CLEAR: ls_chdoc_hi,ls_chdoc_h1, lv_tabix.
+  SORT gt_chdoc BY udate utime ASCENDING.
+  LOOP AT gt_chdoc INTO ls_chdoc_hi
+    FROM lv_tabix
+    WHERE f_old EQ lc_ce21
+    AND   f_new CS lc_dy.
+    lv_tabix = sy-tabix.
+
+    LOOP AT gt_chdoc INTO ls_chdoc_h1
+        FROM lv_tabix
+        WHERE f_old CS lc_dy
+        AND   f_new EQ lc_ce21.
+      lv_tabix = sy-tabix.
+
+      CLEAR ls_enroll.
+      ls_enroll-zenrlbp      = is_attr-zenrlbp.
+      ls_enroll-zenrlca      = is_attr-zenrlca.
+      ls_enroll-zpgm_type    = 'CSDD'.
+      ls_enroll-zenrlstatus  = '004'.
+      ls_enroll-zenrl_reqdat = ls_chdoc_hi-udate.
+      ls_enroll-zenrl_dat    = ls_chdoc_hi-udate.
+      ls_enroll-zenrl_dedat  = ls_chdoc_h1-udate.
+      APPEND ls_enroll TO et_enroll_his.
+      EXIT.
+    ENDLOOP.
+
+
+  ENDLOOP.
+
+ENDFUNCTION.

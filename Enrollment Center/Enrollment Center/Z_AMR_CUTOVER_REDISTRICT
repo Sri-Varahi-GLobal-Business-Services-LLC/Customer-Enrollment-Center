@@ -1,0 +1,35 @@
+FUNCTION z_amr_cutover_redistrict.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(I_OPTION) TYPE  SYST_UCOMM
+*"     REFERENCE(IT_DATA) TYPE  ZTT_CO_REDIST_DETAIL
+*"----------------------------------------------------------------------
+  DATA:ls_data TYPE zstr_co_redist_detail,
+       lv_co,lv_rd.
+
+  CASE i_option.
+    WHEN 'COVR'.
+      lv_co = abap_true.
+    WHEN 'CORD'.
+      lv_co = abap_true.
+      lv_rd = abap_true.
+    WHEN 'RDST'.
+      lv_rd = abap_true.
+  ENDCASE.
+
+
+  CALL FUNCTION 'Z_AMR_CUTOVER'
+    EXPORTING
+      it_data = it_data
+      co_flg  = lv_co
+      rd_flg  = lv_rd.
+
+
+*  IF i_option EQ 'RDST' OR i_option EQ 'CORD'. "Just Redistricting or both cotover and redistricting
+*
+**    CALL FUNCTION 'Z_AMR_REDISTRICT'
+**      EXPORTING
+**        it_data       = it_data.
+*  ENDIF.
+ENDFUNCTION.

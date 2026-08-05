@@ -1,0 +1,29 @@
+METHOD ZIF_BC_PARALLEL_UNIT~PROCESS_UNIT.
+
+  DATA:
+    lt_import         TYPE ztt_mdmod_mass_devmod,
+    lt_export         TYPE ztt_mdmod_parallel_job_return,
+    lT_biLLINS_DATA   TYPE tt_register_customization.
+
+* Importing Input Data
+  IF me->t_input IS INITIAL.
+    zcl_bc_parallel_job=>convert_xstring_to_data( EXPORTING mc_xstring  = mc_import
+                                                  IMPORTING mv_data     = lt_import ).
+  ELSE.
+    lt_import = me->t_input.
+    REFRESH me->t_input.
+  ENDIF.
+
+* Device changes wrapper
+  CALL METHOD me->perform_dev_chg_wrapper
+    EXPORTING
+      it_import = lt_import
+    IMPORTING
+      et_export = lt_export.
+
+* Exporting log data
+  zcl_bc_parallel_job=>convert_data_to_xstring( EXPORTING mc_data     = lt_export
+                                                IMPORTING mv_xstring  = mv_export ).
+
+ENDMETHOD.
+

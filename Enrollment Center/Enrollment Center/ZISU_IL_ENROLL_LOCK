@@ -1,0 +1,49 @@
+FUNCTION ZISU_IL_ENROLL_LOCK .
+*"----------------------------------------------------------------------
+*"*"Global Interface:
+*"  IMPORTING
+*"     VALUE(IS_KEY) TYPE  ZSPGM_KEY
+*"  TABLES
+*"      ET_RETURN STRUCTURE  BAPIRET2 OPTIONAL
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM is created for DPP Enrollment
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  CALL FUNCTION 'ENQUEUE_EZTPGM_ENROLL'
+    EXPORTING
+      mode_ztpgm_enroll = 'E'
+      mandt             = sy-mandt
+      zenrlbp           = is_key-zenrlbp
+      zenrlca           = is_key-zenrlca
+      zpgm_type         = is_key-zpgm_type
+      zenrl_reqdat      = is_key-zenrl_reqdat
+      x_zenrlbp         = ' '
+      x_zenrlca         = ' '
+      x_zpgm_type       = ' '
+      x_zenrl_reqdat    = ' '
+      _scope            = '2'
+      _wait             = ' '
+      _collect          = ' '
+    EXCEPTIONS
+      foreign_lock      = 1
+      system_failure    = 2
+      OTHERS            = 3.
+
+  IF SY-SUBRC <> 0.
+    PERFORM MESSAGE_COLLECT CHANGING ET_RETURN[].
+  ENDIF.
+
+ENDFUNCTION.
+

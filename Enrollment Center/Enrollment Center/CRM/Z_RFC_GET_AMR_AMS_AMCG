@@ -1,0 +1,64 @@
+FUNCTION Z_RFC_GET_AMR_AMS_AMCG.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  TABLES
+*"      EX_AMS STRUCTURE  ZSDM_AMS OPTIONAL
+*"      EX_AMS_RANGE STRUCTURE  ZSDM_AMS_RANGE OPTIONAL
+*"      EX_AMCG_CAP_GRP STRUCTURE  ZSDM_AMCG_CAP_GRP OPTIONAL
+*"      EX_AMCG_CAP_GRP_RANGE STRUCTURE  ZSDM_AMCG_CAP_GRP_RANGE
+*"       OPTIONAL
+*"----------------------------------------------------------------------
+
+
+*{   INSERT         ECDK974621                                        1
+  IF r_amr_ams_range IS NOT BOUND.
+    CREATE DATA r_amr_ams_range.
+
+    zcl_range_utility=>simple_range_from_fields(
+      EXPORTING
+        im_low   = c_ams-amr
+      CHANGING
+        ch_range = r_amr_ams_range->*[] ).
+  ENDIF.
+
+  IF r_amr_amcg_cap_grp_range IS NOT BOUND.
+    CREATE DATA r_amr_amcg_cap_grp_range.
+
+    SELECT amcg_cap_grp AS low
+      FROM teami_amcgcap
+      INTO CORRESPONDING FIELDS OF TABLE @r_amr_amcg_cap_grp_range->*
+      WHERE amcg_cap = @c_capability-remote_read.
+
+    FIELD-SYMBOLS: <lwa_amcg_cap_grp_range> LIKE LINE OF r_amr_amcg_cap_grp_range->*.
+
+    LOOP AT r_amr_amcg_cap_grp_range->* ASSIGNING <lwa_amcg_cap_grp_range>.
+      <lwa_amcg_cap_grp_range>-sign   = zcl_range_utility=>c_sign-include.
+      <lwa_amcg_cap_grp_range>-option = zcl_range_utility=>c_option-equal_to.
+    ENDLOOP.
+  ENDIF.
+
+  IF ex_ams IS SUPPLIED.
+    LOOP AT r_amr_ams_range->* INTO DATA(lwa_ams_range).
+      APPEND lwa_ams_range-low TO ex_ams.
+    ENDLOOP.
+  ENDIF.
+
+  IF ex_ams_range IS SUPPLIED.
+    ex_ams_range[] = r_amr_ams_range->*[].
+  ENDIF.
+
+  IF ex_amcg_cap_grp IS SUPPLIED.
+    LOOP AT r_amr_amcg_cap_grp_range->* INTO DATA(lwa_amcg_cap_grp_range).
+      APPEND lwa_amcg_cap_grp_range-low TO ex_amcg_cap_grp.
+    ENDLOOP.
+  ENDIF.
+
+  IF ex_amcg_cap_grp_range IS SUPPLIED.
+    ex_amcg_cap_grp_range[] = r_amr_amcg_cap_grp_range->*[].
+  ENDIF.
+*}   INSERT
+
+
+
+ENDFUNCTION.
+

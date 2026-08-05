@@ -1,0 +1,75 @@
+FUNCTION zisu_il_enroll_get.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_KEY) TYPE  ZSPGM_KEY
+*"     VALUE(I_READ_FROM_BUFFER) TYPE  BOOLEAN DEFAULT 'X'
+*"  EXPORTING
+*"     VALUE(ES_ENROLL) TYPE  ZTPGM_ENROLL
+*"  TABLES
+*"      ET_RETURN STRUCTURE  BAPIRET2
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM is created for DPP Enrollment
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  CONSTANTS co_false TYPE c VALUE '-'.
+  CONSTANTS co_true  TYPE c VALUE 'X'.
+
+
+  DATA: ls_buf_enroll    LIKE LINE OF gt_buf_enroll,
+        ls_error_message TYPE bapiret2.
+
+*  first check if order exists in app buffer
+  PERFORM get_enroll_from_app_buffer
+            USING
+               iv_key
+            CHANGING
+               ls_buf_enroll
+               ls_error_message.
+
+  IF i_read_from_buffer = co_true AND ls_buf_enroll IS NOT INITIAL.
+*    *  read_from_buffer
+    es_enroll = ls_buf_enroll-attr.
+
+  ELSE.
+    ls_buf_enroll-bufkey = iv_key.
+*  Get Enrollment Data
+    SELECT SINGLE *
+      INTO ls_buf_enroll-attr
+      FROM ztpgm_enroll
+    WHERE zenrlbp    = iv_key-zenrlbp
+    AND zenrlca      = iv_key-zenrlca
+    AND zpgm_type    = iv_key-zpgm_type
+    AND zenrl_reqdat = iv_key-zenrl_reqdat.
+
+    es_enroll = ls_buf_enroll-attr.
+
+*   Check return code
+    CHECK sy-subrc = 0.
+*   Get Interface Data
+    SELECT SINGLE *
+      INTO ls_buf_enroll-int_attr
+      FROM ztpgm_int_data
+    WHERE zenrlbp    = iv_key-zenrlbp
+    AND zenrlca      = iv_key-zenrlca
+    AND zpgm_type    = iv_key-zpgm_type
+    AND zenrl_date   = iv_key-zenrl_reqdat.
+
+*   update buffer
+    PERFORM update_app_buffer USING ls_buf_enroll.
+
+  ENDIF.
+
+ENDFUNCTION.

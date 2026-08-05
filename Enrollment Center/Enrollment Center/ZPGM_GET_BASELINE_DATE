@@ -1,0 +1,40 @@
+FUNCTION zpgm_get_baseline_date.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(I_ITEM_GUID) TYPE  GUID_16 OPTIONAL
+*"     VALUE(I_CRM_PRODUCT) TYPE  ESALES_CRM_PRODUCT OPTIONAL
+*"     VALUE(I_ANLAGE) TYPE  ANLAGE
+*"  EXPORTING
+*"     VALUE(E_LAST_ENDABRPE) TYPE  ENDABRPE
+*"     VALUE(E_VKONT) TYPE  VKONT_KK
+*"----------------------------------------------------------------------
+  DATA: ls_everh          TYPE everh.
+
+* Get Installation Date
+  CALL FUNCTION 'Z_INST_LAST_BILL_DATE'
+    EXPORTING
+      i_anlage        = i_anlage
+    IMPORTING
+      e_last_endabrpe = e_last_endabrpe
+      e_vkont         = e_vkont.
+
+* Get Date for De-enrollment
+  CHECK i_crm_product = 'RS_1000'.
+
+* Get Program type
+  SELECT SINGLE *
+    INTO ls_everh
+    FROM everh
+  WHERE anlage = i_anlage
+  AND   contractpos = i_item_guid.
+
+* Check return code
+  CHECK  sy-subrc = 0 AND
+         ( ls_everh-crm_product = 'RS_1007' OR
+           ls_everh-crm_product = 'RS_1008' ).
+
+  e_last_endabrpe = sy-datum.
+
+ENDFUNCTION.
+

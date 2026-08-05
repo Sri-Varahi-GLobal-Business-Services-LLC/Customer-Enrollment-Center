@@ -1,0 +1,111 @@
+FUNCTION zisu_il_enroll_create.
+*"----------------------------------------------------------------------
+*"*"Global Interface:
+*"  IMPORTING
+*"     VALUE(IS_ENROLL_CREATE) TYPE  ZSPGM_CREATE
+*"  EXPORTING
+*"     VALUE(E_ENROLL_KEY) TYPE  ZSPGM_KEY
+*"  TABLES
+*"      ET_RETURN STRUCTURE  BAPIRET2 OPTIONAL
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM is created for DPP Enrollment
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  DATA:         lt_return2 TYPE bapiret2_t,
+                ls_return2 TYPE bapiret2,
+                lv_ok      LIKE sy-batch.
+
+  lv_ok = 'X'.
+  CLEAR gs_create.
+  gs_create = is_enroll_create.
+
+  IF is_enroll_create-zenrlbp IS INITIAL.
+* No order without a customer!
+    CALL FUNCTION 'BALW_BAPIRETURN_GET2'
+      EXPORTING
+        type   = 'E'
+        cl     = 'ZPGM_ENROLL'
+        number = '003'
+      IMPORTING
+        return = ls_return2.
+    APPEND ls_return2 TO lt_return2.
+    CLEAR lv_ok.
+  ENDIF.
+
+  IF is_enroll_create-zenrlca IS INITIAL.
+* No order without a customer!
+    CALL FUNCTION 'BALW_BAPIRETURN_GET2'
+      EXPORTING
+        type   = 'E'
+        cl     = 'ZPGM_ENROLL'
+        number = '005'
+      IMPORTING
+        return = ls_return2.
+    APPEND ls_return2 TO lt_return2.
+    CLEAR lv_ok.
+  ENDIF.
+
+  IF is_enroll_create-zpgm_type IS INITIAL.
+* No order without a customer!
+    CALL FUNCTION 'BALW_BAPIRETURN_GET2'
+      EXPORTING
+        type   = 'E'
+        cl     = 'ZPGM_ENROLL'
+        number = '002'
+      IMPORTING
+        return = ls_return2.
+    APPEND ls_return2 TO lt_return2.
+    CLEAR lv_ok.
+  ENDIF.
+
+  IF is_enroll_create-zenrl_reqdat IS INITIAL.
+* No order without a customer!
+    CALL FUNCTION 'BALW_BAPIRETURN_GET2'
+      EXPORTING
+        type   = 'E'
+        cl     = 'ZPGM_ENROLL'
+        number = '007'
+      IMPORTING
+        return = ls_return2.
+    APPEND ls_return2 TO lt_return2.
+    CLEAR lv_ok.
+  ENDIF.
+
+  IF is_enroll_create-zenrlsdp IS INITIAL.
+* No order without a customer!
+    CALL FUNCTION 'BALW_BAPIRETURN_GET2'
+      EXPORTING
+        type   = 'E'
+        cl     = 'ZPGM_ENROLL'
+        number = '008'
+      IMPORTING
+        return = ls_return2.
+    APPEND ls_return2 TO lt_return2.
+    CLEAR lv_ok.
+  ENDIF.
+
+  IF lv_ok IS NOT INITIAL.
+
+*   Populate enrollment and interface data
+    PERFORM pop_enroll_data CHANGING e_enroll_key.
+
+
+  ENDIF.
+
+
+* Export messages
+  et_return[] = lt_return2[].
+
+ENDFUNCTION.

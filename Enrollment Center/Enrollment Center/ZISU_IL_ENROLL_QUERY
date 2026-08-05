@@ -1,0 +1,173 @@
+FUNCTION zisu_il_enroll_query.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IS_FINDPAR) TYPE  ZSPGM_SEARCH
+*"     VALUE(IV_MAX_HITS) TYPE  I OPTIONAL
+*"  EXPORTING
+*"     VALUE(E_INCOMPLETE) TYPE  FLAG
+*"     VALUE(E_INSUFFICIENT_SELECTION) TYPE  FLAG
+*"  TABLES
+*"      ET_PGM_ENROLL STRUCTURE  ZSPGM_KEY
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM is created for DPP Enrollment
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  DATA: lv_partner   TYPE bu_partner,
+        lv_ca        TYPE vkont_kk,
+        lv_devloc    TYPE zenrlsdp,
+        lv_date(10)  TYPE c,
+        i_where      TYPE rsds_where,
+        i_where_line TYPE sychar72. " LIKE LINE OF i_where-where_tab[],
+
+
+  CLEAR: et_pgm_enroll[].
+
+  IF iv_max_hits IS NOT INITIAL.
+    g_maxrows = iv_max_hits.
+  ELSE.
+    g_maxrows = 500.
+  ENDIF.
+
+  IF is_findpar-zenrlbp IS NOT INITIAL.
+
+*Remove trailing zeros in parameters.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING
+        input  = is_findpar-zenrlbp
+      IMPORTING
+        output = lv_partner.
+
+    i_where_line = |ZENRLBP = | &&
+               cl_abap_dyn_prg=>quote_str( lv_partner ).
+    APPEND i_where_line TO i_where-where_tab[].
+  ENDIF.
+
+  IF is_findpar-zenrlca IS NOT INITIAL.
+
+*Remove trailing zeros in parameters.
+    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+      EXPORTING
+        input  = is_findpar-zenrlca
+      IMPORTING
+        output = lv_ca.
+
+    IF i_where-where_tab[] IS NOT INITIAL.
+      i_where_line = | AND |.
+      APPEND i_where_line TO i_where-where_tab[].
+
+    ENDIF.
+    i_where_line = |ZENRLCA = | &&
+               cl_abap_dyn_prg=>quote_str( lv_ca ).
+    APPEND i_where_line TO i_where-where_tab[].
+  ENDIF.
+
+  IF is_findpar-zpgm_type IS NOT INITIAL.
+    IF i_where-where_tab[] IS NOT INITIAL.
+      i_where_line = | AND |.
+      APPEND i_where_line TO i_where-where_tab[].
+
+    ENDIF.
+
+    i_where_line = 'ZPGM_TYPE' && | = | &&
+                       cl_abap_dyn_prg=>quote_str( is_findpar-zpgm_type ).
+    APPEND i_where_line TO i_where-where_tab[].
+  ENDIF.
+
+  CLEAR lv_date.
+  lv_date = is_findpar-zenrl_reqdat.
+  IF is_findpar-zenrl_reqdat IS NOT INITIAL.
+    IF i_where-where_tab[] IS NOT INITIAL.
+      i_where_line = | AND |.
+      APPEND i_where_line TO i_where-where_tab[].
+
+    ENDIF.
+    i_where_line = 'ZENRL_REQDAT' && | = | &&
+                       cl_abap_dyn_prg=>quote_str( lv_date ).
+    APPEND i_where_line TO i_where-where_tab[].
+  ENDIF.
+
+*  IF is_findpar-ZENRL_DAT IS NOT INITIAL.
+*    i_where_line = 'ZENRL_DAT' && | = | &&
+*                       cl_abap_dyn_prg=>quote_str( is_findpar-ZENRL_DAT ).
+*    APPEND i_where_line TO i_where-where_tab[].
+*  ENDIF.
+
+*    IF is_findpar-ZENRL_DEDAT IS NOT INITIAL.
+*    i_where_line = 'ZENRL_DEDAT' && | = | &&
+*                       cl_abap_dyn_prg=>quote_str( is_findpar-ZENRL_DEDAT ).
+*    APPEND i_where_line TO i_where-where_tab[].
+*  ENDIF.
+
+*  IF is_findpar-zenrlstatus IS NOT INITIAL.
+*    i_where_line = 'ZENRLSTATUS' && | = | &&
+*                       cl_abap_dyn_prg=>quote_str( is_findpar-zenrlstatus ).
+*    APPEND i_where_line TO i_where-where_tab[].
+*  ENDIF.
+
+*  IF is_findpar-zenrlstatus_E IS NOT INITIAL.
+*    i_where_line = 'ZENRLSTATUS' && | <> | &&
+*                       cl_abap_dyn_prg=>quote_str( is_findpar-zenrlstatus ).
+*    APPEND i_where_line TO i_where-where_tab[].
+*  ENDIF.
+
+*  IF is_findpar-zenrlsdp IS NOT INITIAL.
+*
+**Remove trailing zeros in parameters.
+*    CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+*      EXPORTING
+*        input  = is_findpar-zenrlsdp
+*      IMPORTING
+*        output = lv_devloc.
+*
+*    i_where_line = |ZENRLSDP = | &&
+*               cl_abap_dyn_prg=>quote_str( lv_devloc ).
+*    APPEND i_where_line TO i_where-where_tab[].
+*  ENDIF.
+*  IF is_findpar-zenrldrms_stat IS NOT INITIAL.
+*    i_where_line = 'ZENRLDRMS_STAT' && | = | &&
+*                       cl_abap_dyn_prg=>quote_str( is_findpar-zenrldrms_stat ).
+*    APPEND i_where_line TO i_where-where_tab[].
+*  ENDIF.
+
+*    IF is_findpar-ZDRMS_DAT IS NOT INITIAL.
+*    i_where_line = 'ZDRMS_DAT' && | = | &&
+*                       cl_abap_dyn_prg=>quote_str( is_findpar-ZDRMS_DAT ).
+*    APPEND i_where_line TO i_where-where_tab[].
+*  ENDIF.
+
+*  IF is_findpar-zcrtby IS NOT INITIAL.
+*    i_where_line = i_where_line  && 'ZCRTBY' && | = | &&
+*                       cl_abap_dyn_prg=>quote_str( is_findpar-zcrtby ).
+*    APPEND i_where_line TO i_where-where_tab[].
+*  ENDIF.
+
+*    IF is_findpar-ZCRTDAT IS NOT INITIAL.
+*    i_where_line = 'ZCRTDAT' && | = | &&
+*                       cl_abap_dyn_prg=>quote_str( is_findpar-ZCRTDAT ).
+*    APPEND i_where_line TO i_where-where_tab[].
+*  ENDIF.
+
+
+* Check for initial
+  CHECK i_where-where_tab[] IS NOT INITIAL.
+
+  SELECT zenrlbp zenrlca zpgm_type zenrl_reqdat
+    INTO TABLE et_pgm_enroll
+    FROM ztpgm_enroll
+  WHERE (i_where-where_tab[]).
+
+ENDFUNCTION.
+

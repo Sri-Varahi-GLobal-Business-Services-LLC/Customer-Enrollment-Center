@@ -1,0 +1,64 @@
+FUNCTION Z_REG_AMCG_PROFILE_UPDATE .
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_SERNR) TYPE  GERNR
+*"     VALUE(IV_MATNR) TYPE  MATNR
+*"     VALUE(IV_INSTALLATION) TYPE  ANLAGE
+*"     VALUE(IV_DEVLOC) TYPE  DEVLOC
+*"     VALUE(IV_TARIFTYP) TYPE  TARIFTYP OPTIONAL
+*"     VALUE(IV_OLD_TARIFTYP) TYPE  TARIFTYP OPTIONAL
+*"     VALUE(IV_AMI_AMCG_CAP_GRP) TYPE  E_AMI_AMCG_CAP_GRP OPTIONAL
+*"     VALUE(IV_ACTVT_DATE) TYPE  SY-DATUM
+*"     VALUE(IV_DEVMODIF) TYPE  FLAG OPTIONAL
+*"     VALUE(IV_PROFCREATE) TYPE  FLAG OPTIONAL
+*"     VALUE(IV_PROFASSIGN) TYPE  FLAG OPTIONAL
+*"     VALUE(IV_PROFSYNC) TYPE  FLAG OPTIONAL
+*"     VALUE(IV_PROFDELLOC) TYPE  FLAG OPTIONAL
+*"     VALUE(IV_APPL_LOG) TYPE  FLAG OPTIONAL
+*"     VALUE(IV_LOG_DISPLAY) TYPE  FLAG OPTIONAL
+*"     VALUE(IV_SEND_EMAIL) TYPE  CHAR01 OPTIONAL
+*"     VALUE(IV_ACTTIME) TYPE  SYTIME OPTIONAL
+*"  EXPORTING
+*"     REFERENCE(ET_RETURN) TYPE  BAPIRET2_T
+*"----------------------------------------------------------------------
+* Name            : Function Module for Automation of AMCG Update,
+*                   Register Addition, Profile Creation,
+*                   Profile Allocation and Profile Synchronization for
+*                   Post Cutover Interval Billing.
+* Author          : Har Mayank Shrivastava
+* Date            : 1st December 2014
+* Type of Program : Function Module
+* Purpose         : Post Cutover Interval Billing
+* Development Class : ZDM_FM
+* ----------------------------------------------------------------------
+*** Author      Date        Change Req#     Task #     Change Driver
+*** Har Mayank 01/12/14      Initial      E2DK935654
+***---------------------------------------------------------------------
+
+  DATA: LR_APP TYPE REF TO ZCL_EDMPROFILE_AUTOMATION.
+
+  LR_APP = ZCL_EDMPROFILE_AUTOMATION=>GET_INSTANCE(
+      IV_ANLAGE       = IV_INSTALLATION
+      IV_MATNR        = IV_MATNR
+      IV_SERNR        = IV_SERNR
+      IV_DEVLOC       = IV_DEVLOC
+      IV_AMCG_CAP_GRP = IV_AMI_AMCG_CAP_GRP
+      IV_TARIFTYP     = IV_TARIFTYP
+      IV_OLD_TARIFTYP = IV_OLD_TARIFTYP
+      IV_DATE         = IV_ACTVT_DATE
+      IV_DEVMODIF     = IV_DEVMODIF
+      IV_PROFCREATE   = IV_PROFCREATE
+      IV_PROFASSIGN   = IV_PROFASSIGN
+      IV_PROFSYNC     = IV_PROFSYNC
+      IV_PROFDELLOC   = IV_PROFDELLOC
+      IV_APPL_LOG     = IV_APPL_LOG
+      IV_LOG_DISPLAY  = IV_LOG_DISPLAY
+      IV_SEND_EMAIL   = IV_SEND_EMAIL
+      IV_ACTTIME      = IV_ACTTIME ).
+
+  REFRESH: ET_RETURN[].
+  ET_RETURN = LR_APP->EXECUTE( ).
+
+ENDFUNCTION.
+

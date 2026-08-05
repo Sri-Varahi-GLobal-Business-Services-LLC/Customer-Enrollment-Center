@@ -1,0 +1,1886 @@
+class ZCL_CS_AMI_UTILITY definition
+  public
+  final
+  create public .
+
+public section.
+*"* public components of class ZCL_CS_AMI_UTILITY
+*"* do not include other source files here!!!
+
+  interfaces BI_OBJECT .
+  interfaces BI_PERSISTENT .
+  interfaces IF_WORKFLOW .
+
+  types:
+    tt_disc_details TYPE STANDARD TABLE OF zbi_disconnection_details .
+  types:
+    tt_disc_data  TYPE STANDARD TABLE OF emg_ddc_header .
+  types:
+    tt_ediscact           TYPE STANDARD TABLE OF ediscact WITH DEFAULT KEY .
+  types:
+    tt_ediscobj           TYPE STANDARD TABLE OF ediscobj WITH DEFAULT KEY .
+  types:
+    tt_ediscobjh          TYPE STANDARD TABLE OF ediscobjh WITH DEFAULT KEY .
+  types:
+    tt_ediscpos           TYPE STANDARD TABLE OF ediscpos WITH DEFAULT KEY .
+  types:
+    tt_devcapabilities    TYPE STANDARD TABLE OF eami_smart_meter_capa WITH DEFAULT KEY .
+
+  data LPOR type SIBFLPOR .
+  data DISCON_DATA type ZBI_DISCONNECTION_DETAILS .
+  data DISCON_DETAILS type ZTT_DISCONNECTION_DETAILS .
+  constants CLASS_NAME type SEOCLNAME value 'ZCL_CS_AMI_UTILITY'. "#EC NOTEXT
+  class-data MOVEIN_MOVEOUT_TRIGGER type FLAG value 'X'. "#EC NOTEXT .
+  class-data PROCESS type CHAR10 .
+
+  class-methods IS_INSTALLATION_COMBOACCOUNT
+    importing
+      value(IV_INSTALLATION) type ANLAGE
+    exporting
+      !V_IS_COMBO type FDT_BOOLEAN
+      !EX_CONTRACTS type ISU_EVER_TAB .
+  class-methods IS_INSTALLATION_SMARTMETER
+    importing
+      value(IV_INSTALLATION) type ANLAGE optional
+    returning
+      value(RV_HAS_SMART_METER) type BOOLEAN .
+  class-methods GET_DISCDOC_DATA
+    importing
+      !IV_DISCNO type DISCNO
+    exporting
+      value(EV_INSTALLATION) type ANLAGE
+      value(EV_IS_COMBO_ACCOUNT) type FLAG
+      value(EV_IS_SMART_METER) type FLAG
+      value(ET_EDISCPOS) type TT_EDISCPOS
+      value(ET_EDISCOBJ) type TT_EDISCOBJ
+      value(ET_EDISCOBJH) type TT_EDISCOBJH
+      value(ET_EDISCACT) type TT_EDISCACT
+      value(EV_ISNONSNP) type FLAG .
+  class-methods IS_DISDOC_NONSNP
+    importing
+      value(IV_DISCNO) type DISCNO
+    returning
+      value(RV_IS_NONSNP) type FLAG .
+  methods CONSTRUCTOR
+    importing
+      !IM_DISC_DATA type ZBI_DISCONNECTION_DETAILS optional .
+  class-methods CREATE_OBJECT
+    importing
+      !IM_DISC_DATA type EMG_DDC_HEADER
+    exporting
+      value(EX_INSTANCE) type ref to ZCL_CS_AMI_UTILITY .
+  methods GET_DISCDOC_DETAILS
+    importing
+      !IM_DISC_DATA type TT_DISC_DATA
+    exporting
+      !FINAL_DISC_DETAILS type TT_DISC_DETAILS .
+  class-methods CHECK_IS_SMARTMETER
+    importing
+      value(IV_REFOBJTYPE) type EDC_REFOBJ optional
+      value(IV_REFOBJKEY) type EDC_REFKEY optional
+    returning
+      value(RV_IS_SMART_METER) type FLAG .
+  methods CHANGE_DISCON_ACT_DATE
+    importing
+      !X_DISCNO type DISCNO
+      !X_WORKITEM type EDC_APPROVAL_WORKITEM optional
+      !X_WORKITEM_TYPE type WLITYPE_CM_KK optional
+      !X_APPROVED_DATE type EDC_APPROVED_DATE .
+  class-methods WRITE_EMMA_MESSAGE
+    importing
+      value(IV_OBJECT) type BALOBJ_D
+      value(IV_SUBOBJECT) type BALSUBOBJ
+      value(IV_OPERATION) type EMMA_PROC_LOGOP
+      value(IV_BPAREA) type EMMA_BPAREA
+      value(IV_BPCODE) type EMMA_BPCODE
+      value(IV_TCODE) type TCODE
+      value(IV_OBJTYPE) type SWO_OBJTYP
+      value(IV_OBJKEY) type CHAR10
+      value(IV_MSGTY) type SYMSGTY
+      value(IV_MSGID) type SYMSGID
+      value(IV_MSGNO) type SYMSGNO
+      value(IV_MSGV1) type SYMSGV optional
+      value(IV_MSGV2) type SYMSGV optional
+      value(IV_MSGV3) type SYMSGV optional
+      value(IV_MSGV4) type SYMSGV optional
+      value(IT_MESSAGES) type ZBPEM_LOG_MESSAGE_TAB optional
+    returning
+      value(RV_IS_SUCCESS) type FLAG .
+  type-pools ISU05 .
+  methods CANCEL_DISCON_ACTIVITY
+    importing
+      !IM_DISCNO type DISCNO
+      !IM_AUTO type ISU05_DISCDOC_AUTO optional
+      !IM_DISCACT type DISCACT optional
+      !IM_CANCEL_ORDER type BOOLEAN optional
+    exporting
+      !EX_DB_UPDATE type E_UPDATE .
+  methods CREATE_DISCON_DOC_ACT_ORDER
+    importing
+      !IM_DISC_ACT_DATE type DISCACTDAT default SY-DATUM
+      !IM_DISC_ACT_TIME type DISCACTTIM default '093000'
+      !IM_DISCON_REASON type DISCREASON optional
+      !IM_REFOBJTYPE type EDC_REFOBJ optional
+      !IM_REFOBJKEY type EDC_REFKEY optional
+    exporting
+      !EX_DISCACT type DISCACT
+    changing
+      !IM_DISCNO type DISCNO optional .
+  class-methods CREATE_NONSNP_SERVICEORDER
+    importing
+      value(IV_DISCDOC) type DISCNO optional
+      value(IV_ANLAGE) type ANLAGE optional
+      value(IV_NOTE) type CHAR200 optional
+      value(IV_EQUNR) type EQUNR optional
+      value(IV_TYPE) type CHAR10 optional
+      !IV_PROCESS type CHAR10
+      !IV_VKONT type VKONT_KK optional
+    returning
+      value(RV_SUCCESS) type FLAG .
+  class-methods GET_NONSNP_ORDERCODE
+    importing
+      !IV_PROCESS type CHAR10
+      !IV_DISCTYPE type ZDISCTYPE
+      !IV_DIVISION type SPARTE
+      value(IV_IS_COMBO) type FLAG default SPACE
+    returning
+      value(RV_ORDER_CODE) type ORDER_CODE .
+  class-methods GET_GAS_DISCNO
+    importing
+      value(IV_VKONTO) type VKONT_KK
+      !IT_CONTRACTS type ISU_EVER_TAB optional
+    returning
+      value(RV_DISCNO) type DISCNO .
+  class-methods CHECK_BP_CURRENT_OCCUPANT
+    importing
+      !I_DISCNO type DISCNO optional
+      !I_ANLAGE type ANLAGE
+      !I_EQUNR type EQUNR optional
+    returning
+      value(E_CURRENT_OCCUPANT) type BOOLEAN .
+protected section.
+*"* protected components of class ZCL_CS_AMI_UTILITY
+*"* do not include other source files here!!!
+private section.
+*"* private components of class ZCL_CS_AMI_UTILITY
+*"* do not include other source files here!!!
+
+  types:
+    BEGIN OF  t_wa_instance_buffer,
+      instid  TYPE zbi_disconnection_details, "EMG_DDC_HEADER,
+      object  TYPE REF TO zcl_cs_ami_utility,
+    END OF t_wa_instance_buffer .
+  types:
+    t_i_instance_buffer TYPE SORTED TABLE OF t_wa_instance_buffer WITH UNIQUE KEY instid .
+
+  class-data _INSTANCE_BUFFER type T_I_INSTANCE_BUFFER .
+ENDCLASS.
+
+
+
+CLASS ZCL_CS_AMI_UTILITY IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->BI_OBJECT~DEFAULT_ATTRIBUTE_VALUE
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] RESULT                         TYPE REF TO DATA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD bi_object~default_attribute_value.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Sarat
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Value of Default "Attribute" (as Data Reference)
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Sarat    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+  GET REFERENCE OF me->lpor-instid INTO result.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->BI_OBJECT~EXECUTE_DEFAULT_METHOD
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+method BI_OBJECT~EXECUTE_DEFAULT_METHOD.
+endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->BI_OBJECT~RELEASE
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+method BI_OBJECT~RELEASE.
+endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>BI_PERSISTENT~FIND_BY_LPOR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] LPOR                           TYPE        SIBFLPOR
+* | [<-()] RESULT                         TYPE REF TO BI_PERSISTENT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD bi_persistent~find_by_lpor.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Sarat
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Find Using Local Persistent Object Reference
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Sarat    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+  DATA:
+       loref_object        TYPE REF TO zcl_cs_ami_utility,
+       lwa_instance_buffer TYPE t_wa_instance_buffer,
+       loref_error           TYPE REF TO cx_bo_error,
+       lv_key              TYPE zbi_disconnection_details.
+
+  CONSTANTS : lc_alphabets TYPE string VALUE 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+              lc_underscore TYPE c VALUE '_'.
+
+
+  IF lpor-instid CA lc_alphabets.
+    SPLIT lpor-instid AT lc_underscore INTO lv_key-refobjtype lv_key-refobjkey IN CHARACTER MODE.
+  ELSE.
+    lv_key-discno = lpor-instid(22).
+  ENDIF.
+
+  READ TABLE _instance_buffer INTO lwa_instance_buffer
+       WITH TABLE KEY instid = lv_key.
+  IF sy-subrc <> 0 AND ( NOT lv_key IS INITIAL ).
+    TRY.
+        CREATE OBJECT loref_object
+          EXPORTING
+            im_disc_data = lv_key.
+
+        IF lines( loref_object->discon_details ) GT 1.
+          LOOP AT loref_object->discon_details INTO lwa_instance_buffer-instid.
+            lwa_instance_buffer-object ?= loref_object.
+            INSERT lwa_instance_buffer INTO TABLE _instance_buffer.
+          ENDLOOP.
+        ELSE.
+          READ TABLE loref_object->discon_details INTO loref_object->discon_data INDEX 1.
+            lwa_instance_buffer-instid = loref_object->discon_data.
+            lwa_instance_buffer-object ?= loref_object.
+            INSERT lwa_instance_buffer INTO TABLE _instance_buffer.
+        ENDIF.
+      CATCH cx_bo_error.
+        loref_error->IF_MESSAGE~GET_TEXT( ).
+    ENDTRY.
+  ENDIF.
+
+  result ?= lwa_instance_buffer-object.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->BI_PERSISTENT~LPOR
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] RESULT                         TYPE        SIBFLPOR
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+method BI_PERSISTENT~LPOR.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Sarat
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Local Persistent Object Referencee
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Sarat    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+    result = me->lpor.
+endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->BI_PERSISTENT~REFRESH
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+method BI_PERSISTENT~REFRESH.
+endmethod.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->CANCEL_DISCON_ACTIVITY
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_DISCNO                      TYPE        DISCNO
+* | [--->] IM_AUTO                        TYPE        ISU05_DISCDOC_AUTO(optional)
+* | [--->] IM_DISCACT                     TYPE        DISCACT(optional)
+* | [--->] IM_CANCEL_ORDER                TYPE        BOOLEAN(optional)
+* | [<---] EX_DB_UPDATE                   TYPE        E_UPDATE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD cancel_discon_activity.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Cancel Disconnection Activity
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  CALL FUNCTION 'Z_ISU_S_DISCDOC_CAN_ACTIVITY'
+    EXPORTING
+      x_discno           = im_discno
+      x_auto             = im_auto
+      x_discact          = im_discact
+      x_cancel_order     = im_cancel_order
+    IMPORTING
+      y_db_update        = ex_db_update
+    EXCEPTIONS
+      not_found          = 1
+      foreign_lock       = 2
+      not_authorized     = 3
+      input_error        = 4
+      general_fault      = 5
+      object_inv_discdoc = 6
+      OTHERS             = 7.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+     WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->CHANGE_DISCON_ACT_DATE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] X_DISCNO                       TYPE        DISCNO
+* | [--->] X_WORKITEM                     TYPE        EDC_APPROVAL_WORKITEM(optional)
+* | [--->] X_WORKITEM_TYPE                TYPE        WLITYPE_CM_KK(optional)
+* | [--->] X_APPROVED_DATE                TYPE        EDC_APPROVED_DATE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD change_discon_act_date.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Change Disconnection Activity Date
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+  CONSTANTS :
+      lc_e TYPE c VALUE 'E'.
+
+  "change the Diconnection Order date
+  CALL FUNCTION 'Z_ISU_S_DISCDOC_CHANGE_DATE'
+    EXPORTING
+      x_discno         = x_discno
+      x_workitem       = x_workitem
+      x_workitem_type  = x_workitem_type
+      x_approved_date  = x_approved_date
+      x_stat_no_update = abap_true
+    EXCEPTIONS
+      foreign_lock     = 1
+      not_authorized   = 2
+      general_fault    = 3
+      error            = 4
+      OTHERS           = 5.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+    MESSAGE text-008 TYPE lc_e."'error occured'(008)
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>CHECK_BP_CURRENT_OCCUPANT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] I_DISCNO                       TYPE        DISCNO(optional)
+* | [--->] I_ANLAGE                       TYPE        ANLAGE
+* | [--->] I_EQUNR                        TYPE        EQUNR(optional)
+* | [<-()] E_CURRENT_OCCUPANT             TYPE        BOOLEAN
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD check_bp_current_occupant.
+
+  CONSTANTS:
+    c_current_occupant TYPE but000-name_first VALUE 'CURRENT OCCUPANT'.
+
+  DATA:
+     lv_name_first  TYPE but000-name_first,
+
+     lwa_ever       TYPE ever,
+     lwa_fkkvkp     TYPE fkkvkp.
+
+  SELECT SINGLE * FROM ever
+    INTO lwa_ever
+    WHERE anlage = i_anlage
+      AND einzdat LE sy-datum
+      AND auszdat GE sy-datum.
+  IF sy-subrc = 0.
+    SELECT SINGLE * FROM fkkvkp
+      INTO lwa_fkkvkp
+      WHERE vkont = lwa_ever-vkonto.
+    IF sy-subrc = 0.
+      SELECT SINGLE name_first
+        INTO lv_name_first
+        FROM but000
+       WHERE partner = lwa_fkkvkp-gpart
+         AND name_first = c_current_occupant.
+      IF sy-subrc = 0.
+        e_current_occupant = abap_true.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>CHECK_IS_SMARTMETER
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_REFOBJTYPE                  TYPE        EDC_REFOBJ(optional)
+* | [--->] IV_REFOBJKEY                   TYPE        EDC_REFKEY(optional)
+* | [<-()] RV_IS_SMART_METER              TYPE        FLAG
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD check_is_smartmeter.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Check is Smart Meter
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  DATA:
+      lv_vkonto TYPE vkont_kk,
+      lv_equnr  TYPE equnr,
+      lv_anlage TYPE anlage.
+
+  DATA:
+     li_devcapabilities TYPE tab_eami_smart_meter_capa.
+*     lw_devcapabilities TYPE eami_smart_meter_capa.
+*     ls_amcg            TYPE e_ami_amcg_cap_grp,
+
+  CONSTANTS :  co_flag   TYPE c VALUE 'X',
+               lc_01     TYPE sparte VALUE 1,
+               co_value1 TYPE n VALUE '1',
+               co_value2 TYPE n VALUE '2'.
+
+
+  CLEAR :
+   lv_vkonto,lv_equnr,lv_anlage,li_devcapabilities.
+
+  IF iv_refobjtype EQ text-003."ISUACCOUNT
+
+    lv_vkonto = iv_refobjkey.
+    "fetch installation
+    SELECT  anlage
+       INTO lv_anlage
+       FROM  ever
+       WHERE vkonto  = lv_vkonto
+        AND  sparte  = lc_01  "Electric Installation
+        AND  auszdat GE sy-datum.
+    ENDSELECT.
+    IF sy-subrc = 0.
+      rv_is_smart_meter = zcl_cs_ami_utility=>is_installation_smartmeter( iv_installation = lv_anlage ).
+    ENDIF.
+
+  ELSEIF iv_refobjtype EQ text-001."'INSTLN  "check smart meter
+
+    lv_anlage = iv_refobjkey.
+    rv_is_smart_meter = zcl_cs_ami_utility=>is_installation_smartmeter( iv_installation = lv_anlage ).
+
+  ELSEIF iv_refobjtype EQ text-002."DEVICE.
+
+    lv_equnr = iv_refobjkey.
+
+    IF lv_equnr IS NOT INITIAL.
+
+      "Check  meter is smart meter or not
+      CALL METHOD cl_isu_ami_dm_manager=>determine_ami_relevant_data
+        EXPORTING
+          x_equnr             = lv_equnr
+        IMPORTING
+*         y_amcg_cap_grp      = ls_amcg
+          yt_ami_capabilities = li_devcapabilities.
+
+      LOOP AT li_devcapabilities TRANSPORTING NO FIELDS  WHERE ( capabilities = co_value1 OR capabilities = co_value2 )
+                                                           AND   ams_relevant = co_flag AND amcg_relevant = co_flag.
+        EXIT.
+      ENDLOOP.
+*
+*      READ TABLE li_devcapabilities INTO lw_devcapabilities  WITH KEY capabilities = co_value1 ."AND ams_relevant = co_flag AND amcg_relevant = co_flag.
+*      IF sy-subrc = 0.
+*
+*
+*      ENDIF.
+      IF sy-subrc EQ 0.
+        rv_is_smart_meter = co_flag.
+*        EXIT.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->CONSTRUCTOR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_DISC_DATA                   TYPE        ZBI_DISCONNECTION_DETAILS(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD constructor.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Constructor
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  DATA:
+    li_disc_input   TYPE tt_disc_data,
+    li_disc_details TYPE tt_disc_details,
+    ls_disc_input   TYPE emg_ddc_header.
+
+  CONSTANTS : lc_cl TYPE sibfcatid VALUE 'CL'.
+
+
+  IF NOT im_disc_data-discno IS INITIAL.
+    me->lpor-instid = im_disc_data-discno.
+    ls_disc_input-discno = im_disc_data-discno.
+  ELSEIF NOT im_disc_data-refobjtype IS INITIAL.
+    me->lpor-instid = |{ im_disc_data-refobjtype }_{ im_disc_data-refobjkey }|.
+    ls_disc_input-refobjtype = im_disc_data-refobjtype.
+    ls_disc_input-refobjkey  = im_disc_data-refobjkey.
+  ENDIF.
+
+  APPEND ls_disc_input TO li_disc_input.
+
+  CALL METHOD me->get_discdoc_details
+    EXPORTING
+      im_disc_data       = li_disc_input
+    IMPORTING
+      final_disc_details = li_disc_details.
+
+  me->lpor-catid     = lc_cl.
+  me->lpor-typeid    = zcl_cs_ami_utility=>class_name.
+  me->discon_details = li_disc_details.
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->CREATE_DISCON_DOC_ACT_ORDER
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_DISC_ACT_DATE               TYPE        DISCACTDAT (default =SY-DATUM)
+* | [--->] IM_DISC_ACT_TIME               TYPE        DISCACTTIM (default ='093000')
+* | [--->] IM_DISCON_REASON               TYPE        DISCREASON(optional)
+* | [--->] IM_REFOBJTYPE                  TYPE        EDC_REFOBJ(optional)
+* | [--->] IM_REFOBJKEY                   TYPE        EDC_REFKEY(optional)
+* | [<---] EX_DISCACT                     TYPE        DISCACT
+* | [<-->] IM_DISCNO                      TYPE        DISCNO(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD create_discon_doc_act_order.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Create Disconnection doc and Activity with Status '13'
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  DATA:
+     lv_objtype    TYPE swo_objtyp,
+     lv_objkey     TYPE swo_typeid,
+     lv_discno     TYPE discno,
+*     lv_etype      TYPE exit_type,
+     ls_ediscdoc   TYPE ediscdoc,
+     lr_disconnect TYPE swc_object.
+
+  CONSTANTS : lc_disconactivitydate  TYPE string VALUE 'DisconActivityDate',
+              lc_disconactivitytime  TYPE string VALUE 'DisconActivityTime',
+              lc_darkcreateofdcorder TYPE string VALUE 'DarkCreateOfDcorder',
+              lc_disconnectactivity  TYPE string VALUE 'DISCONNECTACTIVITY'.
+
+  CLEAR : lv_objtype,lv_objkey,lv_discno,ls_ediscdoc,lr_disconnect.
+
+  FIELD-SYMBOLS:
+      <lf_discon_data> TYPE zbi_disconnection_details.
+
+  IF im_discno IS INITIAL.
+    CALL FUNCTION 'ISU_S_DISCDOC_CREATE'
+      EXPORTING
+*       X_DISCNO       =
+        x_discreason   = im_discon_reason
+        x_refobjtype   = im_refobjtype
+        x_refobjkey    = im_refobjkey
+        x_upd_online   = abap_true
+        x_no_dialog    = abap_true
+*       X_AUTO         =
+      IMPORTING
+*       Y_DB_UPDATE    =
+*       y_exit_type    = lv_etype
+        y_new_ediscdoc = ls_ediscdoc
+      EXCEPTIONS
+        existing       = 1
+        foreign_lock   = 2
+        not_authorized = 3
+        input_error    = 4
+        general_fault  = 5
+        OTHERS         = 6.
+    IF ( sy-subrc = 0 ) AND ( NOT ls_ediscdoc IS INITIAL ).
+
+      IF im_refobjtype EQ  text-001."'INSTLN'.
+
+        IF NOT me->discon_details IS INITIAL.
+
+          SORT discon_details BY anlage ASCENDING.
+          READ TABLE me->discon_details ASSIGNING  <lf_discon_data>
+                                        WITH KEY anlage = im_refobjkey
+                                        BINARY SEARCH.
+          IF sy-subrc = 0.
+            <lf_discon_data>-discno = ls_ediscdoc-discno.
+            <lf_discon_data>-discprocv  = im_refobjtype.
+            <lf_discon_data>-discreason = im_discon_reason.
+            <lf_discon_data>-refobjtype = im_refobjtype.
+            <lf_discon_data>-refobjkey  = im_refobjkey.
+          ENDIF.
+        ELSE.
+          me->discon_data-discno     = ls_ediscdoc-discno.
+          me->discon_data-discprocv  = im_refobjtype.
+          me->discon_data-discreason = im_discon_reason.
+          me->discon_data-refobjtype = im_refobjtype.
+          me->discon_data-refobjkey  = im_refobjkey.
+        ENDIF.
+      ENDIF.
+
+      lv_discno = ls_ediscdoc-discno.
+    ENDIF.
+  ELSE.
+    lv_discno = im_discno.
+  ENDIF.
+
+
+  IF NOT lv_discno IS INITIAL.
+    lv_objtype = text-007."'DISCONNECT'
+    lv_objkey  = lv_discno .
+
+    swc_create_object lr_disconnect lv_objtype lv_objkey.
+    swc_container container.
+
+    swc_clear_container container.
+    swc_set_element container lc_disconactivitydate im_disc_act_date.
+    IF sy-subrc = 0.
+      swc_set_element container lc_disconactivitytime im_disc_act_time.
+    ENDIF.
+    IF  sy-subrc = 0.
+      swc_call_method lr_disconnect 'DarkCreateOfDcorder' container.
+    ENDIF.
+    swc_get_element container lc_disconnectactivity ex_discact.
+    CHECK sy-subrc EQ 0.
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>CREATE_NONSNP_SERVICEORDER
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DISCDOC                     TYPE        DISCNO(optional)
+* | [--->] IV_ANLAGE                      TYPE        ANLAGE(optional)
+* | [--->] IV_NOTE                        TYPE        CHAR200(optional)
+* | [--->] IV_EQUNR                       TYPE        EQUNR(optional)
+* | [--->] IV_TYPE                        TYPE        CHAR10(optional)
+* | [--->] IV_PROCESS                     TYPE        CHAR10
+* | [--->] IV_VKONT                       TYPE        VKONT_KK(optional)
+* | [<-()] RV_SUCCESS                     TYPE        FLAG
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD create_nonsnp_serviceorder.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          :Create NON-SNP Service Order
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+  CONSTANTS:
+    lc_01 TYPE discobjtyp VALUE '01',
+    lc_03 TYPE discacttyp VALUE '03',
+    lc_10 TYPE edc_ordstat VALUE '10'.
+
+  DATA:
+    lt_contracts  TYPE isu_ever_tab,
+    lt_messages   TYPE bal_t_msg,
+    lt_v_ediscpos TYPE STANDARD TABLE OF v_ediscpos,
+
+    ls_return     TYPE bapiret2,
+    ls_v_ediscpos TYPE v_ediscpos,
+    ls_ediscact   TYPE ediscact,
+    ls_viaufkst   TYPE bapi_alm_order_header_e,
+
+    lv_combo_acct TYPE boolean,
+    lv_nonsnp     TYPE flag,
+    lv_anlage     TYPE anlage,
+    lv_discno     TYPE discno,
+    iv_order_code TYPE order_code,
+    lv_sparte     TYPE sparte,
+    lv_comboacct  TYPE flag.
+
+*  DATA: lv_x TYPE c.
+*  DO.
+*    IF lv_x = 'X'.
+*      EXIT.
+*    ENDIF.
+*  ENDDO.
+
+  "Get Division from installation
+  SELECT sparte
+    FROM eanl
+    INTO lv_sparte
+    WHERE anlage = iv_anlage.
+  ENDSELECT.
+  IF sy-subrc = 0.
+*  check for comboaccount
+    is_installation_comboaccount(
+      EXPORTING
+        iv_installation     =  iv_anlage
+      IMPORTING
+        v_is_combo          =  lv_comboacct
+        ex_contracts        =  lt_contracts ).
+
+*   Check for Snp or NonSnp flag
+    iv_order_code =  get_nonsnp_ordercode( iv_process     = iv_process
+                                           iv_disctype    = iv_type
+                                           iv_division    = lv_sparte
+                                           iv_is_combo    = lv_comboacct ).
+
+* Get Gas service order when contract account is a combo account
+    IF lv_comboacct EQ abap_true.
+*  check if it is NON SNP scenario
+      lv_nonsnp = zcl_cs_ami_utility=>is_disdoc_nonsnp( iv_discdoc ).
+
+*      IF lv_nonsnp = abap_true.
+*    get the gas discno
+        lv_discno = zcl_cs_ami_utility=>get_gas_discno(  iv_vkonto    = iv_vkont
+                                                         it_contracts = lt_contracts ).
+        IF NOT lv_discno IS INITIAL.
+          SELECT *
+            INTO TABLE lt_v_ediscpos
+            FROM v_ediscpos
+            WHERE discno     = lv_discno
+              AND discobjtyp = lc_01 .   "Device
+          IF sy-subrc = 0.
+            SORT lt_v_ediscpos DESCENDING BY discact.
+
+            READ TABLE lt_v_ediscpos INTO ls_v_ediscpos INDEX 1.
+            IF sy-subrc = 0.
+              SELECT SINGLE *
+                FROM ediscact
+                INTO ls_ediscact
+               WHERE discno      =  ls_v_ediscpos-discno
+                 AND discact     =  ls_v_ediscpos-discact
+                 AND discacttyp  =  lc_03
+                 AND ordstate    NE lc_10
+                 AND disccanceld NE abap_true
+                 AND ordernum    NE space.
+              IF sy-subrc = 0.
+                CALL FUNCTION 'IBAPI_ALM_ORDERHEAD_READ'
+                  EXPORTING
+                    iv_orderid         = ls_ediscact-ordernum
+                    iv_ltext_requested = abap_false
+                  IMPORTING
+                    es_header          = ls_viaufkst
+                  TABLES
+                    et_messages        = lt_messages.
+                READ TABLE lt_messages WITH KEY msgty = 'E'
+                  TRANSPORTING NO FIELDS.
+                IF sy-subrc <> 0.
+                  IF ls_viaufkst-pmacttype = 'TON'.
+                    iv_order_code = 'ZTNE'.
+                  ENDIF.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+*      ENDIF.
+    ENDIF.
+
+    "creta Sevice order.
+    CALL FUNCTION 'Z_ISU_DISCDOC_SERVICE_ORDER'
+      EXPORTING
+        i_disconndocnumber   = iv_discdoc
+        i_anlage             = iv_anlage
+        i_order_code         = iv_order_code
+        i_equnr              = iv_equnr
+        i_note               = iv_note
+        i_vkont              = iv_vkont
+        i_process            = iv_type
+      EXCEPTIONS
+        cant_create_job      = 1
+        invalid_job_data     = 2
+        jobname_missing      = 3
+        cant_start_immediate = 4
+        invalid_startdate    = 5
+        job_close_failed     = 6
+        job_nosteps          = 7
+        lock_failed          = 8
+        job_notex            = 9
+        OTHERS               = 10.
+
+    IF sy-subrc = 0.
+      rv_success  = abap_true.
+    ENDIF.
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>CREATE_OBJECT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_DISC_DATA                   TYPE        EMG_DDC_HEADER
+* | [<---] EX_INSTANCE                    TYPE REF TO ZCL_CS_AMI_UTILITY
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD create_object.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Get object instance
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+
+  DATA:
+     lwa_lpor     TYPE sibflpor,
+     loref_object TYPE REF TO bi_persistent.
+
+
+  IF NOT im_disc_data-discno IS INITIAL.
+    lwa_lpor-instid = im_disc_data-discno.
+  ELSEIF NOT im_disc_data-refobjtype IS INITIAL.
+    lwa_lpor-instid = |{ im_disc_data-refobjtype }_{ im_disc_data-refobjkey }|.
+  ENDIF.
+
+  CALL METHOD zcl_cs_ami_utility=>bi_persistent~find_by_lpor
+    EXPORTING
+      lpor   = lwa_lpor
+    RECEIVING
+      result = loref_object.
+
+  ex_instance ?= loref_object.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>GET_DISCDOC_DATA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DISCNO                      TYPE        DISCNO
+* | [<---] EV_INSTALLATION                TYPE        ANLAGE
+* | [<---] EV_IS_COMBO_ACCOUNT            TYPE        FLAG
+* | [<---] EV_IS_SMART_METER              TYPE        FLAG
+* | [<---] ET_EDISCPOS                    TYPE        TT_EDISCPOS
+* | [<---] ET_EDISCOBJ                    TYPE        TT_EDISCOBJ
+* | [<---] ET_EDISCOBJH                   TYPE        TT_EDISCOBJH
+* | [<---] ET_EDISCACT                    TYPE        TT_EDISCACT
+* | [<---] EV_ISNONSNP                    TYPE        FLAG
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD get_discdoc_data.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Sarat
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Get Disconnection Document Details
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Sarat    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  TYPES : BEGIN OF ty_ever,
+           sparte TYPE sparte,
+           anlage TYPE anlage,
+          END OF ty_ever.
+
+  DATA: ls_ediscdoc TYPE ediscdoc,
+        lv_equnr TYPE equnr,
+        ls_ever TYPE ever,
+        lv_vkonto TYPE vkont_kk,
+        lv_anlage TYPE anlage,
+        lt_ever TYPE TABLE OF ty_ever.
+
+  CONSTANTS :
+      lc_cust TYPE discprocv VALUE 'CUST',
+      lc_01   TYPE sparte    VALUE '01',
+      lc_02   TYPE sparte    VALUE '02'.
+
+  CLEAR : lv_anlage,lv_vkonto,lv_equnr,lt_ever,ls_ediscdoc.
+
+  " Get Disconnection document details
+  CALL FUNCTION 'ISU_DB_EDCN_SELECT'
+    EXPORTING
+      x_discno     = iv_discno
+    IMPORTING
+      y_ediscdoc   = ls_ediscdoc
+    TABLES
+      yt_ediscobj  = et_ediscobj
+      yt_ediscobjh = et_ediscobjh
+      yt_ediscact  = et_ediscact
+      yt_ediscpos  = et_ediscpos
+    EXCEPTIONS
+      not_found    = 1
+      system_error = 2
+      OTHERS       = 3.
+
+  IF ( sy-subrc EQ 0 ) AND ( ls_ediscdoc IS NOT INITIAL ).
+
+
+    IF ls_ediscdoc-refobjtype EQ text-003."'ISUACCOUNT'
+
+      lv_vkonto = ls_ediscdoc-refobjkey+0(12).
+      "check Combo Account
+      SELECT sparte
+             anlage
+      INTO TABLE lt_ever
+      FROM  ever
+      WHERE vkonto  = lv_vkonto
+      AND  auszdat GE sy-datum.
+      IF sy-subrc  = 0.
+        SORT lt_ever BY sparte ASCENDING.
+        READ TABLE lt_ever INTO ls_ever WITH KEY sparte = lc_02 "Gas
+                                                 BINARY SEARCH.
+        IF  sy-subrc = 0 AND lines( lt_ever ) = 2.
+          ev_is_combo_account = abap_true.
+        ENDIF.
+        " check whether it is smart meter
+        LOOP AT lt_ever INTO ls_ever WHERE sparte = lc_01." Get Electric Installation
+          EXIT.
+        ENDLOOP.
+        IF sy-subrc = 0.
+          ev_is_smart_meter = zcl_cs_ami_utility=>is_installation_smartmeter( iv_installation = ls_ever-anlage ).
+          ev_installation = ls_ever-anlage.
+        ENDIF.
+      ENDIF.
+
+    ELSEIF ls_ediscdoc-refobjtype EQ text-001."INSTLN  "check Combo Account AND smart meter
+
+      lv_anlage =  ls_ediscdoc-refobjkey.
+      zcl_cs_ami_utility=>is_installation_comboaccount(
+        EXPORTING
+          iv_installation     =   lv_anlage
+        IMPORTING
+          v_is_combo          =  ev_is_combo_account ).
+
+      ev_is_smart_meter   = zcl_cs_ami_utility=>is_installation_smartmeter( iv_installation =  lv_anlage ).
+      ev_installation = lv_anlage.
+
+    ELSEIF ls_ediscdoc-refobjtype EQ text-002."DEVICE
+
+      lv_equnr = ls_ediscdoc-refobjkey.
+      " Get installation from egerh  based on  table eastl by date and logiknr
+      SELECT es~anlage FROM eastl AS es
+      INNER JOIN egerh AS eg
+      ON eg~logiknr = es~logiknr
+      INTO lv_anlage
+      WHERE eg~equnr  = lv_equnr
+      AND ( eg~ab LE sy-datum AND eg~bis GE sy-datum )
+      AND ( es~ab LE sy-datum AND es~bis GE sy-datum ).
+      ENDSELECT.
+      IF sy-subrc = 0.
+        zcl_cs_ami_utility=>is_installation_comboaccount(
+          EXPORTING
+            iv_installation     =   lv_anlage
+          IMPORTING
+            v_is_combo          =   ev_is_combo_account ).
+
+        ev_is_smart_meter   = zcl_cs_ami_utility=>is_installation_smartmeter( iv_installation =  lv_anlage ).
+        ev_installation = lv_anlage.
+      ENDIF.
+    ENDIF.
+
+    " Check Non-SNP process
+    IF ls_ediscdoc-discprocv = lc_cust.
+      ev_isnonsnp = abap_true.
+    ENDIF.
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_CS_AMI_UTILITY->GET_DISCDOC_DETAILS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_DISC_DATA                   TYPE        TT_DISC_DATA
+* | [<---] FINAL_DISC_DETAILS             TYPE        TT_DISC_DETAILS
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD get_discdoc_details.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Disconnection Details
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  TYPES:
+      BEGIN OF t_contract_info,
+        vkonto  TYPE vkont_kk,
+        gpart   TYPE gpart_kk,
+        vertrag TYPE vertrag,
+        sparte  TYPE sparte,
+        anlage  TYPE anlage,
+      END OF t_contract_info,
+
+      BEGIN OF t_equip_info,
+        anlage  TYPE anlage,
+        equnr   TYPE equnr,
+        logiknr TYPE logiknr,
+      END OF t_equip_info,
+
+      BEGIN OF t_discon,
+        discno     TYPE discno,
+        discobj	   TYPE discobj,
+        discobjtyp TYPE discobjtyp,
+        anlage     TYPE anlage,
+        logiknr	   TYPE logiknr,
+        discstate	 TYPE discstate,
+        discprocv	 TYPE discprocv,
+        discreason TYPE discreason,
+        status     TYPE edcdocstat,
+        refobjtype TYPE edc_refobj,
+        refobjkey	 TYPE edc_refkey,
+      END OF t_discon.
+
+  DATA:
+    r_partner          TYPE RANGE OF gpart,
+    r_vkont            TYPE RANGE OF vkont_kk,
+    r_anlage           TYPE RANGE OF anlage,
+    r_vertrag          TYPE RANGE OF vertrag,
+    r_vstelle          TYPE RANGE OF vstelle,
+    r_equnr            TYPE RANGE OF equnr,
+
+    lt_contract_info   TYPE TABLE OF t_contract_info,
+    lt_equip_info      TYPE TABLE OF t_equip_info,
+    lt_devcapabilities TYPE tab_eami_smart_meter_capa,
+    lt_discon          TYPE TABLE OF t_discon,
+
+    ls_range_gpart     LIKE LINE OF r_partner,
+    ls_range_vkont     LIKE LINE OF r_vkont,
+    ls_range_anlage    LIKE LINE OF r_anlage,
+    ls_range_contract  LIKE LINE OF r_vertrag,
+    ls_range_premise   LIKE LINE OF r_vstelle,
+    ls_range_equnr     LIKE LINE OF r_equnr,
+*    ls_amcg            TYPE e_ami_amcg_cap_grp,
+    ls_disc_data       TYPE emg_ddc_header,
+    ls_contract_info   TYPE t_contract_info,
+    ls_equip_info      TYPE t_equip_info,
+    ls_disc_details    TYPE zbi_disconnection_details,
+    ls_discon          TYPE t_discon.
+
+  CLEAR: ls_discon,ls_disc_details,ls_equip_info,ls_contract_info,
+         ls_disc_data,ls_range_equnr,ls_range_premise,
+         ls_range_contract,ls_range_anlage,ls_range_vkont,ls_range_gpart,
+         lt_discon,lt_devcapabilities,lt_equip_info,lt_contract_info,
+         r_partner,r_vkont,r_anlage,r_vertrag,r_vstelle,r_equnr.
+
+  CONSTANTS :
+    lc_i     TYPE c VALUE 'I',
+    lc_eq(2) TYPE c VALUE 'EQ',
+    lc_00    TYPE edcdocstat VALUE '00',
+    lc_20    TYPE edcdocstat VALUE '20',
+    lc_21    TYPE edcdocstat VALUE '21',
+    lc_22    TYPE edcdocstat VALUE '22',
+    lc_1     TYPE e_ami_capabilities VALUE 1,
+    lc_2     TYPE e_ami_capabilities VALUE 2.
+
+
+  LOOP AT im_disc_data INTO ls_disc_data.
+    IF ls_disc_data-refobjtype EQ text-004."ISUPARTNER
+      ls_range_gpart-sign    = lc_i.
+      ls_range_gpart-option  = lc_eq.
+      ls_range_gpart-low     = ls_disc_data-refobjkey.
+      APPEND ls_range_gpart TO r_partner.
+    ELSEIF ls_disc_data-refobjtype EQ text-003."ISUACCOUNT
+      ls_range_vkont-sign    = lc_i.
+      ls_range_vkont-option  = lc_eq.
+      ls_range_vkont-low     = ls_disc_data-refobjkey.
+      APPEND ls_range_vkont TO r_vkont.
+    ELSEIF ls_disc_data-refobjtype EQ  text-005."PREMISE
+      ls_range_premise-sign    = lc_i.
+      ls_range_premise-option  = lc_eq.
+      ls_range_premise-low     = ls_disc_data-refobjkey.
+      APPEND ls_range_premise TO r_vstelle.
+    ELSEIF ls_disc_data-refobjtype EQ text-001."INSTLN
+      ls_range_anlage-sign    = lc_i.
+      ls_range_anlage-option  = lc_eq.
+      ls_range_anlage-low     = ls_disc_data-refobjkey.
+      APPEND ls_range_anlage TO r_anlage.
+    ELSEIF ls_disc_data-refobjtype EQ text-006."CONTRACT'
+      ls_range_contract-sign    = lc_i.
+      ls_range_contract-option  = lc_eq.
+      ls_range_contract-low     = ls_disc_data-refobjkey.
+      APPEND ls_range_contract TO r_vertrag.
+    ELSEIF ls_disc_data-refobjtype EQ text-002."DEVICE
+      ls_range_equnr-sign    = lc_i.
+      ls_range_equnr-option  = lc_eq.
+      ls_range_equnr-low     = ls_disc_data-refobjkey.
+      APPEND ls_range_equnr TO r_equnr.
+    ENDIF.
+  ENDLOOP.
+
+  IF  r_vstelle IS NOT INITIAL
+    OR r_equnr IS NOT INITIAL
+    OR r_anlage IS NOT INITIAL.
+
+    SELECT ea~anlage
+           eg~equnr
+           eg~logiknr
+           FROM eanl AS ea
+           INNER JOIN eastl AS es ON es~anlage = ea~anlage
+           INNER JOIN egerh AS eg ON eg~logiknr = es~logiknr
+           INTO TABLE lt_equip_info
+           WHERE ea~anlage  IN r_anlage
+             AND ea~vstelle IN r_vstelle
+             AND eg~equnr   IN r_equnr
+                AND ( eg~ab LE sy-datum AND eg~bis GE sy-datum )
+                AND ( es~ab LE sy-datum AND es~bis GE sy-datum ).
+
+  ENDIF.
+
+*  IF sy-subrc EQ 0 AND ( lt_equip_info IS NOT INITIAL ) AND
+*       ( r_anlage IS  INITIAL ).
+    LOOP AT lt_equip_info INTO ls_equip_info.
+      ls_range_anlage-sign    = lc_i.
+      ls_range_anlage-option  = lc_eq.
+      ls_range_anlage-low     = ls_equip_info-anlage.
+      APPEND  ls_range_anlage TO r_anlage.
+    ENDLOOP.
+*  ENDIF.
+
+  IF r_partner IS NOT INITIAL OR r_vkont IS NOT INITIAL
+    OR r_vertrag IS NOT INITIAL OR r_anlage IS NOT INITIAL.
+    SELECT fk~vkont
+           fk~gpart
+           ev~vertrag
+           ev~sparte
+           ev~anlage
+           FROM fkkvkp AS fk
+           INNER JOIN ever AS ev
+           ON ev~vkonto = fk~vkont
+           INTO TABLE lt_contract_info
+           WHERE fk~vkont    IN r_vkont
+             AND fk~gpart    IN r_partner
+             AND ev~vertrag  IN r_vertrag
+             AND ev~anlage   IN r_anlage
+             AND  ev~auszdat GE sy-datum.
+  ENDIF.
+
+  IF sy-subrc EQ 0 AND ( lt_equip_info IS INITIAL ) AND ( r_anlage IS INITIAL ).
+    LOOP AT lt_contract_info INTO ls_contract_info.
+      ls_range_anlage-sign    = lc_i.
+      ls_range_anlage-option  = lc_eq.
+      ls_range_anlage-low     = ls_contract_info-anlage.
+      APPEND  ls_range_anlage TO r_anlage.
+    ENDLOOP.
+
+    SELECT ea~anlage
+           eg~equnr
+           eg~logiknr
+           FROM eanl AS ea
+           INNER JOIN eastl AS es ON es~anlage = ea~anlage
+           INNER JOIN egerh AS eg ON eg~logiknr = es~logiknr
+           INTO TABLE lt_equip_info
+           WHERE ea~anlage IN r_anlage
+           AND ( eg~ab LE sy-datum AND eg~bis GE sy-datum )
+           AND ( es~ab LE sy-datum AND es~bis GE sy-datum ).
+
+  ENDIF.
+*  IF ( sy-subrc EQ 0 ) OR ( lt_equip_info IS NOT INITIAL ).
+  IF lt_equip_info IS NOT INITIAL.
+
+    SELECT o~discno o~discobj o~discobjtyp
+           o~anlage o~logiknr o~discstate
+           d~discprocv d~discreason d~status
+           d~refobjtype d~refobjkey
+      FROM ediscobj AS o
+      INNER JOIN ediscdoc AS d
+      ON d~discno = o~discno
+      INTO TABLE lt_discon
+      FOR ALL ENTRIES IN lt_equip_info
+      WHERE o~logiknr = lt_equip_info-logiknr
+        AND ( d~status  = lc_00
+         OR   d~status  = lc_20
+         OR   d~status  = lc_21
+         OR   d~status  = lc_22 ).
+  ENDIF.
+
+  IF sy-subrc NE 0.
+    CLEAR : lt_discon.
+  ENDIF.
+
+  LOOP AT lt_equip_info INTO ls_equip_info.
+    SORT lt_contract_info BY anlage ASCENDING.
+    READ TABLE lt_contract_info INTO ls_contract_info
+                                WITH KEY anlage = ls_equip_info-anlage
+                                BINARY SEARCH.
+
+    SORT lt_discon BY logiknr ASCENDING.
+    READ TABLE lt_discon INTO ls_discon WITH KEY logiknr = ls_equip_info-logiknr
+                                                           BINARY SEARCH.
+    IF sy-subrc = 0.
+      ls_disc_details-discno       = ls_discon-discno.
+      ls_disc_details-discprocv    = ls_discon-discprocv.
+      ls_disc_details-discreason   = ls_discon-discreason.
+      ls_disc_details-disc_status  = ls_discon-status.
+      ls_disc_details-refobjtype   = ls_discon-refobjtype.
+      ls_disc_details-refobjkey    = ls_discon-refobjkey.
+    ENDIF.
+    ls_disc_details-partner = ls_contract_info-gpart.
+    ls_disc_details-vkonto  = ls_contract_info-vkonto.
+    ls_disc_details-anlage  = ls_equip_info-anlage.
+    ls_disc_details-equnr   = ls_equip_info-equnr.
+    ls_disc_details-vertrag = ls_contract_info-vertrag.
+    ls_disc_details-sparte  = ls_contract_info-sparte.
+
+    CALL METHOD cl_isu_ami_dm_manager=>determine_ami_relevant_data
+      EXPORTING
+        x_equnr             = ls_equip_info-equnr
+      IMPORTING
+*       y_amcg_cap_grp      = ls_amcg
+        yt_ami_capabilities = lt_devcapabilities.
+
+    LOOP AT lt_devcapabilities TRANSPORTING NO FIELDS  WHERE ( capabilities = lc_1 OR capabilities = lc_2 )
+                                                         AND   ams_relevant = abap_true AND amcg_relevant = abap_true.
+      EXIT.
+    ENDLOOP.
+    IF sy-subrc EQ 0.
+      ls_disc_details-smart_meter = abap_true.
+    ENDIF.
+    APPEND ls_disc_details TO final_disc_details.
+  ENDLOOP.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>GET_GAS_DISCNO
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_VKONTO                      TYPE        VKONT_KK
+* | [--->] IT_CONTRACTS                   TYPE        ISU_EVER_TAB(optional)
+* | [<-()] RV_DISCNO                      TYPE        DISCNO
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD get_gas_discno.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Get the gas disconnection document number
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+  DATA :
+    lv_logiknr  TYPE logiknr,
+    lv_discno   TYPE discno,
+    lt_ever     TYPE isu_ever_tab,
+    lw_ever     TYPE ever.
+
+  CONSTANTS:
+    lc_bis      TYPE dats      VALUE '99991231',
+    lc_01       TYPE discstate VALUE '01',
+    lc_02       TYPE sparte    VALUE '02'.
+
+  CLEAR : lt_ever.
+
+  IF ( it_contracts IS INITIAL ) AND ( NOT iv_vkonto IS INITIAL ).
+    " Fetch divisions for contract account.
+    SELECT *
+       INTO TABLE lt_ever
+       FROM  ever
+       WHERE vkonto  = iv_vkonto
+       AND  auszdat GE sy-datum.
+
+    IF sy-subrc NE 0.
+      CLEAR : lt_ever.
+    ENDIF.
+  ELSE.
+    lt_ever = it_contracts.
+  ENDIF.
+
+  IF ( sy-subrc EQ 0 ) AND ( lt_ever IS NOT INITIAL ).
+    SORT lt_ever BY sparte ASCENDING.
+    " Check Gas meter is there and 2 installtions are existing for the contract account
+    READ TABLE lt_ever INTO lw_ever WITH KEY sparte = lc_02 BINARY SEARCH. "Gas
+    IF ( sy-subrc = 0 ) AND lines( lt_ever ) GE 2.
+      "select Latest logical No of te installation
+      SELECT  logiknr FROM eastl
+                      INTO lv_logiknr
+                      WHERE anlage = lw_ever-anlage
+                      AND   bis    = lc_bis.
+      ENDSELECT.
+      IF sy-subrc EQ 0.
+        "retrieve the diconnection document of Gas
+        SELECT discno FROM v_ediscobj
+                      INTO lv_discno
+                      WHERE logiknr = lv_logiknr
+                      AND bis       = lc_bis.
+        ENDSELECT.
+      ENDIF.
+      IF sy-subrc EQ 0.
+        rv_discno = lv_discno.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>GET_NONSNP_ORDERCODE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_PROCESS                     TYPE        CHAR10
+* | [--->] IV_DISCTYPE                    TYPE        ZDISCTYPE
+* | [--->] IV_DIVISION                    TYPE        SPARTE
+* | [--->] IV_IS_COMBO                    TYPE        FLAG (default =SPACE)
+* | [<-()] RV_ORDER_CODE                  TYPE        ORDER_CODE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD get_nonsnp_ordercode.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Get Non-SNP Order Code
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  "calling BRF PLUS Decisin table to retrieve the Order Code
+  CONSTANTS:
+    lc_func_id     TYPE if_fdt_types=>id VALUE '68B5999264261EE499D54BBBBA65830E',
+
+    lc_input1       TYPE char30   VALUE  'V_PROCESS',
+    lc_input2       TYPE char30   VALUE  'V_IS_COMBO',
+    lc_input3       TYPE char30   VALUE  'V_DISCTYPE',
+    lc_input4       TYPE char30   VALUE  'V_DIVISION'.
+
+  DATA:
+    loref_function TYPE REF TO if_fdt_function,
+    loref_context  TYPE REF TO if_fdt_context,
+    loref_fdt      TYPE REF TO cx_fdt,
+    lv_text        TYPE string,
+    loref_result   TYPE REF TO if_fdt_result.
+
+  cl_fdt_factory=>destruct_object( ).
+  cl_fdt_factory=>clear_buffers( ).
+
+  loref_function = cl_fdt_factory=>if_fdt_factory~get_instance( )->get_function( lc_func_id ).
+  loref_context  = loref_function->get_process_context( ).
+
+  loref_context->set_value( iv_name  =  lc_input1
+                            ia_value =  iv_process  ).
+
+  loref_context->set_value( iv_name =   lc_input2
+                            ia_value =  iv_is_combo ).
+
+  loref_context->set_value( iv_name  =  lc_input3
+                            ia_value =  iv_disctype ).
+
+  loref_context->set_value( iv_name  =  lc_input4
+                            ia_value =  iv_division ).
+
+  TRY.
+*   Now let us call the function
+      loref_function->process( EXPORTING io_context = loref_context
+                               IMPORTING eo_result  = loref_result ).
+    CATCH cx_fdt INTO loref_fdt.
+      CLEAR : lv_text.
+      lv_text = loref_fdt->if_message~get_text( ).
+  ENDTRY.
+
+
+  loref_result->get_value( IMPORTING ea_value =  rv_order_code ).
+
+
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>IS_DISDOC_NONSNP
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DISCNO                      TYPE        DISCNO
+* | [<-()] RV_IS_NONSNP                   TYPE        FLAG
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD is_disdoc_nonsnp.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Check Disconnection Document is Non-SNP
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+  TYPES : BEGIN OF ty_ediscdoc,
+            discprocv TYPE discprocv,
+            discreason TYPE discreason,
+          END OF ty_ediscdoc.
+
+  DATA: ls_ediscdoc TYPE ty_ediscdoc.
+  CLEAR  :ls_ediscdoc.
+
+  "calling BRF PLUS descision Table
+  CONSTANTS:
+    lc_func_id     TYPE if_fdt_types=>id VALUE '68B5999264261EE499D5487CBC5E4314',
+    lc_active      TYPE char30           VALUE 'V_ACTIVE',
+    lc_99          TYPE edcdocstat       VALUE '99',
+    lc_non_snp     TYPE char10           VALUE 'NON_SNP',
+    lc_input1      TYPE char30           VALUE 'V_DISCDOC_REASON',
+    lc_input2      TYPE char30           VALUE 'V_DISCDOC_VARIANT'.
+
+  DATA:
+    loref_function TYPE REF TO if_fdt_function,
+    loref_context  TYPE REF TO if_fdt_context,
+    loref_fdt      TYPE REF TO cx_fdt,
+    lv_text        TYPE string,
+    loref_result   TYPE REF TO if_fdt_result,
+    lv_process     TYPE char10.
+
+
+  "retrieve Duconnection document data
+  SELECT discprocv
+          discreason
+    FROM ediscdoc
+    INTO ls_ediscdoc
+    WHERE discno = iv_discno
+      AND status <> lc_99.
+  ENDSELECT.
+
+  IF sy-subrc EQ 0 .
+
+    cl_fdt_factory=>destruct_object( ).
+*    cl_fdt_factory=>clear_buffers( ).
+
+    loref_function = cl_fdt_factory=>if_fdt_factory~get_instance( )->get_function( lc_func_id ).
+    loref_context  = loref_function->get_process_context( ).
+
+    loref_context->set_value( iv_name  =  lc_active
+                              ia_value =  abap_true ).
+
+    loref_context->set_value( iv_name  = lc_input1
+                              ia_value = ls_ediscdoc-discreason ).
+
+    loref_context->set_value( iv_name  = lc_input2
+                              ia_value = ls_ediscdoc-discprocv ).
+
+
+    TRY.
+*   Now let us call the  BRF Plus function
+        loref_function->process( EXPORTING io_context = loref_context
+                                 IMPORTING eo_result  = loref_result ).
+
+      CATCH cx_fdt INTO loref_fdt.
+        CLEAR : lv_text.
+        lv_text = loref_fdt->if_message~get_text( ).
+    ENDTRY.
+
+
+    loref_result->get_value( IMPORTING ea_value =  lv_process ).
+
+    IF lv_process = lc_non_snp.
+      rv_is_nonsnp = abap_true.
+    ENDIF.
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>IS_INSTALLATION_COMBOACCOUNT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_INSTALLATION                TYPE        ANLAGE
+* | [<---] V_IS_COMBO                     TYPE        FDT_BOOLEAN
+* | [<---] EX_CONTRACTS                   TYPE        ISU_EVER_TAB
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD is_installation_comboaccount.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Check Installation is a Combo Account
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  DATA :
+   lv_vkonto       TYPE vkont_kk.
+
+  CONSTANTS :
+      lc_02 TYPE sparte VALUE '02'.
+
+  CLEAR : lv_vkonto.
+
+  " Fetch contract account from instalaltion
+  SELECT  vkonto
+    INTO lv_vkonto
+    FROM  ever
+    WHERE anlage  = iv_installation
+      AND auszdat  GE sy-datum.
+  ENDSELECT.
+
+  IF sy-subrc EQ 0.
+    " Fetch divisions for contract account.
+    SELECT * INTO TABLE ex_contracts
+     FROM  ever
+     WHERE vkonto  = lv_vkonto
+      AND  auszdat GE sy-datum.
+    IF sy-subrc EQ 0 .
+      " Check Gas meter is there and 2 installtions are existing for the contract account
+      SORT ex_contracts BY sparte ASCENDING.
+      READ TABLE ex_contracts WITH KEY sparte = lc_02 TRANSPORTING NO FIELDS "Gas
+                                                       BINARY SEARCH.
+      IF ( sy-subrc = 0 ) AND lines( ex_contracts ) GE 2.
+        v_is_combo = abap_true.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>IS_INSTALLATION_SMARTMETER
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_INSTALLATION                TYPE        ANLAGE(optional)
+* | [<-()] RV_HAS_SMART_METER             TYPE        BOOLEAN
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD is_installation_smartmeter.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Check Installation is a Smart Meter
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  DATA:
+    li_devcapabilities TYPE tab_eami_smart_meter_capa,
+    ls_equnr           TYPE equnr.
+*    ls_amcg            TYPE e_ami_amcg_cap_grp,
+
+  CLEAR : li_devcapabilities,ls_equnr.
+
+  CONSTANTS : co_flag   TYPE c VALUE 'X',
+              co_value1 TYPE n VALUE '1',
+              co_value2 TYPE n VALUE '2',
+              co_value3 TYPE n VALUE '3'.
+
+  IF NOT iv_installation IS INITIAL.
+    " Get the EQUNR from egerh  based on  table eastl by date and logiknr
+    SELECT eg~equnr
+       FROM eastl AS es
+        INNER JOIN egerh AS eg
+         ON eg~logiknr = es~logiknr
+       INTO ls_equnr
+        WHERE anlage = iv_installation
+        AND ( eg~ab LE sy-datum AND eg~bis GE sy-datum )
+        AND ( es~ab LE sy-datum AND es~bis GE sy-datum ).
+    ENDSELECT.
+  ENDIF.
+
+  IF sy-subrc EQ 0.
+    "Check  meter is smart meter or not
+    CALL METHOD cl_isu_ami_dm_manager=>determine_ami_relevant_data
+      EXPORTING
+        x_equnr             = ls_equnr
+      IMPORTING
+*       y_amcg_cap_grp      = ls_amcg
+        yt_ami_capabilities = li_devcapabilities.
+
+    LOOP AT li_devcapabilities TRANSPORTING NO FIELDS WHERE ( capabilities = co_value1    "Remote Disconnection
+                                                           OR capabilities = co_value2    "Remote Reconnection
+                                                           OR capabilities = co_value3  ) "Remote Meter Reading
+                                                         AND   ams_relevant = co_flag AND amcg_relevant = co_flag.
+      EXIT.
+    ENDLOOP.
+    IF sy-subrc EQ 0.
+      rv_has_smart_meter = co_flag.
+*      EXIT.
+    ENDIF.
+  ENDIF.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_CS_AMI_UTILITY=>WRITE_EMMA_MESSAGE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_OBJECT                      TYPE        BALOBJ_D
+* | [--->] IV_SUBOBJECT                   TYPE        BALSUBOBJ
+* | [--->] IV_OPERATION                   TYPE        EMMA_PROC_LOGOP
+* | [--->] IV_BPAREA                      TYPE        EMMA_BPAREA
+* | [--->] IV_BPCODE                      TYPE        EMMA_BPCODE
+* | [--->] IV_TCODE                       TYPE        TCODE
+* | [--->] IV_OBJTYPE                     TYPE        SWO_OBJTYP
+* | [--->] IV_OBJKEY                      TYPE        CHAR10
+* | [--->] IV_MSGTY                       TYPE        SYMSGTY
+* | [--->] IV_MSGID                       TYPE        SYMSGID
+* | [--->] IV_MSGNO                       TYPE        SYMSGNO
+* | [--->] IV_MSGV1                       TYPE        SYMSGV(optional)
+* | [--->] IV_MSGV2                       TYPE        SYMSGV(optional)
+* | [--->] IV_MSGV3                       TYPE        SYMSGV(optional)
+* | [--->] IV_MSGV4                       TYPE        SYMSGV(optional)
+* | [--->] IT_MESSAGES                    TYPE        ZBPEM_LOG_MESSAGE_TAB(optional)
+* | [<-()] RV_IS_SUCCESS                  TYPE        FLAG
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD write_emma_message.
+*&
+* Name              : Utility Class for AMI Customer Service
+* Author            : Riyas/Vinay
+* Date              : 11/04/2014
+* FRICE ID          : CS_ENH_RTF_014
+* Type of Program   : Method
+* Development Class : ZCC_ENH
+*  Purpose          : Write BPEM message
+*----------------------------------------------------------------------
+* Modification Log                Place latest at top :
+*----------------------------------------------------------------------
+* Author      Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------
+* Riyas    11/04/2014     E2DK934883     Initial      *
+*----------------------------------------------------------------------
+*&---------------------------------------------------------------------
+
+  DATA :  l_log_handle   TYPE bal_s_lgnm-log_handle,
+          ls_log_info    TYPE emma_proc_log_open.
+
+  FIELD-SYMBOLS : <fs_message> TYPE zbpem_log_message.
+
+  ls_log_info-object    = iv_object.
+  ls_log_info-subobject = iv_subobject.
+  ls_log_info-operation = iv_operation.
+
+  "Start EMMA start
+
+  CALL FUNCTION 'EMMA_LOG_PROCESS_START'
+    EXPORTING
+      iv_bparea                      = iv_bparea
+      iv_bpcode                      = iv_bpcode
+      iv_tcode                       = iv_tcode
+      iv_main_bus_objtype            = iv_objtype
+      iv_main_bus_objkey             = iv_objkey
+      is_log_info                    = ls_log_info
+      iv_runmode                     = '1'
+    IMPORTING
+      ev_log_handle                  = l_log_handle
+    EXCEPTIONS
+      bparea_not_found               = 1
+      bparea_meas_inactive           = 2
+      bpcode_not_found               = 3
+      logobject_subobject_not_specif = 4
+      system_error                   = 5
+      OTHERS                         = 6.
+
+  CHECK sy-subrc = 0.
+  " in case of single messages
+  IF it_messages IS INITIAL.
+
+    CALL FUNCTION 'EMMA_LOG_PROCESS_MSG_WRITE'
+      EXPORTING
+        iv_bparea            = iv_bparea
+        iv_bpcode            = iv_bpcode
+        iv_tcode             = iv_tcode
+        iv_log_handle        = l_log_handle
+        iv_msgty             = iv_msgty
+        iv_msgid             = iv_msgid
+        iv_msgno             = iv_msgno
+        iv_msgv1             = iv_msgv1
+        iv_msgv2             = iv_msgv2
+        iv_msgv3             = iv_msgv3
+        iv_msgv4             = iv_msgv4
+        iv_force_msg         = 'X'
+      EXCEPTIONS
+        bparea_not_found     = 1
+        bparea_meas_inactive = 2
+        bpcode_not_found     = 3
+        system_error         = 4
+        OTHERS               = 5.
+
+    "in case of multiple message
+  ELSEIF it_messages IS NOT INITIAL.
+    LOOP AT it_messages ASSIGNING <fs_message>.
+
+      CALL FUNCTION 'EMMA_LOG_PROCESS_MSG_WRITE'
+        EXPORTING
+          iv_bparea            = iv_bparea
+          iv_bpcode            = iv_bpcode
+          iv_tcode             = iv_tcode
+          iv_log_handle        = l_log_handle
+          iv_msgty             = iv_msgty
+          iv_msgid             = iv_msgid
+          iv_msgno             = iv_msgno
+          iv_msgv1             = <fs_message>-msgv1
+          iv_msgv2             = <fs_message>-msgv2
+          iv_msgv3             = <fs_message>-msgv3
+          iv_msgv4             = <fs_message>-msgv4
+          iv_force_msg         = 'X'
+        EXCEPTIONS
+          bparea_not_found     = 1
+          bparea_meas_inactive = 2
+          bpcode_not_found     = 3
+          system_error         = 4
+          OTHERS               = 5.
+
+    ENDLOOP.
+
+  ENDIF.
+
+  IF sy-subrc = 0.
+
+    "End EMMA log
+    CALL FUNCTION 'EMMA_LOG_PROCESS_END'
+      EXPORTING
+        iv_bparea            = iv_bparea
+        iv_bpcode            = iv_bpcode
+        iv_tcode             = iv_tcode
+        iv_main_bus_objtype  = iv_objtype
+        iv_main_bus_objkey   = iv_objkey
+        iv_log_handle        = l_log_handle
+      EXCEPTIONS
+        bparea_not_found     = 1
+        bparea_meas_inactive = 2
+        bpcode_not_found     = 3
+        system_error         = 4
+        OTHERS               = 5.
+
+  ENDIF.
+
+  IF sy-subrc EQ 0.
+    rv_is_success = abap_true.
+  ENDIF.
+
+
+ENDMETHOD.
+ENDCLASS.

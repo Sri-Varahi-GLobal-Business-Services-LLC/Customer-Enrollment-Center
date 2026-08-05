@@ -1,0 +1,93 @@
+FUNCTION zpgm_overtheair_chk.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_DEVLOC_EL) TYPE  DEVLOC
+*"     VALUE(IV_DEVLOC_GS) TYPE  DEVLOC
+*"  EXPORTING
+*"     VALUE(EV_OVERTHEAIR) TYPE  BOOLEAN
+*"----------------------------------------------------------------------
+  CONSTANTS: lc_maxbis TYPE isu_timesl-ab VALUE '99991231',
+             lc_meter  TYPE kombinat VALUE 'Z', " ##NEEDED
+             lc_3      TYPE c VALUE '3'.
+
+  DATA: lv_overair_el   TYPE abap_bool,
+        lv_overair_gs   TYPE abap_bool,
+        lv_amcg_cap_grp TYPE e_ami_amcg_cap_grp.
+
+
+  IF iv_devloc_el IS NOT INITIAL.
+*   Get Device details
+    SELECT amcg_cap_grp
+      FROM egerh
+      INTO lv_amcg_cap_grp
+     UP TO 1 ROWS
+     WHERE bis      EQ lc_maxbis
+       AND kombinat EQ lc_meter
+       AND devloc   EQ iv_devloc_el.
+    ENDSELECT.
+
+*   Check Return code
+    IF sy-subrc IS INITIAL AND lv_amcg_cap_grp IS NOT INITIAL.
+      SELECT COUNT(*)
+        FROM teami_amcgcap
+       WHERE amcg_cap_grp = lv_amcg_cap_grp
+         AND amcg_cap     = lc_3.
+
+      IF sy-subrc IS INITIAL.
+        lv_overair_el = 'X'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+*  IF iv_devloc_gs IS NOT INITIAL.
+*    CLEAR: lv_amcg_cap_grp.
+**   Get Device details
+*    SELECT amcg_cap_grp
+*      FROM egerh
+*      INTO lv_amcg_cap_grp
+*     UP TO 1 ROWS
+*     WHERE bis      EQ lc_maxbis
+*       AND kombinat EQ lc_meter
+*       AND devloc   EQ iv_devloc_gs.
+*    ENDSELECT.
+*
+**   Check Return code
+*    IF sy-subrc IS INITIAL AND lv_amcg_cap_grp IS NOT INITIAL.
+*      SELECT COUNT(*)
+*        FROM teami_amcgcap
+*       WHERE amcg_cap_grp = lv_amcg_cap_grp
+*         AND amcg_cap     = lc_3.
+*
+*      IF sy-subrc IS INITIAL.
+*        lv_overair_gs = 'X'.
+*      ENDIF.
+*    ENDIF.
+*  ENDIF.
+
+*  IF iv_devloc_gs IS NOT INITIAL.
+*    IF lv_overair_gs = 'X'.
+*      ev_overtheair = abap_true.
+*    ELSE.
+*      ev_overtheair = abap_false.
+*    ENDIF.
+*  ENDIF.
+
+  IF iv_devloc_el IS NOT INITIAL.
+    IF lv_overair_el = 'X'.
+      ev_overtheair = abap_true.
+    ELSE.
+      ev_overtheair = abap_false.
+    ENDIF.
+  ENDIF.
+
+*  IF iv_devloc_gs IS NOT INITIAL AND iv_devloc_el IS NOT INITIAL.
+*    IF lv_overair_gs = 'X' AND lv_overair_el = 'X'.
+*      ev_overtheair = abap_true.
+*    ELSE.
+*      ev_overtheair = abap_false.
+*    ENDIF.
+*  ENDIF.
+
+ENDFUNCTION.
+

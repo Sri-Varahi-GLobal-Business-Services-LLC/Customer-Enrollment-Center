@@ -1,0 +1,18 @@
+  METHOD ip_deenroll_cpp.
+
+*   Set Description.
+    CLEAR gv_description.
+    gv_description = 'CPP De-Enrollment Process'.
+
+*   Load PGM Data
+    load_pgmdata_fromec( iv_collection ).
+
+*   Process De-enrollment
+    process_deenroll_ec(
+      EXPORTING
+        iv_zpgmtype   = 'CPP'    " Interface Program Type
+        iv_zenrl_type = '2'    " Enrollment Type
+    ).
+
+  ENDMETHOD.
+

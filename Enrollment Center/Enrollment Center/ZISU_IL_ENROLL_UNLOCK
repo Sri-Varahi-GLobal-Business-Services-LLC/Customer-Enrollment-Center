@@ -1,0 +1,39 @@
+FUNCTION ZISU_IL_ENROLL_UNLOCK .
+*"----------------------------------------------------------------------
+*"*"Global Interface:
+*"  IMPORTING
+*"     VALUE(IS_KEY) TYPE  ZSPGM_KEY
+*"----------------------------------------------------------------------
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 11/15/2015
+*----------------------------------------------------------------*
+*  Description: This FM is created for DPP Enrollment
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+  CALL FUNCTION 'DEQUEUE_EZTPGM_ENROLL'
+    EXPORTING
+      mode_ztpgm_enroll = 'E'
+      mandt             = sy-mandt
+      zenrlbp           = is_key-zenrlbp
+      zenrlca           = is_key-zenrlca
+      zpgm_type         = is_key-zpgm_type
+      zenrl_reqdat      = is_key-zenrl_reqdat
+      x_zenrlbp         = ' '
+      x_zenrlca         = ' '
+      x_zpgm_type       = ' '
+      x_zenrl_reqdat    = ' '
+      _scope            = '3'
+      _synchron         = ' '
+      _collect          = ' '.
+
+ENDFUNCTION.
+

@@ -1,0 +1,261 @@
+class ZCL_EC_ELIGIBILITY_CHECK definition
+  public
+  final
+  create public .
+
+public section.
+
+  data GT_CSDD type ZTCSDD_ELIGIBLE .
+  data GT_PAY_TERMS type ZTCSDD_PAYTERMS .
+
+  methods CHECK_PPM
+    importing
+      value(IS_ATTR) type ZSPGMEN_ATTR
+      value(IV_ZPGMTYPE) type ZPGM_TYPE
+    changing
+      value(ET_MSG) type ZSPGMMSG_ATTR_TT .
+  methods CHECK_CSDD
+    importing
+      value(IS_ATTR) type ZSPGMEN_ATTR
+      value(IV_ZPGMTYPE) type ZPGM_TYPE
+    changing
+      value(ET_MSG) type ZSPGMMSG_ATTR_TT .
+  methods CHECK_CPP
+    importing
+      value(IS_ATTR) type ZSPGMEN_ATTR
+      value(IV_ZPGMTYPE) type ZPGM_TYPE
+    changing
+      value(ET_MSG) type ZSPGMMSG_ATTR_TT .
+  methods CHECK_PTR
+    importing
+      value(IS_ATTR) type ZSPGMEN_ATTR
+      value(IV_ZPGMTYPE) type ZPGM_TYPE
+    changing
+      value(ET_MSG) type ZSPGMMSG_ATTR_TT .
+protected section.
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_EC_ELIGIBILITY_CHECK IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_EC_ELIGIBILITY_CHECK->CHECK_CPP
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IS_ATTR                        TYPE        ZSPGMEN_ATTR
+* | [--->] IV_ZPGMTYPE                    TYPE        ZPGM_TYPE
+* | [<-->] ET_MSG                         TYPE        ZSPGMMSG_ATTR_TT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD check_cpp.
+    DATA: ls_input_check TYPE zsenrl_int_struc,
+          lt_return      TYPE bapiret2_t,
+          ls_return      TYPE bapiret2,
+          lt_msg         TYPE zspgmmsg_attr_tt,
+          ls_msg         TYPE zspgmmsg_attr.
+    CLEAR: lt_msg, ls_msg.
+
+    IF is_attr-contract_el IS INITIAL.
+      ls_msg-zenrlbp = is_attr-zenrlbp.
+      ls_msg-zenrlca = is_attr-zenrlca.
+      ls_msg-zpgm_type = iv_zpgmtype.
+      ls_msg-type = 'E'.
+      ls_msg-id   = 'ZPGM_ENROLL'.
+      ls_msg-number = 021.
+      MESSAGE e021(zpgm_enroll) "No Active Contract Exists
+            INTO ls_msg-message.
+      APPEND ls_msg TO et_msg.
+
+    ELSE.
+*     Set Input
+      ls_input_check-zenrl_source = 'CRM'.
+      IF is_attr-einzdat_el > sy-datum.
+        ls_input_check-zenrldat = is_attr-einzdat_el.
+      ELSE.
+        ls_input_check-zenrldat = sy-datum.
+      ENDIF.
+      ls_input_check-zpgmtype = iv_zpgmtype.
+      ls_input_check-zenrlbp = is_attr-zenrlbp.
+      ls_input_check-zenrlca = is_attr-zenrlca.
+      ls_input_check-zinstall = is_attr-anlage_el.
+      ls_input_check-zcontract = is_attr-contract_el.
+      ls_input_check-zenrlsdp = is_attr-enrlsdp_el.
+      CALL FUNCTION 'ZPGM_ELIGIBILITY_CHECK'
+        EXPORTING
+          iv_eligibility = ls_input_check
+        TABLES
+          et_messages    = lt_return
+          et_mess        = lt_msg.
+
+      APPEND LINES OF lt_msg TO et_msg.
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_EC_ELIGIBILITY_CHECK->CHECK_CSDD
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IS_ATTR                        TYPE        ZSPGMEN_ATTR
+* | [--->] IV_ZPGMTYPE                    TYPE        ZPGM_TYPE
+* | [<-->] ET_MSG                         TYPE        ZSPGMMSG_ATTR_TT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD check_csdd.
+    DATA: ls_msg  TYPE zspgmmsg_attr,
+          ls_csdd TYPE zscsdd_eligible.
+
+    READ TABLE gt_csdd
+      INTO ls_csdd
+    WITH KEY vkont = is_attr-zenrlca.
+    IF sy-subrc <> 0.
+
+      REFRESH gt_csdd.
+      ls_csdd-vkont = is_attr-zenrlca.
+      APPEND ls_csdd TO gt_csdd.
+
+*     Get CSDD Enrollment
+      CALL FUNCTION 'ZRFC_BIBL_CSDD_ELIGIBLE'
+        EXPORTING
+          iv_all_pay_terms = abap_true
+        CHANGING
+          ct_eligible      = gt_csdd
+          ct_pay_terms     = gt_pay_terms.
+
+      READ TABLE gt_csdd
+        INTO ls_csdd
+      WITH KEY vkont = is_attr-zenrlca.
+
+    ENDIF.
+
+    IF ls_csdd-ineligible =  abap_true.
+
+      ls_msg-zenrlbp = is_attr-zenrlbp.
+      ls_msg-zenrlca = is_attr-zenrlca.
+      ls_msg-zpgm_type = iv_zpgmtype.
+      ls_msg-message = ls_csdd-ineligible_reason.
+      ls_msg-type = 'E'.
+      APPEND ls_msg TO et_msg.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_EC_ELIGIBILITY_CHECK->CHECK_PPM
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IS_ATTR                        TYPE        ZSPGMEN_ATTR
+* | [--->] IV_ZPGMTYPE                    TYPE        ZPGM_TYPE
+* | [<-->] ET_MSG                         TYPE        ZSPGMMSG_ATTR_TT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD check_ppm.
+    DATA: ls_input_check TYPE zspgm_brf_input,
+          ls_ca          TYPE zsppm_ca_pgmtype,
+          lt_return      TYPE STANDARD TABLE OF zspgm_brf_return,
+          ls_return      TYPE zspgm_brf_return,
+          ls_msg         TYPE zspgmmsg_attr.
+
+    IF is_attr-contract_el IS INITIAL
+    AND is_attr-contract_gs IS INITIAL.
+      ls_msg-zenrlbp = is_attr-zenrlbp.
+      ls_msg-zenrlca = is_attr-zenrlca.
+      ls_msg-zpgm_type = iv_zpgmtype.
+      ls_msg-type = 'E'.
+      ls_msg-id   = 'ZPGM_ENROLL'.
+      ls_msg-number = 021.
+      MESSAGE e021(zpgm_enroll) "No Active Contract Exists
+            INTO ls_msg-message.
+      APPEND ls_msg TO et_msg.
+
+    ELSE.
+
+*   Set Input
+      ls_input_check-zenrl_source = 'CRM'.
+      ls_input_check-zenrldat = sy-datum.
+      ls_ca-zpgmtype = iv_zpgmtype.
+      ls_input_check-zenrlbp = is_attr-zenrlbp.
+      ls_ca-zenrlca = is_attr-zenrlca.
+      APPEND ls_ca TO ls_input_check-zca_pgmtype.
+      ls_input_check-zinstall = is_attr-anlage_el.
+      ls_input_check-zcontract = is_attr-contract_el.
+      ls_input_check-zenrlsdp = is_attr-enrlsdp_el.
+      ls_input_check-zenrlsdp_gas = is_attr-enrlsdp_gs.
+      CALL FUNCTION 'ZPGM_ELIGIBILITY_RULE_CHECKS'
+        EXPORTING
+          iv_eligibility_inpt = ls_input_check
+        TABLES
+          et_messages         = lt_return.
+
+      LOOP AT lt_return INTO ls_return
+        WHERE type = 'A'
+        OR    type = 'X'
+        OR    type = 'E' .
+      ENDLOOP.
+      IF sy-subrc = 0.
+        DELETE lt_return WHERE type = 'I' OR type = 'W'.
+      ENDIF.
+
+*   Loop thru the Return messages.
+      LOOP AT lt_return INTO ls_return.
+        CLEAR ls_msg.
+        MOVE-CORRESPONDING ls_return TO ls_msg.
+        ls_msg-message_v1 = ls_return-field.
+        APPEND ls_msg TO et_msg.
+
+      ENDLOOP.
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_EC_ELIGIBILITY_CHECK->CHECK_PTR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IS_ATTR                        TYPE        ZSPGMEN_ATTR
+* | [--->] IV_ZPGMTYPE                    TYPE        ZPGM_TYPE
+* | [<-->] ET_MSG                         TYPE        ZSPGMMSG_ATTR_TT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD check_ptr.
+    DATA: ls_input_check TYPE zsenrl_int_struc,
+          lt_return      TYPE bapiret2_t,
+          ls_return      TYPE bapiret2,
+          lt_msg         TYPE zspgmmsg_attr_tt,
+          ls_msg         TYPE zspgmmsg_attr.
+
+    CLEAR: lt_msg, ls_msg.
+
+    IF is_attr-contract_el IS INITIAL.
+      ls_msg-zenrlbp = is_attr-zenrlbp.
+      ls_msg-zenrlca = is_attr-zenrlca.
+      ls_msg-zpgm_type = iv_zpgmtype.
+      ls_msg-type = 'E'.
+      ls_msg-id   = 'ZPGM_ENROLL'.
+      ls_msg-number = 021.
+      MESSAGE e021(zpgm_enroll) "No Active Contract Exists
+            INTO ls_msg-message.
+      APPEND ls_msg TO et_msg.
+
+    ELSE.
+*   Set Input
+      ls_input_check-zenrl_source = 'CRM'.
+      IF is_attr-einzdat_el > sy-datum.
+        ls_input_check-zenrldat = is_attr-einzdat_el.
+      ELSE.
+        ls_input_check-zenrldat = sy-datum.
+      ENDIF.
+      ls_input_check-zpgmtype = iv_zpgmtype.
+      ls_input_check-zenrlbp = is_attr-zenrlbp.
+      ls_input_check-zenrlca = is_attr-zenrlca.
+      ls_input_check-zinstall = is_attr-anlage_el.
+      ls_input_check-zcontract = is_attr-contract_el.
+      ls_input_check-zenrlsdp = is_attr-enrlsdp_el.
+      CALL FUNCTION 'ZPGM_ELIGIBILITY_CHECK'
+        EXPORTING
+          iv_eligibility = ls_input_check
+        TABLES
+          et_messages    = lt_return
+          et_mess        = lt_msg.
+
+      APPEND LINES OF lt_msg TO et_msg.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.

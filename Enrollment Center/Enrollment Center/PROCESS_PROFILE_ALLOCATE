@@ -1,0 +1,37 @@
+*"----------------------------------------------------------------------
+* Name            : Method for Automation of Profile Allocation for
+*                   Post Cutover Interval Billing.
+* Author          : Har Mayank Shrivastava
+* Date            : 22nd December 2014
+* Type of Program : Method
+* Purpose         : Post Cutover Interval Billing
+* Development Class : ZDM_FM
+* ----------------------------------------------------------------------
+*** Author      Date        Change Req#     Task #     Change Driver
+*** Har Mayank 01/12/14      Initial      E2DK935654
+***----------------------------------------------------------------------
+
+METHOD process_profile_allocate.
+  DATA: lv_profile     TYPE e_profile,
+        lv_tou_logikzw TYPE t_register.
+*        lv_tou_logikzw       TYPE logikzw.
+
+  lv_tou_logikzw = me->get_timeofuse_reg( ).
+  my_tou_logikzw = lv_tou_logikzw.
+
+  IF NOT lv_tou_logikzw IS INITIAL.
+    lv_profile =  me->get_allocated_profiles( lv_tou_logikzw-logikzw ).
+    IF lv_profile IS INITIAL.
+      lv_profile = me->get_unallocated_profile( ).
+      IF lv_profile IS INITIAL.
+        lv_profile = me->check_profile( ).
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  IF NOT lv_profile IS INITIAL.
+    me->assign_edm_profile( iv_logikzw = lv_tou_logikzw-logikzw
+                            iv_profile_no = lv_profile ).
+  ENDIF.
+
+ENDMETHOD.

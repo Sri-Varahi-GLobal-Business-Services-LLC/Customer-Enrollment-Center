@@ -1,0 +1,150 @@
+FUNCTION z_elig_comm_rate.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(SOURCE_SYSTEM) TYPE  ZELIG_SOURCE_SYSTEM
+*"     REFERENCE(CATEGORY) TYPE  ZELIG_CATEGORY
+*"     REFERENCE(DEVICE) TYPE  EQUNR OPTIONAL
+*"     REFERENCE(CONTRACT_ACCOUNT) TYPE  VKONT_KK OPTIONAL
+*"  EXPORTING
+*"     REFERENCE(ELIGIBLE_FLAG) TYPE  BOOLEAN_FLG
+*"     REFERENCE(ERROR_MESSAGE) TYPE  STRING
+*"----------------------------------------------------------------------
+
+  CONSTANTS:
+  c_rt_category TYPE zelig_rule_name VALUE 'RT_CATEGORY',
+  c_set_x       TYPE char01 VALUE 'X'.
+
+  TYPES:
+  BEGIN OF i_anlage,
+    anlage TYPE anlage,
+  END OF i_anlage,
+
+  BEGIN OF i_tariftyp,
+    tariftyp TYPE tariftyp,
+  END OF i_tariftyp.
+
+  DATA:
+  i_zelig_rules   TYPE STANDARD TABLE OF zelig_cic_value,
+  wa_zelig_rules  TYPE zelig_cic_value,
+  t_anlage        TYPE STANDARD TABLE OF i_anlage,
+  wa_anlage       LIKE LINE OF t_anlage,
+  t_tariftyp      TYPE STANDARD TABLE OF i_tariftyp,
+  wa_tariftyp     LIKE LINE OF t_tariftyp,
+  v_lines         TYPE i,
+  l_logikzw       TYPE logikzw,
+  l_anlage        TYPE anlage,
+  l_tariftyp      TYPE tariftyp,
+  l_match         TYPE c.
+
+  CLEAR: eligible_flag, error_message.
+
+  CALL FUNCTION 'Z_ELIG_TABLE_LOOKUP'
+    EXPORTING
+      pi_source_system = source_system
+      pi_category      = category
+      pi_rule_name     = c_rt_category
+    IMPORTING
+      pe_values        = i_zelig_rules.
+
+* No FO entry in table for Source_System/Category/Rule combination
+* All requests for this FO are eligible for further processing,
+* return to calling process.
+  IF i_zelig_rules IS INITIAL.
+    eligible_flag = c_set_x.
+    RETURN.
+  ENDIF.
+
+  IF device IS NOT INITIAL.
+    SELECT SINGLE logikzw
+      INTO l_logikzw
+      FROM etdz
+      WHERE  equnr = device
+      AND ab <= syst-datum
+      AND bis >= syst-datum.
+    IF sy-subrc NE 0.
+      error_message = 'FM Z_ELIG_COMM_RATE: Logical register not found in ETDZ.'.
+      eligible_flag = space.
+      RETURN.
+    ELSE.
+      SELECT SINGLE anlage
+        INTO l_anlage
+        FROM easts
+        WHERE logikzw = l_logikzw
+      AND ab <= syst-datum
+      AND bis >= syst-datum.
+      IF sy-subrc NE 0.
+        error_message = 'FM Z_ELIG_COMM_RATE: Installation not found in EASTS.'.
+        eligible_flag = space.
+        RETURN.
+      ELSE.
+        SELECT SINGLE tariftyp
+          INTO l_tariftyp
+          FROM eanlh
+          WHERE anlage = l_anlage
+        AND ab <= syst-datum
+        AND bis >= syst-datum.
+        IF sy-subrc NE 0.
+          error_message = 'FM Z_ELIG_COMM_RATE: Rate Category not found in EANLH.'.
+          eligible_flag = space.
+          RETURN.
+        ELSE.
+          LOOP AT i_zelig_rules INTO wa_zelig_rules.
+            IF wa_zelig_rules = l_tariftyp.
+              eligible_flag =  c_set_x.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ELSE.
+    IF contract_account IS NOT INITIAL.
+      SELECT anlage
+       INTO TABLE t_anlage
+        FROM ever
+        WHERE vkonto = contract_account.
+      IF sy-subrc = 0.
+        SELECT tariftyp
+          INTO TABLE t_tariftyp
+          FROM eanlh
+         FOR ALL ENTRIES IN t_anlage
+        WHERE  anlage = t_anlage-anlage
+           AND ab <= syst-datum
+           AND bis >= syst-datum.
+        IF sy-subrc NE 0.
+          error_message = 'FM Z_ELIG_COMM_RATE: Rate Category not found in EANLH.'.
+          eligible_flag = space.
+          RETURN.
+        ELSE.
+          LOOP AT t_tariftyp INTO wa_tariftyp.  "read each rate
+            l_match = 'N'.
+            LOOP AT i_zelig_rules INTO wa_zelig_rules.  " check rate against rules table
+              IF wa_zelig_rules = wa_tariftyp-tariftyp.
+                l_match = 'Y'.         " if rate matches a rate in zelig table, set match flag
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+            IF l_match = 'N'.  " if rate did not match any zelig rules, this account is not valid for IP.
+              eligible_flag = space.
+              error_message = 'Blocked Commercial Account.'.
+              RETURN.
+            ENDIF.
+          ENDLOOP.
+          eligible_flag =  c_set_x.     "if we get here, all rates have matched the zelig rules
+          RETURN.
+        ENDIF.
+      ELSE.
+        error_message = 'FM Z_ELIG_COMM_RATE: Contract Account not found in EVER.'.
+        eligible_flag = space.
+        RETURN.
+      ENDIF.
+    ELSE.
+      error_message = 'FM Z_ELIG_COMM_RATE: Missing Device and Contract Account.'.
+      eligible_flag = space.
+      RETURN.
+    ENDIF.
+  ENDIF.
+
+ENDFUNCTION.
+

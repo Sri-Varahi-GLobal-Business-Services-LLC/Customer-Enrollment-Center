@@ -1,0 +1,235 @@
+METHOD prepare_dev_mod.
+  CONSTANTS: lc_kvarh_pattern TYPE string VALUE 'KVARH_*',
+             lc_kwh_pattern   TYPE string VALUE 'KWH_*',
+             lc_kvarh_rr      TYPE string VALUE 'KVARH_RR',
+             lc_anzdays       TYPE anzdays VALUE 365,
+             lc_perc          TYPE p DECIMALS 2 VALUE '0.60'.
+
+  DATA : lwa_mass_devmod       TYPE ztdm_mass_devmod,
+         lwa_reg_rec           TYPE ztcc_bilins_elec,
+         lv_amcg_cap_grp       TYPE e_ami_amcg_cap_grp,
+         lwa_reg_final         TYPE ezwg,
+         lwa_etdz              TYPE etdz,
+         lwa_easts             TYPE easts,
+         lwa_easte             TYPE easte,
+         lit_etdz              TYPE STANDARD TABLE OF etdz,
+         lit_easts             TYPE STANDARD TABLE OF easts,
+         lit_easte             TYPE STANDARD TABLE OF easte,
+         lwa_mdmod_mass_devmod TYPE zst_mdmod_mass_devmod,
+         lv_perverbr           TYPE perverbr.
+
+  lwa_mdmod_mass_devmod-devloc = my_devloc.
+  lwa_mdmod_mass_devmod-date_category = co_value2.
+  lwa_mdmod_mass_devmod-custdate = my_date.
+
+
+  IF NOT my_amcg_cap_grp IS INITIAL.
+    SELECT SINGLE amcg_cap_grp
+           INTO lv_amcg_cap_grp
+           FROM egerh
+           WHERE equnr EQ my_equnr AND
+                 bis EQ co_date_infinite AND
+                 amcg_cap_grp = my_amcg_cap_grp.
+    IF NOT sy-subrc IS INITIAL.
+
+      CLEAR lwa_reg_final.
+      READ TABLE it_reg_final INTO lwa_reg_final INDEX co_value1.
+      IF sy-subrc IS INITIAL.
+* For Device Header
+        lwa_mass_devmod-devloc = my_devloc.
+        lwa_mass_devmod-sernr = my_gernr.
+        lwa_mass_devmod-matnr = my_matnr.
+        lwa_mass_devmod-anlage = my_anlage.
+        lwa_mass_devmod-zwgruppe = lwa_reg_final-zwgruppe.
+        lwa_mass_devmod-amcg_cap_grp = my_amcg_cap_grp.
+
+        APPEND lwa_mass_devmod TO lwa_mdmod_mass_devmod-data.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  SELECT * FROM etdz
+           INTO TABLE lit_etdz
+           WHERE equnr EQ my_equnr AND
+                 bis EQ co_date_infinite.
+  IF sy-subrc IS INITIAL.
+    IF NOT lit_etdz IS INITIAL.
+      SELECT * FROM easts
+         INTO TABLE lit_easts
+         FOR ALL ENTRIES IN lit_etdz
+         WHERE anlage   EQ my_anlage AND
+               logikzw  EQ lit_etdz-logikzw AND
+               bis EQ co_date_infinite.
+      SELECT * FROM easte
+        INTO TABLE lit_easte
+        FOR ALL ENTRIES IN lit_etdz
+        WHERE logikzw  EQ lit_etdz-logikzw AND
+              ab LE lit_etdz-ab.
+
+    ENDIF.
+
+  ENDIF.
+* For Registers
+  CLEAR : lwa_mass_devmod.
+  LOOP AT it_reg_final INTO lwa_reg_final.
+    CLEAR : lwa_mass_devmod,
+            lwa_etdz.
+
+    lwa_mass_devmod-devloc = my_devloc.
+    lwa_mass_devmod-sernr = my_gernr.
+    lwa_mass_devmod-matnr = my_matnr.
+    lwa_mass_devmod-anlage = my_anlage.
+
+    CLEAR lwa_etdz.
+    READ TABLE lit_etdz INTO lwa_etdz WITH KEY zwnummer = lwa_reg_final-zwnummer.
+
+    IF NOT sy-subrc IS INITIAL.
+      CLEAR : lwa_reg_rec.
+      READ TABLE it_bilinst INTO lwa_reg_rec WITH KEY register = lwa_reg_final-zwnummer.
+      IF sy-subrc IS INITIAL.
+        MOVE: lwa_reg_rec-register_group    TO lwa_mass_devmod-zwgruppe,
+              lwa_reg_rec-rate_type         TO lwa_mass_devmod-tarifart,
+              lwa_reg_rec-register          TO lwa_mass_devmod-zwnummer,
+              lwa_reg_rec-rate_category     TO lwa_mass_devmod-tariftyp,
+              lwa_reg_rec-rate_fact_group   TO lwa_mass_devmod-kondigr.
+
+        MOVE :lwa_reg_final-kennziff        TO lwa_mass_devmod-kennziff,
+              lwa_reg_final-intsizeid       TO lwa_mass_devmod-intsizeid,
+              lwa_reg_final-touperiod       TO lwa_mass_devmod-touperiod.
+
+        MOVE :lwa_reg_rec-not_bill_rel_flg  TO lwa_mass_devmod-zwnabr,
+              lwa_reg_rec-do_not_read       TO lwa_mass_devmod-nablesen,
+              lwa_reg_final-kennziff        TO lwa_mass_devmod-kennziff_new.
+
+        IF lwa_reg_rec-rate_type CP lc_kvarh_pattern.
+          CLEAR lwa_reg_rec.
+          LOOP AT it_bilinst INTO lwa_reg_rec
+                             WHERE rate_type CP lc_kwh_pattern.
+            EXIT.
+          ENDLOOP.
+
+          IF NOT lwa_reg_rec-register IS INITIAL.
+            CLEAR lwa_etdz.
+            READ TABLE lit_etdz INTO lwa_etdz WITH KEY zwnummer = lwa_reg_rec-register.
+            IF sy-subrc IS INITIAL.
+              CLEAR lwa_easte.
+              SORT lit_easte DESCENDING BY logikzw ab.
+              LOOP AT lit_easte INTO lwa_easte WHERE logikzw = lwa_etdz-logikzw.
+                IF lwa_easte-ab LE my_date.
+                  EXIT.
+                ENDIF.
+              ENDLOOP.
+*              IF NOT lwa_mass_devmod-perverbrd IS INITIAL.
+              IF lwa_mass_devmod-perverbrd IS INITIAL.
+                lv_perverbr = lwa_easte-perverbr * lc_perc..
+                lwa_mass_devmod-perverbrd =  round( val = lv_perverbr dec = 0 mode = 3 ).
+                lwa_mass_devmod-adofper = lwa_easte-bis - lwa_easte-ab.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+
+    ELSE.
+      CLEAR lwa_reg_rec.
+      READ TABLE it_bilinst INTO lwa_reg_rec WITH KEY register = lwa_reg_final-zwnummer.
+      IF sy-subrc IS INITIAL.
+        CLEAR lwa_easts.
+        READ TABLE lit_easts INTO lwa_easts WITH KEY logikzw = lwa_etdz-logikzw.
+        IF NOT sy-subrc IS INITIAL.
+
+          MOVE: lwa_reg_rec-register          TO lwa_mass_devmod-zwnummer,
+                lwa_reg_rec-rate_type         TO lwa_mass_devmod-tarifart,
+                lwa_reg_rec-rate_category     TO lwa_mass_devmod-tariftyp,
+                lwa_reg_rec-rate_fact_group   TO lwa_mass_devmod-kondigr.
+
+          IF lwa_reg_rec-rate_type CP lc_kvarh_pattern.
+            CLEAR lwa_reg_rec.
+            LOOP AT it_bilinst INTO lwa_reg_rec
+                               WHERE rate_type CP lc_kwh_pattern.
+              EXIT.
+            ENDLOOP.
+
+            IF NOT lwa_reg_rec-register IS INITIAL.
+              CLEAR lwa_etdz.
+              READ TABLE lit_etdz INTO lwa_etdz WITH KEY zwnummer = lwa_reg_rec-register.
+              IF sy-subrc IS INITIAL.
+                CLEAR lwa_easte.
+                READ TABLE lit_easte INTO lwa_easte WITH KEY logikzw = lwa_easte-logikzw.
+                IF sy-subrc IS INITIAL.
+                  lv_perverbr = lwa_easte-perverbr * lc_perc..
+                  lwa_mass_devmod-perverbrd =  round( val = lv_perverbr dec = 0 mode = 3 ).
+                  lwa_mass_devmod-adofper = lc_anzdays.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+        ELSE.
+          READ TABLE lit_etdz INTO lwa_etdz WITH KEY zwnummer = lwa_reg_rec-register.
+*          IF NOT ( lwa_easts-tarifart EQ lc_kvarh_rr ) AND
+          IF "lwa_easts-tarifart EQ lc_kvarh_rr AND
+              ( lwa_reg_rec-rate_type NE lwa_easts-tarifart OR
+                lwa_reg_rec-rate_fact_group NE lwa_easts-kondigr ).
+* In Service upgrade/downgrade scenario If Rate type are different
+* allow bill install table information to overwrite on the installation
+* Incase of CARS for existing registers rate type wouldn't change
+            IF ( NOT lwa_reg_rec-rate_type IS INITIAL )
+              AND  ( NOT my_old_tariftyp IS INITIAL ).
+              MOVE: lwa_reg_rec-register          TO lwa_mass_devmod-zwnummer,
+                    lwa_reg_rec-rate_type         TO lwa_mass_devmod-tarifart,
+                    lwa_reg_rec-rate_category     TO lwa_mass_devmod-tariftyp,
+                    lwa_reg_rec-rate_fact_group   TO lwa_mass_devmod-kondigr.
+            ELSE.
+              CONTINUE.
+            ENDIF.
+          ELSEIF lwa_etdz-kennziff EQ '08'.
+            MOVE :lwa_reg_rec-register          TO lwa_mass_devmod-zwnummer,
+                  lwa_reg_rec-not_bill_rel_flg  TO lwa_mass_devmod-zwnabr,
+                  lwa_easts-tarifart            TO lwa_mass_devmod-tarifart,
+                  lwa_easts-kondigr             TO lwa_mass_devmod-kondigr.
+            CLEAR lwa_easte.
+* Copy periodic consumption from old register
+            READ TABLE lit_easte INTO lwa_easte WITH KEY logikzw = lwa_etdz-logikzw.
+            IF sy-subrc IS INITIAL.
+              MOVE: lwa_easte-perverbr TO lwa_mass_devmod-perverbrd.
+              lwa_mass_devmod-adofper = lwa_mass_devmod-adofper = lwa_easte-bis - lwa_easte-ab.
+            ENDIF.
+          ELSE.
+            CONTINUE.
+          ENDIF.
+        ENDIF.
+      ELSE.
+        CONTINUE.
+      ENDIF.
+    ENDIF.
+
+    APPEND lwa_mass_devmod TO lwa_mdmod_mass_devmod-data.
+    CLEAR : lwa_reg_final,
+            lwa_mass_devmod,
+            lwa_etdz.
+  ENDLOOP.
+
+  LOOP AT lit_etdz INTO lwa_etdz.
+    CLEAR : lwa_mass_devmod,
+            lwa_reg_final.
+
+    lwa_mass_devmod-devloc = my_devloc.
+    lwa_mass_devmod-sernr = my_gernr.
+    lwa_mass_devmod-matnr = my_matnr.
+    lwa_mass_devmod-anlage = my_anlage.
+
+    READ TABLE it_reg_final INTO lwa_reg_final WITH KEY zwnummer = lwa_etdz-zwnummer.
+    IF NOT sy-subrc IS INITIAL.
+      MOVE: lwa_etdz-zwnummer TO lwa_mass_devmod-zwnummer,
+            abap_true         TO lwa_mass_devmod-donotuse.
+      APPEND lwa_mass_devmod  TO lwa_mdmod_mass_devmod-data.
+    ENDIF.
+  ENDLOOP.
+
+  CHECK NOT lwa_mdmod_mass_devmod IS INITIAL.
+  lwa_mdmod_mass_devmod-bilinst = it_bilinst.
+  APPEND lwa_mdmod_mass_devmod TO lit_mass_devmod.
+
+
+ENDMETHOD.
+

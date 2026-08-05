@@ -1,0 +1,18 @@
+FUNCTION zpgmec_eligibility_check.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IS_ELIGIBILITY) TYPE  ZSELIG_CHECK
+*"  TABLES
+*"      ET_MESSAGES STRUCTURE  ZSELIG_MSG
+*"----------------------------------------------------------------------
+
+* DPP Eligibility Check
+
+* CSDD
+
+
+
+
+ENDFUNCTION.
+

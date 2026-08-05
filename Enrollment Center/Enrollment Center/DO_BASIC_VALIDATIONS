@@ -1,0 +1,13 @@
+METHOD do_basic_validations.
+
+  "Validations
+  CLEAR rv_valid_status.
+  IF NOT me->is_date_infuture( ) IS INITIAL OR
+     NOT me->is_installation_exists( ) IS INITIAL OR
+     NOT me->is_device_exists( ) IS INITIAL OR
+     NOT me->is_ratecat_change( ) IS INITIAL.
+    rv_valid_status = co_flag.
+  ENDIF.
+
+ENDMETHOD.
+

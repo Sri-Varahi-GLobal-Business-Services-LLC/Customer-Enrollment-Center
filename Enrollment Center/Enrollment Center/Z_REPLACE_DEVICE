@@ -1,0 +1,2605 @@
+FUNCTION z_replace_device.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(P_AUFNR) TYPE  AUFK-AUFNR
+*"     REFERENCE(P_REFDATA) TYPE  ZTDM_WF_TRIGGER
+*"  EXPORTING
+*"     REFERENCE(E_ERROR) TYPE  AUFK-ASTKZ
+*"     REFERENCE(E_SPARTE) TYPE  ETYP-SPARTE
+*"     REFERENCE(E_ERROR_TXT) TYPE  SOLISTI1-LINE
+*"     REFERENCE(E_DEPT) TYPE  KNVK-ABTNR
+*"     REFERENCE(E_ERROR_TITLE) TYPE  SOLISTI1-LINE
+*"  EXCEPTIONS
+*"      ORDER_LOCKED
+*"      GOODS_MOVEMENT_FAILURE
+*"----------------------------------------------------------------------
+*----------------------------------------------------------------------
+*Name              : Z_REPLACE_DEVICE
+*Title             : Replace device
+*Workflow ID       : DM_WFL_010_V040_110
+*Author            : AMATHUR - Abhinav Mathur
+*Date              : 04/12/2007
+*----------------------------------------------------------------------
+*Type of Program   : Function module called from Business Object
+*Purpose           : 1. The entire 'Replacement' process is coded here.
+*Development Class : ZCC_WFL
+*----------------------------------------------------------------------
+*Tables Updated    : N/A
+*Input             : Through Function module interface parameters
+*Output            : 1. Device is replaced.
+*                 2. Appropriate error message is passed to WorkFlow
+*Return Codes      : N/A
+*----------------------------------------------------------------------
+
+  DATA: v_error_txt1   TYPE solisti1-line,
+        v_error_txt2   TYPE solisti1-line,
+        v_error_txt3   TYPE solisti1-line,
+        v_error_txt4   TYPE solisti1-line,
+        v_error_txt5   TYPE solisti1-line,
+        v_error_title1 TYPE solisti1-line,
+        v_error_title2 TYPE solisti1-line,
+        v_error_title3 TYPE solisti1-line,
+        v_error_title4 TYPE solisti1-line,
+        v_error_title5 TYPE solisti1-line.
+
+*----|START-OF-CHANGE|MMRobson|12/08/2008|PM817711|----*
+  DATA: l_tariftyp TYPE eanlh-tariftyp.
+*----|END-OF-CHANGE|MMRobson|12/08/2008|PM817711|----*
+
+*----|START-OF-CHANGE|MMRobson|01/04/2008|QC 9848|----*
+  CLEAR: v_error, v_status_dmfl, v_error_dept, v_error_sparte.
+*----|END-OF-CHANGE|MMRobson|01/04/2008|QC 9848|----*
+
+* Begin of R4C changes by SKOTHURI
+  DATA:
+    lobj_class      TYPE REF TO zcl_miv_265_post_inst_gas_proc,
+
+    li_devmod_data  TYPE STANDARD TABLE OF ztdm_mass_devmod,
+
+    lwa_error_log   TYPE zsdm_miv_err_log,
+    lwa_devmod_data TYPE ztdm_mass_devmod,
+    lwa_egerh       TYPE egerh,
+    lv_intyp        TYPE anlart,
+
+    lv_message      TYPE bapi_msg.
+* End of R4C changes by SKOTHURI
+  DATA: v_class    TYPE klah-class,
+        i_char_val LIKE i_char_val_evci,
+        wa_klah    TYPE klah,
+        l_equnr    TYPE equnr,
+        wa_equi    TYPE equi.
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_aufnr
+    IMPORTING
+      output = v_aufnr.
+* Initialize the values
+  PERFORM initialize_parameters.
+*  v_rule  = p_rule.
+
+*-----Get the work order details
+  PERFORM get_work_order_data USING    v_aufnr
+                              CHANGING wa_caufvd.
+
+  IF wa_caufvd-qmnum IS INITIAL.
+*-------Notification number could not be fetched
+    MESSAGE e090(zsc_rf).
+  ENDIF.
+
+*-----Get the notification details
+  PERFORM get_notification_details USING wa_caufvd-qmnum
+                                CHANGING i_notif_item.
+
+*-----Get activity date of device removal
+*----|START-OF-CHANGE|MMRobson|01/02/2008|QC 9848|----*
+*   PERFORM get_activity_date  USING    v_aufnr
+*                             CHANGING v_zomar_nbr
+*                                       v_actdate.
+*  PERFORM get_activity_date USING v_aufnr
+*                                  wa_caufvd-qmnum
+*                         CHANGING v_actdate
+*                                  v_error
+*                                  v_error_txt1
+*                                  v_error_title1.
+  PERFORM get_activity_date_time USING v_aufnr
+                                    wa_caufvd-qmnum
+                           CHANGING v_actdate
+                                    v_error
+                                    v_error_txt1
+                                    v_error_title1
+                                    v_acttime.
+
+
+*{   INSERT         E2DK912008                                        2
+*----|START-OF-CHANGE|Kgupta|05/16/2011|----*
+  IF v_error = 'X'.
+    v_status_dmfl = 'X'.
+    v_error_dept = c_dept_bill.
+  ELSE.
+    v_class = c_class_egcm.
+    PERFORM get_characteristics USING v_class
+                                      wa_caufvd-qmnum
+                                      i_notif_item
+                             CHANGING i_char_val.
+
+    PERFORM get_equipment USING wa_caufvd
+                                i_char_val
+                                v_actdate
+                                c_chara_egcm_meter
+                       CHANGING wa_equi.
+    IF wa_equi-equnr IS NOT INITIAL.
+      l_equnr = wa_equi-equnr.
+    ELSE.
+      l_equnr = wa_caufvd-equnr.
+    ENDIF.
+    PERFORM check_activity_date USING wa_caufvd-equnr
+                             CHANGING v_actdate
+                                      v_error
+                                      v_error_title1
+                                      v_error_txt1.
+
+
+  ENDIF.
+*----|END-OF-CHANGE|Kgupta|05/16/2011|----*
+*}   INSERT
+  IF v_error = 'X'.
+    v_status_dmfl = 'X'.
+    v_error_dept = c_dept_bill.
+  ELSE.
+*----|END-OF-CHANGE|MMRobson|01/02/2008|QC 9848|----*
+
+*-----Get accurate decimal reading for meter reading.
+    PERFORM get_decimal_separator CHANGING v_decimal.
+    v_read_initial = c_num_initial.
+    CASE p_refdata-old_auart.
+
+      WHEN c_auart_emtr.
+        v_msg_device = c_elec_mtr.
+        PERFORM get_transformer_data USING wa_caufvd-tplnr
+                                            v_actdate
+                                  CHANGING wa_equi_trans  "Transformer
+                                            v_bill_factor  "Billing fact
+                                            v_trans_needed."Trans
+        PERFORM validate_elec_meter USING c_kombinat_z
+                                          c_class_nemi
+                                          c_chara_nemi_mnum
+                                          c_chara_nemi_dmul
+                                          c_chara_nemi_mdls
+                                          c_chara_nemi_kkmul
+                                          c_zuart_02
+                                          c_sparte_01
+                                          c_zwnummer1
+*                                       c_ccat_ewmm "D9156
+                                          c_ccat_gen3       "D9156
+                                          v_acttime
+                                  CHANGING v_new_emtr_stat
+                                          i_char_val_nemi
+                                          i_inst_data_emtr
+                                          v_anlage_emtr
+                                          v_logiknr_emtr
+                                          v_new_egerh_emtr
+                                          v_new_intyp_emtr
+                                          v_old_equi_emtr
+                                          v_new_equi_emtr
+                                          v_tplnr_emtr
+*----|START-OF-CHANGE|MMRobson|12/08/2008|PM817711|----*
+*                                          v_error.
+                                          v_error
+                                          l_tariftyp
+*----|END-OF-CHANGE|MMRobson|12/08/2008|PM817711|----*
+                                          v_new_meter_smart_flg.    "DLM Phase 2
+
+        IF v_error        IS NOT INITIAL OR
+            v_error_dept   IS NOT INITIAL OR
+            v_error_sparte IS NOT INITIAL.
+          v_error_title1  = v_error_title.
+          v_error_txt1    = v_error_txt.
+
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+*          PERFORM change_order_status_error USING v_aufnr
+*                                                  wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+        ELSE.
+* Start of D11489
+          IF v_error NE c_flag_x.
+            PERFORM reverse_meter_read USING v_anlage_emtr
+                                             v_actdate
+                                             c_reason_09
+                                    CHANGING v_error.
+            IF v_error = abap_true.
+              v_error_sparte = c_sparte_01.
+              v_error_title1 = v_error_title.
+              v_error_txt1   = v_error_txt.
+            ENDIF.
+          ENDIF.
+          IF v_error NE c_flag_x.
+* End of D11489
+            PERFORM refresh_global_data.
+            v_msg_device = c_elec_mtr.
+            PERFORM replace_elec_mtr     USING    wa_caufvd
+                                                  v_old_equi_emtr
+                                                  v_new_equi_emtr
+                                                  c_class_eemi
+                                                  c_class_nemi
+                                                  v_anlage_emtr
+                                                  v_actdate
+                                                  c_action_03
+                                                  c_sparte_01
+                                                  i_inst_data_emtr
+                                                  c_chara_nemi_univ
+                                                  c_chara_uni_volts
+                                                  c_chara_nemi_vol
+                                                  c_chara_nemi_mloc
+                                                  v_new_intyp_emtr
+                                                  v_tplnr_emtr
+                                                  v_new_egerh_emtr
+*----|START-OF-CHANGE|MMRobson|12/08/2008|PM817711|----*
+                                                  l_tariftyp
+*----|END-OF-CHANGE|MMRobson|12/08/2008|PM817711|----*
+                                                  v_new_meter_smart_flg      "DLM Phase 2
+                                                  v_acttime
+                                          CHANGING i_char_val_eemi
+                                                  i_char_val_nemi
+                                                  v_error.
+          ENDIF.                                            "D11489
+          IF v_error_dept   IS NOT INITIAL OR
+              v_error_sparte IS NOT INITIAL.
+            v_error_title1 = v_error_title.
+            v_error_txt1   = v_error_txt.
+          ENDIF.
+        ENDIF.
+      WHEN c_auart_gmtr OR
+            c_auart_ginv.
+
+*Get priority from z-table based on order type & priority in order
+        SELECT old_priok
+                FROM ztdm_wf_priok
+                UP TO 1 ROWS
+                INTO v_priok
+                WHERE auart = wa_caufvd-auart AND
+                      priok = wa_caufvd-priok.
+        ENDSELECT.
+        IF sy-subrc NE 0.
+*----------Perform error handling
+          v_error       = c_flag_x.
+          CONCATENATE text-044
+                      v_aufnr
+                      INTO v_error_title.
+
+          CONCATENATE text-044
+                      v_aufnr
+                      text-045
+                      INTO v_error_txt
+                      SEPARATED BY space.
+
+          v_error_sparte = c_sparte_02.
+
+          IF v_error_dept   IS NOT INITIAL OR
+              v_error_sparte IS NOT INITIAL.
+            v_error_title1 = v_error_title.
+            v_error_txt1   = v_error_txt.
+          ENDIF.
+
+        ELSE.
+* Begin of R4C changes by SKOTHURI
+          IF p_refdata-auart = 'GINV'.
+*-Get old material number
+            PERFORM get_old_material USING    v_aufnr
+                                              v_actdate
+                                              c_kombinat_z
+                                              c_sparte_02
+                                     CHANGING v_tplnr_gmtr
+                                              v_old_equi_gmtr
+                                              v_error.
+            IF v_error IS INITIAL.
+              PERFORM get_installation_number USING v_old_equi_gmtr-equnr
+                                                    wa_caufvd-tplnr
+                                                    v_actdate
+                                                    c_kombinat_z
+                                           CHANGING v_anlage_gmtr
+                                                    v_logiknr_gmtr
+                                                    v_error.
+              IF v_error IS INITIAL.
+                SELECT anlart
+                      FROM eanl
+                      UP TO 1 ROWS
+                      INTO lv_intyp
+                      WHERE anlage = v_anlage_gmtr.
+                ENDSELECT.
+                IF sy-subrc EQ 0.
+                  IF lv_intyp = '14' OR
+                      lv_intyp = '15'.
+                    v_priok = c_priok_a.
+                  ENDIF.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+* End of R4C changes by SKOTHURI
+
+          IF p_refdata-modify_section <> 'B'.
+            CASE v_priok.
+              WHEN c_priok_1.
+                v_msg_device = c_gas_mtr.
+                PERFORM validate_gas_meter USING c_kombinat_z
+                                                  c_class_ngmi
+                                                  c_chara_ngmi_mnum
+                                                  c_chara_ngmi_dials
+                                                  c_sparte_02
+                                                  c_zwnummer1
+*                                             c_ccat_gwmm "D9156
+                                                  c_ccat_gen3 "D9156
+                                        CHANGING v_new_gmtr_stat
+                                                  i_char_val_ngmi
+                                                  i_inst_data_gmtr
+                                                  v_anlage_gmtr
+                                                  v_logiknr_gmtr
+                                                  v_new_egerh_gmtr
+                                                  v_new_intyp_gmtr
+                                                  v_old_equi_gmtr
+                                                  v_new_equi_gmtr
+                                                  v_tplnr_gmtr
+                                                  v_error.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**               Change the Status of order
+*                PERFORM change_order_status_error USING v_aufnr
+*                                                        wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                ELSE.
+* Start of D11489
+                  IF v_error NE c_flag_x.
+                    PERFORM reverse_meter_read USING v_anlage_gmtr
+                                                     v_actdate
+                                                     c_reason_09
+                                            CHANGING v_error.
+                    IF v_error = abap_true.
+                      v_error_sparte = c_sparte_02.
+                      v_error_title1 = v_error_title.
+                      v_error_txt1   = v_error_txt.
+                    ENDIF.
+                  ENDIF.
+                  IF v_error NE c_flag_x.
+* End of D11489
+                    PERFORM refresh_global_data.
+                    v_msg_device = c_gas_mtr.
+                    PERFORM replace_gas_meter USING wa_caufvd
+                                                    c_class_egmi
+                                                    c_class_ngmi
+                                                    i_notif_item
+                                                    v_actdate
+                                                    c_sparte_02
+                                                    i_inst_data_gmtr
+                                                    c_action_03
+                                                    c_chara_ngmi_mloc
+                                                    v_tplnr_gmtr
+                                                    v_new_egerh_gmtr
+                                                    v_acttime
+                                           CHANGING v_anlage_gmtr
+                                                    v_old_equi_gmtr
+                                                    v_new_equi_gmtr
+                                                    i_char_val_egmi
+                                                    i_char_val_ngmi
+                                                    v_error.
+                  ENDIF.                                    "D11489
+
+                  IF v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+
+                  IF v_error = abap_false AND v_old_equi_ggcm-equnr IS NOT INITIAL.
+                    PERFORM update_giu_association_meter USING v_old_equi_gmtr
+                                                               v_new_equi_gmtr
+                                                               v_old_equi_ggcm
+                                                      CHANGING v_error
+                                                               v_error_title1
+                                                               v_error_txt1.
+                  ENDIF.
+                ENDIF.
+                " End of c_priok_1
+              WHEN c_priok_2.
+
+                v_msg_device = c_gas_reg.
+                PERFORM validate_gas_regulator USING c_kombinat_d
+                                                      c_class_nffr
+                                                      c_chara_nffr_nbr
+                                                      c_chara_nffr_prs
+                                                      c_sparte_02
+                                                      c_ccat_gen3 "D9156
+                                            CHANGING  v_new_greg_stat
+                                                      v_tplnr_greg
+                                                      v_old_equi_greg
+                                                      v_anlage_greg
+                                                      v_logiknr_greg
+                                                      v_new_equi_greg
+                                                      v_error
+                                                      i_char_val_nffr.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**             Change the Status of order
+*                PERFORM change_order_status_error USING v_aufnr
+*                                                        wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                ELSE.
+                  v_msg_device = c_gas_mtr.
+                  PERFORM validate_gas_meter USING c_kombinat_z
+                                                    c_class_ngmi
+                                                    c_chara_ngmi_mnum
+                                                    c_chara_ngmi_dials
+                                                    c_sparte_02
+                                                    c_zwnummer1
+*                                               c_ccat_gwmm "D9156
+                                                    c_ccat_gen3 "D9156
+                                          CHANGING v_new_gmtr_stat
+                                                    i_char_val_ngmi
+                                                    i_inst_data_gmtr
+                                                    v_anlage_gmtr
+                                                    v_logiknr_gmtr
+                                                    v_new_egerh_gmtr
+                                                    v_new_intyp_gmtr
+                                                    v_old_equi_gmtr
+                                                    v_new_equi_gmtr
+                                                    v_tplnr_gmtr
+                                                    v_error.
+
+                  IF v_error        IS NOT INITIAL OR
+                      v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**               Change the Status of order
+*                  PERFORM change_order_status_error USING v_aufnr
+*                                                          wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                  ELSE.
+* Start of D11489
+                    IF v_error NE c_flag_x.
+                      PERFORM reverse_meter_read USING v_anlage_greg
+                                                       v_actdate
+                                                       c_reason_09
+                                              CHANGING v_error.
+                      IF v_error = abap_true.
+                        v_error_sparte = c_sparte_02.
+                        v_error_title1 = v_error_title.
+                        v_error_txt1   = v_error_txt.
+                      ENDIF.
+                    ENDIF.
+                    IF v_error NE c_flag_x.
+* End of D11489
+                      PERFORM refresh_global_data.
+                      CLEAR v_anlage_greg.
+                      v_msg_device = c_gas_reg.
+                      PERFORM replace_gas_regulator USING wa_caufvd
+                                                          c_class_effr
+                                                          c_class_nffr
+                                                          i_notif_item
+                                                          v_actdate
+                                                          c_sparte_02
+                                                          i_inst_data_greg
+                                                          c_action_03
+                                                          v_tplnr_greg
+                                                          v_new_egerh_greg
+                                                          v_acttime
+                                              CHANGING     v_anlage_greg
+                                                          v_old_equi_greg
+                                                          v_new_equi_greg
+                                                          i_char_val_effr
+                                                          i_char_val_nffr
+                                                          v_error.
+                    ENDIF.                                  "D11489
+                    IF v_error_dept   IS NOT INITIAL OR
+                        v_error_sparte IS NOT INITIAL.
+                      v_error_title1 = v_error_title.
+                      v_error_txt1   = v_error_txt.
+                    ENDIF.
+
+                    PERFORM refresh_global_data.
+                    v_msg_device = c_gas_mtr.
+                    PERFORM replace_gas_meter         USING wa_caufvd
+                                                            c_class_egmi
+                                                            c_class_ngmi
+                                                            i_notif_item
+                                                            v_actdate
+                                                            c_sparte_02
+                                                            i_inst_data_gmtr
+                                                            c_action_03
+                                                            c_chara_ngmi_mloc
+                                                            v_tplnr_gmtr
+                                                            v_new_egerh_gmtr
+                                                            v_acttime
+                                                    CHANGING v_anlage_gmtr
+                                                            v_old_equi_gmtr
+                                                            v_new_equi_gmtr
+                                                            i_char_val_egmi
+                                                            i_char_val_ngmi
+                                                            v_error.
+
+                    IF v_error_dept   IS NOT INITIAL OR
+                        v_error_sparte IS NOT INITIAL.
+                      v_error_title2 = v_error_title.
+                      v_error_txt2   = v_error_txt.
+                    ENDIF.
+
+                    IF v_error = abap_false AND v_old_equi_ggcm-equnr IS NOT INITIAL.
+                      PERFORM update_giu_association_meter USING v_old_equi_gmtr
+                                                                 v_new_equi_gmtr
+                                                                 v_old_equi_ggcm
+                                                        CHANGING v_error
+                                                                 v_error_title2
+                                                                 v_error_txt2.
+                    ENDIF.
+*----|START-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+                    CLEAR: v_error_title, v_error_txt.
+                    PERFORM verify_pressure USING i_char_val_nffr
+                                                  c_chara_nffr_prs
+                                                  v_new_equi_greg
+                                                  v_error.
+
+                    v_error_title3 = v_error_title.
+                    v_error_txt3   = v_error_txt.
+*----|END-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+                  ENDIF.
+                ENDIF.
+                " End of c_priok_2
+              WHEN c_priok_3.
+
+                v_msg_device = c_gas_reg.
+                PERFORM validate_gas_regulator USING c_kombinat_d
+                                                      c_class_nffr
+                                                      c_chara_nffr_nbr
+                                                      c_chara_nffr_prs
+                                                      c_sparte_02
+                                                      c_ccat_gen3 "D9156
+                                            CHANGING  v_new_greg_stat
+                                                      v_tplnr_greg
+                                                      v_old_equi_greg
+                                                      v_anlage_greg
+                                                      v_logiknr_greg
+                                                      v_new_equi_greg
+                                                      v_error
+                                                      i_char_val_nffr.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**             Change the Status of order
+*                PERFORM change_order_status_error USING v_aufnr
+*                                                        wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                ELSE.
+* Start of D11489
+                  IF v_error NE c_flag_x.
+                    PERFORM reverse_meter_read USING v_anlage_greg
+                                                     v_actdate
+                                                     c_reason_09
+                                            CHANGING v_error.
+                    IF v_error = abap_true.
+                      v_error_sparte = c_sparte_02.
+                      v_error_title1 = v_error_title.
+                      v_error_txt1   = v_error_txt.
+                    ENDIF.
+                  ENDIF.
+                  IF v_error NE c_flag_x.
+* End of D11489
+                    PERFORM refresh_global_data.
+                    CLEAR v_anlage_greg.
+                    v_msg_device = c_gas_reg.
+                    PERFORM replace_gas_regulator USING wa_caufvd
+                                                        c_class_effr
+                                                        c_class_nffr
+                                                        i_notif_item
+                                                        v_actdate
+                                                        c_sparte_02
+                                                        i_inst_data_greg
+                                                        c_action_03
+                                                        v_tplnr_greg
+                                                        v_new_egerh_greg
+                                                        v_acttime
+                                            CHANGING     v_anlage_greg
+                                                        v_old_equi_greg
+                                                        v_new_equi_greg
+                                                        i_char_val_effr
+                                                        i_char_val_nffr
+                                                        v_error.
+                  ENDIF.                                    "D11489
+                  IF v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+*----|START-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+                  CLEAR: v_error_title, v_error_txt.
+                  PERFORM verify_pressure USING i_char_val_nffr
+                                                c_chara_nffr_prs
+                                                v_new_equi_greg
+                                                v_error.
+
+                  v_error_title2 = v_error_title.
+                  v_error_txt2   = v_error_txt.
+*----|END-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+                ENDIF.
+                " End of c_priok_3
+              WHEN c_priok_4.
+                v_msg_device = c_gas_corr.
+                PERFORM validate_gas_corrector USING c_kombinat_m
+                                                      c_class_nvci
+                                                      c_chara_nvci_einr
+                                                      c_chara_nvci_vcdial
+                                                      c_chara_nvci_vudial
+                                                      c_sparte_02
+*                                                 c_ccat_gwmm "D9156
+                                                      c_ccat_gen3 "D9156
+                                            CHANGING  v_new_gcorr_stat
+                                                      i_char_val_nvci
+                                                      i_inst_data_gcorr
+                                                      v_anlage_gcorr
+                                                      v_logiknr_gcorr
+                                                      v_new_egerh_gcorr
+                                                      v_new_intyp_gcorr
+                                                      v_old_equi_gcorr
+                                                      v_new_equi_gcorr
+                                                      v_tplnr_gcorr
+                                                      v_error
+                                                      v_error_txt  .
+
+                IF v_error = abap_false.
+                  PERFORM validate_corr_repl_with_gcm USING wa_caufvd-tplnr
+                                                            v_priok
+                                                            v_actdate
+                                                            v_new_equi_gcorr
+                                                            v_old_equi_gmtr " expected to be empty
+                                                   CHANGING v_old_equi_ggcm
+                                                            v_error.
+                ENDIF.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**                 Change the Status of order
+*                PERFORM change_order_status_error USING v_aufnr
+*                                                        wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                ELSE.
+* Start of D11489
+                  IF v_error NE c_flag_x.
+                    PERFORM reverse_meter_read USING v_anlage_gcorr
+                                                     v_actdate
+                                                     c_reason_09
+                                            CHANGING v_error.
+                    IF v_error = abap_true.
+                      v_error_sparte = c_sparte_02.
+                      v_error_title1 = v_error_title.
+                      v_error_txt1   = v_error_txt.
+                    ENDIF.
+                  ENDIF.
+                  IF v_error NE c_flag_x.
+* End of D11489
+                    PERFORM refresh_global_data.
+                    v_msg_device = c_gas_corr.
+                    PERFORM replace_gas_corrector USING wa_caufvd
+                                                        c_class_evci
+                                                        c_class_nvci
+                                                        i_notif_item
+                                                        v_actdate
+                                                        c_sparte_02
+                                                        i_inst_data_gcorr
+                                                        c_action_03
+                                                        v_tplnr_gcorr
+                                                        v_new_egerh_gcorr
+                                                        v_acttime
+                                              CHANGING  v_anlage_gcorr
+                                                        v_old_equi_gcorr
+                                                        v_new_equi_gcorr
+                                                        i_char_val_evci
+                                                        i_char_val_nvci
+                                                        v_error.
+                  ENDIF.                                    "D11489
+
+                  IF v_error = abap_false AND v_old_equi_ggcm-equnr IS NOT INITIAL.
+                    PERFORM deactivate_registers USING v_new_equi_gcorr
+                                                       v_actdate
+                                                       c_skip_reading
+                                              CHANGING v_error.
+                  ENDIF.
+
+                  IF v_error_dept IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+                " End of c_priok_4
+              WHEN c_priok_5.
+                v_msg_device = c_gas_mtr.
+                PERFORM validate_gas_meter USING c_kombinat_z
+                                                  c_class_ngmi
+                                                  c_chara_ngmi_mnum
+                                                  c_chara_ngmi_dials
+                                                  c_sparte_02
+                                                  c_zwnummer1
+*                                             c_ccat_gwmm "D9156
+                                                  c_ccat_gen3 "D9156
+                                        CHANGING v_new_gmtr_stat
+                                                  i_char_val_ngmi
+                                                  i_inst_data_gmtr
+                                                  v_anlage_gmtr
+                                                  v_logiknr_gmtr
+                                                  v_new_egerh_gmtr
+                                                  v_new_intyp_gmtr
+                                                  v_old_equi_gmtr
+                                                  v_new_equi_gmtr
+                                                  v_tplnr_gmtr
+                                                  v_error.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**               Change the Status of order
+*                PERFORM change_order_status_error USING v_aufnr
+*                                                        wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                ELSE.
+
+                  v_msg_device = c_gas_corr.
+                  PERFORM validate_gas_corrector USING c_kombinat_m
+                                                        c_class_nvci
+                                                        c_chara_nvci_einr
+                                                        c_chara_nvci_vcdial
+                                                        c_chara_nvci_vudial
+                                                        c_sparte_02
+*                                                   c_ccat_gwmm "D9156
+                                                        c_ccat_gen3 "D9156
+                                              CHANGING  v_new_gcorr_stat
+                                                        i_char_val_nvci
+                                                        i_inst_data_gcorr
+                                                        v_anlage_gcorr
+                                                        v_logiknr_gcorr
+                                                        v_new_egerh_gcorr
+                                                        v_new_intyp_gcorr
+                                                        v_old_equi_gcorr
+                                                        v_new_equi_gcorr
+                                                        v_tplnr_gcorr
+                                                        v_error
+                                                        v_error_txt  .
+
+                  IF v_error = abap_false.
+                    PERFORM validate_corr_repl_with_gcm USING wa_caufvd-tplnr
+                                                              v_priok
+                                                              v_actdate
+                                                              v_new_equi_gcorr
+                                                              v_new_equi_gmtr
+                                                     CHANGING v_old_equi_ggcm
+                                                              v_error.
+                  ENDIF.
+
+                  IF v_error        IS NOT INITIAL OR
+                      v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**                 Change the Status of order
+*                  PERFORM change_order_status_error USING v_aufnr
+*                                                          wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                  ELSE.
+* Start of D11489
+                    IF v_error NE c_flag_x.
+                      PERFORM reverse_meter_read USING v_anlage_gmtr
+                                                       v_actdate
+                                                       c_reason_09
+                                              CHANGING v_error.
+                      IF v_error = abap_true.
+                        v_error_sparte = c_sparte_02.
+                        v_error_title1 = v_error_title.
+                        v_error_txt1   = v_error_txt.
+                      ENDIF.
+                    ENDIF.
+                    IF v_error NE c_flag_x.
+* End of D11489
+                      PERFORM refresh_global_data.
+                      v_msg_device = c_gas_mtr.
+                      PERFORM replace_gas_meter         USING wa_caufvd
+                                                              c_class_egmi
+                                                              c_class_ngmi
+                                                              i_notif_item
+                                                              v_actdate
+                                                              c_sparte_02
+                                                              i_inst_data_gmtr
+                                                              c_action_03
+                                                              c_chara_ngmi_mloc
+                                                              v_tplnr_gmtr
+                                                              v_new_egerh_gmtr
+                                                              v_acttime
+                                                      CHANGING v_anlage_gmtr
+                                                              v_old_equi_gmtr
+                                                              v_new_equi_gmtr
+                                                              i_char_val_egmi
+                                                              i_char_val_ngmi
+                                                              v_error.
+                      IF v_error = abap_false AND v_old_equi_ggcm-equnr IS NOT INITIAL.
+                        PERFORM update_giu_association_meter USING v_old_equi_gmtr
+                                                                   v_new_equi_gmtr
+                                                                   v_old_equi_ggcm
+                                                          CHANGING v_error
+                                                                   v_error_title1
+                                                                   v_error_txt1.
+                      ENDIF.
+                    ENDIF.                                  "D11489
+                    IF v_error_dept   IS NOT INITIAL OR
+                        v_error_sparte IS NOT INITIAL.
+                      v_error_title1 = v_error_title.
+                      v_error_txt1   = v_error_txt.
+                    ENDIF.
+
+                    PERFORM refresh_global_data.
+                    v_msg_device = c_gas_corr.
+                    PERFORM replace_gas_corrector USING wa_caufvd
+                                                        c_class_evci
+                                                        c_class_nvci
+                                                        i_notif_item
+                                                        v_actdate
+                                                        c_sparte_02
+                                                        i_inst_data_gcorr
+                                                        c_action_03
+                                                        v_tplnr_gcorr
+                                                        v_new_egerh_gcorr
+                                                        v_acttime
+                                              CHANGING  v_anlage_gcorr
+                                                        v_old_equi_gcorr
+                                                        v_new_equi_gcorr
+                                                        i_char_val_evci
+                                                        i_char_val_nvci
+                                                        v_error.
+
+                    IF v_error = abap_false AND v_old_equi_ggcm-equnr IS NOT INITIAL.
+                      PERFORM deactivate_registers USING v_new_equi_gcorr
+                                                         v_actdate
+                                                         c_skip_reading
+                                                CHANGING v_error.
+                    ENDIF.
+
+                    IF v_error_dept   IS NOT INITIAL OR
+                        v_error_sparte IS NOT INITIAL.
+                      v_error_title2 = v_error_title.
+                      v_error_txt2   = v_error_txt.
+                    ENDIF.
+                  ENDIF.
+                ENDIF.
+                " End of c_priok_5
+              WHEN c_priok_6.
+
+                v_msg_device = c_gas_reg.
+                PERFORM validate_gas_regulator USING c_kombinat_d
+                                                      c_class_nffr
+                                                      c_chara_nffr_nbr
+                                                      c_chara_nffr_prs
+                                                      c_sparte_02
+                                                      c_ccat_gen3 "D9156
+                                            CHANGING  v_new_greg_stat
+                                                      v_tplnr_greg
+                                                      v_old_equi_greg
+                                                      v_anlage_greg
+                                                      v_logiknr_greg
+                                                      v_new_equi_greg
+                                                      v_error
+                                                      i_char_val_nffr.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**             Change the Status of order
+*                PERFORM change_order_status_error USING v_aufnr
+*                                                        wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                ELSE.
+                  v_msg_device = c_gas_mtr.
+                  PERFORM validate_gas_meter USING c_kombinat_z
+                                                    c_class_ngmi
+                                                    c_chara_ngmi_mnum
+                                                    c_chara_ngmi_dials
+                                                    c_sparte_02
+                                                    c_zwnummer1
+*                                               c_ccat_gwmm "D9156
+                                                    c_ccat_gen3 "D9156
+                                          CHANGING v_new_gmtr_stat
+                                                    i_char_val_ngmi
+                                                    i_inst_data_gmtr
+                                                    v_anlage_gmtr
+                                                    v_logiknr_gmtr
+                                                    v_new_egerh_gmtr
+                                                    v_new_intyp_gmtr
+                                                    v_old_equi_gmtr
+                                                    v_new_equi_gmtr
+                                                    v_tplnr_gmtr
+                                                    v_error.
+
+                  IF v_error        IS NOT INITIAL OR
+                      v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**               Change the Status of order
+*                  PERFORM change_order_status_error USING v_aufnr
+*                                                          wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                  ELSE.
+
+                    v_msg_device = c_gas_corr.
+                    PERFORM validate_gas_corrector USING c_kombinat_m
+                                                          c_class_nvci
+                                                          c_chara_nvci_einr
+                                                          c_chara_nvci_vcdial
+                                                          c_chara_nvci_vudial
+                                                          c_sparte_02
+*                                                     c_ccat_gwmm "D9156
+                                                          c_ccat_gen3 "D9156
+                                                CHANGING  v_new_gcorr_stat
+                                                          i_char_val_nvci
+                                                          i_inst_data_gcorr
+                                                          v_anlage_gcorr
+                                                          v_logiknr_gcorr
+                                                          v_new_egerh_gcorr
+                                                          v_new_intyp_gcorr
+                                                          v_old_equi_gcorr
+                                                          v_new_equi_gcorr
+                                                          v_tplnr_gcorr
+                                                          v_error
+                                                          v_error_txt  .
+
+                    IF v_error = abap_false.
+                      PERFORM validate_corr_repl_with_gcm USING wa_caufvd-tplnr
+                                                                v_priok
+                                                                v_actdate
+                                                                v_new_equi_gcorr
+                                                                v_new_equi_gmtr
+                                                       CHANGING v_old_equi_ggcm
+                                                                v_error.
+                    ENDIF.
+
+                    IF v_error        IS NOT INITIAL OR
+                        v_error_dept   IS NOT INITIAL OR
+                        v_error_sparte IS NOT INITIAL.
+                      v_error_title1 = v_error_title.
+                      v_error_txt1   = v_error_txt.
+*----|START-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+**                 Change the Status of order
+*                    PERFORM change_order_status_error USING v_aufnr
+*                                                            wa_caufvd.
+*----|END-OF-CHANGE|MMRobson|07/10/2009|PM839840|----*
+                    ELSE.
+* Start of D11489
+                      IF v_error NE 'X'.
+                        PERFORM reverse_meter_read USING v_anlage_greg
+                                                         v_actdate
+                                                         c_reason_09
+                                                CHANGING v_error.
+                        IF v_error = abap_true.
+                          v_error_sparte = c_sparte_02.
+                          v_error_title1 = v_error_title.
+                          v_error_txt1   = v_error_txt.
+                        ENDIF.
+                      ENDIF.
+
+                      IF v_error NE c_flag_x.
+* End of D11489
+                        PERFORM refresh_global_data.
+                        CLEAR v_anlage_greg.
+                        v_msg_device = c_gas_reg.
+                        PERFORM replace_gas_regulator USING wa_caufvd
+                                                            c_class_effr
+                                                            c_class_nffr
+                                                            i_notif_item
+                                                            v_actdate
+                                                            c_sparte_02
+                                                            i_inst_data_greg
+                                                            c_action_03
+                                                            v_tplnr_greg
+                                                            v_new_egerh_greg
+                                                            v_acttime
+                                                CHANGING     v_anlage_greg
+                                                            v_old_equi_greg
+                                                            v_new_equi_greg
+                                                            i_char_val_effr
+                                                            i_char_val_nffr
+                                                            v_error.
+                      ENDIF.                                "D11489
+                      IF v_error_dept   IS NOT INITIAL OR
+                          v_error_sparte IS NOT INITIAL.
+                        v_error_title1 = v_error_title.
+                        v_error_txt1   = v_error_txt.
+                      ENDIF.
+
+                      PERFORM refresh_global_data.
+                      v_msg_device = c_gas_mtr.
+                      PERFORM replace_gas_meter         USING wa_caufvd
+                                                              c_class_egmi
+                                                              c_class_ngmi
+                                                              i_notif_item
+                                                              v_actdate
+                                                              c_sparte_02
+                                                              i_inst_data_gmtr
+                                                              c_action_03
+                                                              c_chara_ngmi_mloc
+                                                              v_tplnr_gmtr
+                                                              v_new_egerh_gmtr
+                                                              v_acttime
+                                                      CHANGING v_anlage_gmtr
+                                                              v_old_equi_gmtr
+                                                              v_new_equi_gmtr
+                                                              i_char_val_egmi
+                                                              i_char_val_ngmi
+                                                              v_error.
+
+                      IF v_error_dept   IS NOT INITIAL OR
+                          v_error_sparte IS NOT INITIAL.
+                        v_error_title2 = v_error_title.
+                        v_error_txt2   = v_error_txt.
+                      ENDIF.
+
+                      IF v_error = abap_false AND v_old_equi_ggcm-equnr IS NOT INITIAL.
+                        PERFORM update_giu_association_meter USING v_old_equi_gmtr
+                                                                   v_new_equi_gmtr
+                                                                   v_old_equi_ggcm
+                                                          CHANGING v_error
+                                                                   v_error_title2
+                                                                   v_error_txt2.
+                      ENDIF.
+
+                      PERFORM refresh_global_data.
+                      v_msg_device = c_gas_corr.
+                      PERFORM replace_gas_corrector USING wa_caufvd
+                                                          c_class_evci
+                                                          c_class_nvci
+                                                          i_notif_item
+                                                          v_actdate
+                                                          c_sparte_02
+                                                          i_inst_data_gcorr
+                                                          c_action_03
+                                                          v_tplnr_gcorr
+                                                          v_new_egerh_gcorr
+                                                          v_acttime
+                                                CHANGING  v_anlage_gcorr
+                                                          v_old_equi_gcorr
+                                                          v_new_equi_gcorr
+                                                          i_char_val_evci
+                                                          i_char_val_nvci
+                                                          v_error.
+
+                      IF v_error = abap_false AND v_old_equi_ggcm-equnr IS NOT INITIAL.
+                        PERFORM deactivate_registers USING v_new_equi_gcorr
+                                                           v_actdate
+                                                           c_skip_reading
+                                                  CHANGING v_error.
+                      ENDIF.
+
+                      IF v_error_dept   IS NOT INITIAL OR
+                          v_error_sparte IS NOT INITIAL.
+                        v_error_title3 = v_error_title.
+                        v_error_txt3   = v_error_txt.
+                      ENDIF.
+*----|START-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+                      CLEAR: v_error_title, v_error_txt.
+                      PERFORM verify_pressure USING i_char_val_nffr
+                                                    c_chara_nffr_prs
+                                                    v_new_equi_greg
+                                                    v_error.
+
+                      v_error_title4 = v_error_title.
+                      v_error_txt4   = v_error_txt.
+*----|END-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+                    ENDIF.
+                  ENDIF.
+                ENDIF.
+                " End of c_priok_6
+              WHEN c_priok_c.   "Replace GCM
+
+                v_msg_device = c_gas_mtr.
+                PERFORM get_old_material USING     v_aufnr
+                                                   v_actdate
+                                                   c_kombinat_z
+                                                   c_sparte_02
+                                          CHANGING v_tplnr_gmtr
+                                                   v_old_equi_gmtr
+                                                   v_error.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+                ELSE.
+                  v_msg_device = c_gas_gcm. "c_gas_corr.   "need to revisit
+                  PERFORM validate_gas_comm_module USING c_kombinat_m
+                                                         c_class_ngcm
+                                                         c_chara_ngcm_meter
+                                                         c_sparte_02
+                                                CHANGING v_new_gcorr_stat
+                                                         i_char_val_ngcm
+                                                         i_inst_data_ggcm " Could be different maybe tarrift changed?
+                                                         v_anlage_ggcm    "Common installation per G/E device
+                                                         v_logiknr_ggcm   "Common logical device nbr per G/E device; NOT Used Pri 'C'
+                                                         v_new_egerh_ggcm "Unique data per individual device
+                                                         v_new_intyp_ggcm "Unique data per individual device; NOT Used Pri 'C'
+                                                         v_old_equi_ggcm  "Unique data per individual device
+                                                         v_new_equi_ggcm  "Unique data per individual device
+                                                         v_tplnr_ggcm     "Common DevLoc/FuncLoc per G/E device
+                                                         v_error
+                                                         v_error_txt.
+
+                  IF v_error        IS NOT INITIAL OR
+                     v_error_dept   IS NOT INITIAL OR
+                     v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ELSE.
+                    IF v_error NE c_flag_x.
+                      "FORM name misleading; actually reversing the read on the GCM
+                      PERFORM reverse_meter_read USING v_anlage_ggcm "v_anlage_gcorr
+                                                       v_actdate
+                                                       c_reason_09
+                                              CHANGING v_error.
+                      IF v_error = abap_true.
+                        v_error_sparte = c_sparte_02.
+                        v_error_title1 = v_error_title.
+                        v_error_txt1   = v_error_txt.
+                      ENDIF.
+                    ENDIF.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error NE abap_true.
+                  v_msg_device = c_gcm.
+                  "FORM name misleading; actually replacing GCM
+                  PERFORM replace_gas_corrector USING wa_caufvd
+                                                      c_class_egcm
+                                                      c_class_ngcm
+                                                      i_notif_item
+                                                      v_actdate
+                                                      c_sparte_02
+                                                      i_inst_data_ggcm  "i_inst_data_gcorr
+                                                      c_action_03
+                                                      v_tplnr_ggcm      "v_tplnr_gcorr
+                                                      v_new_egerh_ggcm  "v_new_egerh_gcorr
+                                                      v_acttime
+                                            CHANGING  v_anlage_ggcm
+                                                      v_old_equi_ggcm  "v_old_equi_gcorr
+                                                      v_new_equi_ggcm  "v_new_equi_gcorr
+                                                      i_char_val_egcm
+                                                      i_char_val_ngcm
+                                                      v_error.
+                  IF v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error = abap_false.
+                  PERFORM update_giu_association USING v_old_equi_gmtr
+                                                       v_new_equi_ggcm
+                                                       c_giu_update_action-exchange
+                                              CHANGING v_error
+                                                       v_error_title3
+                                                       v_error_txt3.
+                ENDIF.
+
+                PERFORM update_devloc_amr_boosted_comm USING v_new_equi_ggcm-equnr
+                                                             wa_caufvd-tplnr
+                                                             v_actdate
+                                                             i_char_val_ngcm[]
+                                                    CHANGING v_error
+                                                             v_error_title1
+                                                             v_error_txt1.
+                " End of c_priok_c
+              WHEN c_priok_a.
+                v_msg_device = c_gas_mtr.
+                PERFORM validate_gas_meter USING c_kombinat_z
+                                                  c_class_ngmi
+                                                  c_chara_ngmi_mnum
+                                                  c_chara_ngmi_dials
+                                                  c_sparte_02
+                                                  c_zwnummer1
+                                                  c_ccat_gen3
+                                         CHANGING v_new_gmtr_stat
+                                                  i_char_val_ngmi
+                                                  i_inst_data_gmtr
+                                                  v_anlage_gmtr
+                                                  v_logiknr_gmtr
+                                                  v_new_egerh_gmtr
+                                                  v_new_intyp_gmtr
+                                                  v_old_equi_gmtr
+                                                  v_new_equi_gmtr
+                                                  v_tplnr_gmtr
+                                                  v_error.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+                ELSE.
+                  v_msg_device = c_gcm.
+                  PERFORM validate_gas_comm_module  USING c_kombinat_m
+                                                          c_class_ngcm
+                                                          c_chara_ngcm_meter
+                                                          c_sparte_02
+                                                 CHANGING v_new_gcorr_stat
+                                                          i_char_val_ngcm
+                                                          i_inst_data_gcorr
+                                                          v_anlage_gcorr
+                                                          v_logiknr_gcorr
+                                                          v_new_egerh_gcorr
+                                                          v_new_intyp_gcorr
+                                                          v_old_equi_gcorr
+                                                          v_new_equi_gcorr
+                                                          v_tplnr_gcorr
+                                                          v_error
+                                                          v_error_txt.
+
+                  IF v_error        IS NOT INITIAL OR
+                      v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ELSE.
+                    IF v_error NE c_flag_x.
+                      PERFORM reverse_meter_read USING v_anlage_gmtr
+                                                       v_actdate
+                                                       c_reason_09
+                                              CHANGING v_error.
+                      IF v_error = abap_true.
+                        v_error_sparte = c_sparte_02.
+                        v_error_title1 = v_error_title.
+                        v_error_txt1   = v_error_txt.
+                      ENDIF.
+                    ENDIF.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error IS INITIAL.
+                  CREATE OBJECT lobj_class.
+                  IF v_new_egerh_gmtr-zwgruppe <> 'GDR'.
+                    lwa_devmod_data-sernr     = v_new_equi_gmtr-sernr.
+                    lwa_devmod_data-matnr     = v_new_equi_gmtr-matnr.
+                    lwa_devmod_data-zwgruppe  = 'GDR'.
+                    APPEND lwa_devmod_data TO li_devmod_data.
+
+                    lobj_class->perform_device_modification(
+                      EXPORTING
+                        it_input   = li_devmod_data
+                        iv_date    = v_actdate
+                        iv_equnr   = v_new_equi_gmtr-equnr
+                     IMPORTING
+                        ex_error_log  = lwa_error_log ).
+                    IF lwa_error_log IS NOT INITIAL.
+                      v_error        = abap_true.
+                      v_error_dept   = c_dept_admn.
+                      v_error_sparte = c_sparte_02.
+                      v_error_title1 = |GIU Replace: Dev Modication fail for { v_new_equi_gmtr-sernr }|.
+                      v_error_txt1   = lwa_error_log-error_desc.
+                    ENDIF.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error IS INITIAL .
+                  PERFORM get_installation_type_gas USING  v_new_equi_gmtr-equnr
+                                                           v_anlage_gmtr
+                                                  CHANGING v_new_egerh_gmtr
+                                                           v_new_intyp_gmtr.
+
+                  PERFORM get_installation_data_gas USING v_new_egerh_gmtr
+                                                          v_new_intyp_gmtr
+                                                          v_anlage_gmtr
+                                                 CHANGING i_inst_data_gmtr
+                                                          v_error
+                                                          l_tariftyp.
+                ENDIF.
+
+                IF v_error IS INITIAL.
+                  v_msg_device = c_gas_mtr.
+                  PERFORM replace_gas_meter         USING wa_caufvd
+                                                          c_class_egmi
+                                                          c_class_ngmi
+                                                          i_notif_item
+                                                          v_actdate
+                                                          c_sparte_02
+                                                          i_inst_data_gmtr
+                                                          c_action_03
+                                                          c_chara_ngmi_mloc
+                                                          v_tplnr_gmtr
+                                                          v_new_egerh_gmtr
+                                                          v_acttime
+                                                 CHANGING v_anlage_gmtr
+                                                          v_old_equi_gmtr
+                                                          v_new_equi_gmtr
+                                                          i_char_val_egmi
+                                                          i_char_val_ngmi
+                                                          v_error.
+                  IF v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error NE abap_true.
+                  PERFORM refresh_global_data.
+                  v_msg_device = c_gas_corr.
+                  PERFORM replace_gas_corrector USING wa_caufvd
+                                                      c_class_egcm
+                                                      c_class_ngcm
+                                                      i_notif_item
+                                                      v_actdate
+                                                      c_sparte_02
+                                                      i_inst_data_gcorr
+                                                      c_action_03
+                                                      v_tplnr_gcorr
+                                                      v_new_egerh_gcorr
+                                                      v_acttime
+                                            CHANGING  v_anlage_gcorr
+                                                      v_old_equi_gcorr
+                                                      v_new_equi_gcorr
+                                                      i_char_val_egcm
+                                                      i_char_val_ngcm
+                                                      v_error.
+                  IF v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title2 = v_error_title.
+                    v_error_txt2   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error NE abap_true.
+                  CALL FUNCTION 'ZSC_GAS_GIU_UPDATE'
+                    EXPORTING
+                      iv_mainmatno       = v_new_equi_gmtr-matnr
+                      iv_mainserno       = v_new_equi_gmtr-sernr
+                      iv_asocmatno       = v_new_equi_gcorr-matnr
+                      iv_asocserno       = v_new_equi_gcorr-sernr
+                      iv_relation        = 'A'
+                      iv_ustatus         = 'GIU'
+                    IMPORTING
+                      ex_error_msg       = lv_message
+                    EXCEPTIONS
+                      invalid_assoc_mat  = 1
+                      invalid_main_mat   = 2
+                      record_not_match   = 3
+                      association_exists = 4
+                      OTHERS             = 5.
+                  IF NOT lv_message IS INITIAL
+                    AND sy-subrc <> 4.
+                    v_error        = abap_true.
+                    v_error_dept   = c_dept_admn.
+                    v_error_sparte = c_sparte_02.
+                    v_error_title1 = |GIU Replace: Gas and GCM Assocation fail for { v_new_equi_gmtr-sernr }|.
+                    v_error_txt1   = lv_message.
+                  ELSEIF sy-subrc = 0.
+                    v_error        = abap_true.
+                    v_error_dept   = c_dept_admn.
+                    v_error_sparte = c_sparte_02.
+                    v_error_title1 = |GIU Replace{ p_aufnr }: GIU Association is not maintained|.
+                    v_error_txt1   = 'GIU association is not maintained on new gas mtr and new GCM prior to instln'.
+                  ENDIF.
+                ENDIF.
+
+                PERFORM update_devloc_amr_boosted_comm USING v_new_equi_gcorr-equnr
+                                                             wa_caufvd-tplnr
+                                                             v_actdate
+                                                             i_char_val_ngcm[]
+                                                    CHANGING v_error
+                                                             v_error_title1
+                                                             v_error_txt1.
+                " End of c_priok_a
+              WHEN c_priok_d.
+                v_msg_device = c_gas_reg.
+                PERFORM validate_gas_regulator USING c_kombinat_d
+                                                      c_class_nffr
+                                                      c_chara_nffr_nbr
+                                                      c_chara_nffr_prs
+                                                      c_sparte_02
+                                                      c_ccat_gen3 "D9156
+                                            CHANGING  v_new_greg_stat
+                                                      v_tplnr_greg
+                                                      v_old_equi_greg
+                                                      v_anlage_greg
+                                                      v_logiknr_greg
+                                                      v_new_equi_greg
+                                                      v_error
+                                                      i_char_val_nffr.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+                ELSE.
+                  v_msg_device = c_gas_mtr.
+                  PERFORM validate_gas_meter USING c_kombinat_z
+                                                    c_class_ngmi
+                                                    c_chara_ngmi_mnum
+                                                    c_chara_ngmi_dials
+                                                    c_sparte_02
+                                                    c_zwnummer1
+                                                    c_ccat_gen3
+                                           CHANGING v_new_gmtr_stat
+                                                    i_char_val_ngmi
+                                                    i_inst_data_gmtr
+                                                    v_anlage_gmtr
+                                                    v_logiknr_gmtr
+                                                    v_new_egerh_gmtr
+                                                    v_new_intyp_gmtr
+                                                    v_old_equi_gmtr
+                                                    v_new_equi_gmtr
+                                                    v_tplnr_gmtr
+                                                    v_error.
+
+                  IF v_error        IS NOT INITIAL OR
+                      v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ELSE.
+                    v_msg_device = c_gas_gcm.
+                    PERFORM validate_gas_comm_module  USING c_kombinat_m
+                                                            c_class_ngcm
+                                                            c_chara_ngcm_meter
+                                                            c_sparte_02
+                                                   CHANGING v_new_gcorr_stat
+                                                            i_char_val_ngcm
+                                                            i_inst_data_gcorr
+                                                            v_anlage_gcorr
+                                                            v_logiknr_gcorr
+                                                            v_new_egerh_gcorr
+                                                            v_new_intyp_gcorr
+                                                            v_old_equi_gcorr
+                                                            v_new_equi_gcorr
+                                                            v_tplnr_gcorr
+                                                            v_error
+                                                            v_error_txt.
+                    IF v_error        IS NOT INITIAL OR
+                        v_error_dept   IS NOT INITIAL OR
+                        v_error_sparte IS NOT INITIAL.
+                      v_error_title1 = v_error_title.
+                      v_error_txt1   = v_error_txt.
+                    ELSE.
+                      IF v_error NE c_flag_x.
+                        PERFORM reverse_meter_read USING v_anlage_gmtr
+                                                         v_actdate
+                                                         c_reason_09
+                                                CHANGING v_error.
+                        IF v_error = abap_true.
+                          v_error_sparte = c_sparte_02.
+                          v_error_title1 = v_error_title.
+                          v_error_txt1   = v_error_txt.
+                        ENDIF.
+                      ENDIF.
+                    ENDIF.
+                  ENDIF.
+
+                  CREATE OBJECT lobj_class.
+                  IF v_new_egerh_gmtr-zwgruppe <> 'GDR'.
+                    lwa_devmod_data-sernr     = v_new_equi_gmtr-sernr.
+                    lwa_devmod_data-matnr     = v_new_equi_gmtr-matnr.
+                    lwa_devmod_data-zwgruppe  = 'GDR'.
+                    APPEND lwa_devmod_data TO li_devmod_data.
+
+                    lobj_class->perform_device_modification(
+                      EXPORTING
+                        it_input   = li_devmod_data
+                        iv_date    = v_actdate
+                        iv_equnr   = v_new_equi_gmtr-equnr
+                     IMPORTING
+                        ex_error_log  = lwa_error_log ).
+                    IF lwa_error_log IS NOT INITIAL.
+                      v_error        = abap_true.
+                      v_error_dept   = c_dept_admn.
+                      v_error_sparte = c_sparte_02.
+                      v_error_title1 = |GIU Replace: Dev Modication fail for { v_new_equi_gmtr-sernr }|.
+                      v_error_txt1   = lwa_error_log-error_desc.
+                    ENDIF.
+                  ENDIF.
+
+                  IF v_error NE c_flag_x.
+                    PERFORM get_installation_type_gas USING  v_new_equi_gmtr-equnr
+                                                             v_anlage_gmtr
+                                                    CHANGING v_new_egerh_gmtr
+                                                             v_new_intyp_gmtr.
+
+                    PERFORM get_installation_data_gas USING v_new_egerh_gmtr
+                                                            v_new_intyp_gmtr
+                                                            v_anlage_gmtr
+                                                   CHANGING i_inst_data_gmtr
+                                                            v_error
+                                                            l_tariftyp.
+                  ENDIF.
+
+                  IF v_error NE c_flag_x.
+                    PERFORM refresh_global_data.
+                    CLEAR v_anlage_greg.
+                    v_msg_device = c_gas_reg.
+                    PERFORM replace_gas_regulator USING wa_caufvd
+                                                        c_class_effr
+                                                        c_class_nffr
+                                                        i_notif_item
+                                                        v_actdate
+                                                        c_sparte_02
+                                                        i_inst_data_greg
+                                                        c_action_03
+                                                        v_tplnr_greg
+                                                        v_new_egerh_greg
+                                                        v_acttime
+                                            CHANGING     v_anlage_greg
+                                                        v_old_equi_greg
+                                                        v_new_equi_greg
+                                                        i_char_val_effr
+                                                        i_char_val_nffr
+                                                        v_error.
+                  ENDIF.
+                  IF v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+
+                  IF v_error IS INITIAL.
+                    PERFORM refresh_global_data.
+                    v_msg_device = c_gas_mtr.
+                    PERFORM replace_gas_meter         USING wa_caufvd
+                                                            c_class_egmi
+                                                            c_class_ngmi
+                                                            i_notif_item
+                                                            v_actdate
+                                                            c_sparte_02
+                                                            i_inst_data_gmtr
+                                                            c_action_03
+                                                            c_chara_ngmi_mloc
+                                                            v_tplnr_gmtr
+                                                            v_new_egerh_gmtr
+                                                            v_acttime
+                                                   CHANGING v_anlage_gmtr
+                                                            v_old_equi_gmtr
+                                                            v_new_equi_gmtr
+                                                            i_char_val_egmi
+                                                            i_char_val_ngmi
+                                                            v_error.
+                  ENDIF.
+
+                  IF v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+
+                  IF v_error IS INITIAL.
+                    PERFORM refresh_global_data.
+                    v_msg_device = c_gas_corr.
+                    PERFORM replace_gas_corrector USING wa_caufvd
+                                                        c_class_egcm
+                                                        c_class_ngcm
+                                                        i_notif_item
+                                                        v_actdate
+                                                        c_sparte_02
+                                                        i_inst_data_gcorr
+                                                        c_action_03
+                                                        v_tplnr_gcorr
+                                                        v_new_egerh_gcorr
+                                                        v_acttime
+                                              CHANGING  v_anlage_gcorr
+                                                        v_old_equi_gcorr
+                                                        v_new_equi_gcorr
+                                                        i_char_val_egcm
+                                                        i_char_val_ngcm
+                                                        v_error.
+                  ENDIF.
+
+                  IF v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title2 = v_error_title.
+                    v_error_txt2   = v_error_txt.
+                  ELSE.
+
+                    CLEAR: v_error_title, v_error_txt.
+                    PERFORM verify_pressure USING i_char_val_nffr
+                                                  c_chara_nffr_prs
+                                                  v_new_equi_greg
+                                                  v_error.
+
+                    v_error_title4 = v_error_title.
+                    v_error_txt4   = v_error_txt.
+                  ENDIF.
+
+
+                  IF v_error NE abap_true.
+                    CALL FUNCTION 'ZSC_GAS_GIU_UPDATE'
+                      EXPORTING
+                        iv_mainmatno       = v_new_equi_gmtr-matnr
+                        iv_mainserno       = v_new_equi_gmtr-sernr
+                        iv_asocmatno       = v_new_equi_gcorr-matnr
+                        iv_asocserno       = v_new_equi_gcorr-sernr
+                        iv_relation        = 'A'
+                        iv_ustatus         = 'GIU'
+                      IMPORTING
+                        ex_error_msg       = lv_message
+                      EXCEPTIONS
+                        invalid_assoc_mat  = 1
+                        invalid_main_mat   = 2
+                        record_not_match   = 3
+                        association_exists = 4
+                        OTHERS             = 5.
+                    IF NOT lv_message IS INITIAL
+                    AND sy-subrc <> 4.
+                      v_error        = abap_true.
+                      v_error_dept   = c_dept_admn.
+                      v_error_sparte = c_sparte_02.
+                      v_error_title1 = |GIU Replace: Gas and GCM Assocation fail for { v_new_equi_gmtr-sernr }|.
+                      v_error_txt1   = lv_message.
+                    ELSEIF sy-subrc = 0.
+                      v_error        = abap_true.
+                      v_error_dept   = c_dept_admn.
+                      v_error_sparte = c_sparte_02.
+                      v_error_title1 = |GIU Replace{ p_aufnr }: GIU Association is not maintained|.
+                      v_error_txt1   = 'GIU association is not maintained on new gas mtr and new GCM prior to instln'.
+                    ENDIF.
+                  ENDIF.
+                ENDIF.
+
+                PERFORM update_devloc_amr_boosted_comm USING v_new_equi_gcorr-equnr
+                                                             wa_caufvd-tplnr
+                                                             v_actdate
+                                                             i_char_val_ngcm[]
+                                                    CHANGING v_error
+                                                             v_error_title5
+                                                             v_error_txt5.
+                " End of c_priok_d
+              WHEN c_priok_e_mtr_corr_gcm_reg.
+                v_msg_device = c_gas_reg.
+                PERFORM validate_gas_regulator USING c_kombinat_d
+                                                      c_class_nffr
+                                                      c_chara_nffr_nbr
+                                                      c_chara_nffr_prs
+                                                      c_sparte_02
+                                                      c_ccat_gen3
+                                            CHANGING  v_new_greg_stat
+                                                      v_tplnr_greg
+                                                      v_old_equi_greg
+                                                      v_anlage_greg
+                                                      v_logiknr_greg
+                                                      v_new_equi_greg
+                                                      v_error
+                                                      i_char_val_nffr.
+
+                IF v_error        IS NOT INITIAL OR
+                    v_error_dept   IS NOT INITIAL OR
+                    v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+                ELSE.
+                  v_msg_device = c_gas_mtr.
+                  PERFORM validate_gas_meter USING c_kombinat_z
+                                                    c_class_ngmi
+                                                    c_chara_ngmi_mnum
+                                                    c_chara_ngmi_dials
+                                                    c_sparte_02
+                                                    c_zwnummer1
+                                                    c_ccat_gen3
+                                          CHANGING v_new_gmtr_stat
+                                                    i_char_val_ngmi
+                                                    i_inst_data_gmtr
+                                                    v_anlage_gmtr
+                                                    v_logiknr_gmtr
+                                                    v_new_egerh_gmtr
+                                                    v_new_intyp_gmtr
+                                                    v_old_equi_gmtr
+                                                    v_new_equi_gmtr
+                                                    v_tplnr_gmtr
+                                                    v_error.
+
+                  IF v_error        IS NOT INITIAL OR
+                      v_error_dept   IS NOT INITIAL OR
+                      v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ELSE.
+                    v_msg_device = c_gas_corr.
+                    PERFORM validate_gas_corrector USING c_kombinat_m
+                                                          c_class_nvci
+                                                          c_chara_nvci_einr
+                                                          c_chara_nvci_vcdial
+                                                          c_chara_nvci_vudial
+                                                          c_sparte_02
+                                                          c_ccat_gen3
+                                                CHANGING  v_new_gcorr_stat
+                                                          i_char_val_nvci
+                                                          i_inst_data_gcorr
+                                                          v_anlage_gcorr
+                                                          v_logiknr_gcorr
+                                                          v_new_egerh_gcorr
+                                                          v_new_intyp_gcorr
+                                                          v_old_equi_gcorr
+                                                          v_new_equi_gcorr
+                                                          v_tplnr_gcorr
+                                                          v_error
+                                                          v_error_txt.
+
+                    IF v_error        IS NOT INITIAL OR
+                        v_error_dept   IS NOT INITIAL OR
+                        v_error_sparte IS NOT INITIAL.
+                      v_error_title1 = v_error_title.
+                      v_error_txt1   = v_error_txt.
+                    ELSE.
+                      v_msg_device = c_gas_gcm. "c_gas_corr.   "need to revisit
+                      PERFORM validate_gas_comm_module USING c_kombinat_m
+                                                             c_class_ngcm
+                                                             c_chara_ngcm_meter
+                                                             c_sparte_02
+                                                    CHANGING v_new_gcorr_stat
+                                                             i_char_val_ngcm
+                                                             i_inst_data_ggcm
+                                                             v_anlage_ggcm
+                                                             v_logiknr_ggcm
+                                                             v_new_egerh_ggcm
+                                                             v_new_intyp_ggcm
+                                                             v_old_equi_ggcm
+                                                             v_new_equi_ggcm
+                                                             v_tplnr_ggcm
+                                                             v_error
+                                                             v_error_txt.
+
+                      IF v_error        IS NOT INITIAL OR
+                         v_error_dept   IS NOT INITIAL OR
+                         v_error_sparte IS NOT INITIAL.
+                        v_error_title1 = v_error_title.
+                        v_error_txt1   = v_error_txt.
+                      ELSE.
+                        IF v_error NE 'X'.
+                          PERFORM reverse_meter_read USING v_anlage_greg
+                                                           v_actdate
+                                                           c_reason_09
+                                                  CHANGING v_error.
+                          IF v_error = abap_true.
+                            v_error_sparte = c_sparte_02.
+                            v_error_title1 = v_error_title.
+                            v_error_txt1   = v_error_txt.
+                          ENDIF.
+                        ENDIF.
+                        IF v_error NE c_flag_x.
+                          PERFORM refresh_global_data.
+                          CLEAR v_anlage_greg.
+                          v_msg_device = c_gas_reg.
+                          PERFORM replace_gas_regulator USING wa_caufvd
+                                                              c_class_effr
+                                                              c_class_nffr
+                                                              i_notif_item
+                                                              v_actdate
+                                                              c_sparte_02
+                                                              i_inst_data_greg
+                                                              c_action_03
+                                                              v_tplnr_greg
+                                                              v_new_egerh_greg
+                                                              v_acttime
+                                                  CHANGING     v_anlage_greg
+                                                              v_old_equi_greg
+                                                              v_new_equi_greg
+                                                              i_char_val_effr
+                                                              i_char_val_nffr
+                                                              v_error.
+                        ENDIF.
+                        IF v_error_dept   IS NOT INITIAL OR
+                            v_error_sparte IS NOT INITIAL.
+                          v_error_title1 = v_error_title.
+                          v_error_txt1   = v_error_txt.
+                        ENDIF.
+
+                        PERFORM refresh_global_data.
+                        v_msg_device = c_gas_mtr.
+
+                        PERFORM change_register_group USING v_new_equi_gmtr
+                                                            v_new_egerh_emtr
+                                                            c_zwgruppe_gdr
+                                                            v_actdate
+                                                   CHANGING v_error.
+
+                        IF v_error = abap_false.
+                          PERFORM replace_gas_meter USING wa_caufvd
+                                                          c_class_egmi
+                                                          c_class_ngmi
+                                                          i_notif_item
+                                                          v_actdate
+                                                          c_sparte_02
+                                                          i_inst_data_gmtr
+                                                          c_action_03
+                                                          c_chara_ngmi_mloc
+                                                          v_tplnr_gmtr
+                                                          v_new_egerh_gmtr
+                                                          v_acttime
+                                                 CHANGING v_anlage_gmtr
+                                                          v_old_equi_gmtr
+                                                          v_new_equi_gmtr
+                                                          i_char_val_egmi
+                                                          i_char_val_ngmi
+                                                          v_error.
+                        ENDIF.
+
+                        IF v_error_dept   IS NOT INITIAL OR
+                            v_error_sparte IS NOT INITIAL.
+                          v_error_title2 = v_error_title.
+                          v_error_txt2   = v_error_txt.
+                        ENDIF.
+
+                        PERFORM refresh_global_data.
+                        v_msg_device = c_gas_corr.
+                        PERFORM replace_gas_corrector USING wa_caufvd
+                                                            c_class_evci
+                                                            c_class_nvci
+                                                            i_notif_item
+                                                            v_actdate
+                                                            c_sparte_02
+                                                            i_inst_data_gcorr
+                                                            c_action_03
+                                                            v_tplnr_gcorr
+                                                            v_new_egerh_gcorr
+                                                            v_acttime
+                                                  CHANGING  v_anlage_gcorr
+                                                            v_old_equi_gcorr
+                                                            v_new_equi_gcorr
+                                                            i_char_val_evci
+                                                            i_char_val_nvci
+                                                            v_error.
+
+                        IF v_error = abap_false.
+                          PERFORM deactivate_registers USING v_new_equi_gcorr
+                                                             v_actdate
+                                                             c_skip_reading
+                                                    CHANGING v_error.
+                        ENDIF.
+
+                        IF v_error_dept   IS NOT INITIAL OR
+                            v_error_sparte IS NOT INITIAL.
+                          v_error_title3 = v_error_title.
+                          v_error_txt3   = v_error_txt.
+                        ENDIF.
+
+                        PERFORM refresh_global_data.
+                        v_msg_device = c_gcm.
+                        PERFORM replace_gas_corrector USING wa_caufvd
+                                                            c_class_egcm
+                                                            c_class_ngcm
+                                                            i_notif_item
+                                                            v_actdate
+                                                            c_sparte_02
+                                                            i_inst_data_ggcm
+                                                            c_action_03
+                                                            v_tplnr_ggcm
+                                                            v_new_egerh_ggcm
+                                                            v_acttime
+                                                  CHANGING  v_anlage_ggcm
+                                                            v_old_equi_ggcm
+                                                            v_new_equi_ggcm
+                                                            i_char_val_egcm
+                                                            i_char_val_ngcm
+                                                            v_error.
+
+                        IF v_error_dept   IS NOT INITIAL OR
+                           v_error_sparte IS NOT INITIAL.
+                          v_error_title4 = v_error_title.
+                          v_error_txt4   = v_error_txt.
+                        ENDIF.
+
+                        IF v_error = abap_false.
+                          PERFORM update_giu_association USING v_new_equi_gmtr
+                                                               v_new_equi_ggcm
+                                                               c_giu_update_action-assemble
+                                                      CHANGING v_error
+                                                               v_error_title4
+                                                               v_error_txt4.
+                          IF v_error = abap_false.
+                            PERFORM update_giu_association USING v_old_equi_gmtr
+                                                                 v_old_equi_ggcm
+                                                                 c_giu_update_action-dismantle
+                                                        CHANGING v_error
+                                                                 v_error_title4
+                                                                 v_error_txt4.
+                          ENDIF.
+                        ENDIF.
+
+                        CLEAR: v_error_title, v_error_txt.
+                        PERFORM verify_pressure USING i_char_val_nffr
+                                                      c_chara_nffr_prs
+                                                      v_new_equi_greg
+                                                      v_error.
+
+                        v_error_title5 = v_error_title.
+                        v_error_txt5   = v_error_txt.
+                      ENDIF.
+                    ENDIF.
+                  ENDIF.
+                ENDIF.
+
+                PERFORM update_devloc_amr_boosted_comm USING v_new_equi_ggcm-equnr
+                                                             wa_caufvd-tplnr
+                                                             v_actdate
+                                                             i_char_val_ngcm[]
+                                                    CHANGING v_error
+                                                             v_error_title5
+                                                             v_error_txt5.
+                " End of c_priok_e_mtr_corr_gcm_reg
+              WHEN c_priok_b_mtr_corr_gcm.
+                v_msg_device = c_gas_mtr.
+                PERFORM validate_gas_meter USING c_kombinat_z
+                                                 c_class_ngmi
+                                                 c_chara_ngmi_mnum
+                                                 c_chara_ngmi_dials
+                                                 c_sparte_02
+                                                 c_zwnummer1
+                                                 c_ccat_gen3
+                                        CHANGING v_new_gmtr_stat
+                                                 i_char_val_ngmi
+                                                 i_inst_data_gmtr
+                                                 v_anlage_gmtr
+                                                 v_logiknr_gmtr
+                                                 v_new_egerh_gmtr
+                                                 v_new_intyp_gmtr
+                                                 v_old_equi_gmtr
+                                                 v_new_equi_gmtr
+                                                 v_tplnr_gmtr
+                                                 v_error.
+
+                IF v_error        IS NOT INITIAL OR
+                   v_error_dept   IS NOT INITIAL OR
+                   v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+                ENDIF.
+
+                IF v_error NE 'X'.
+                  v_msg_device = c_gas_corr.
+                  PERFORM validate_gas_corrector USING c_kombinat_m
+                                                        c_class_nvci
+                                                        c_chara_nvci_einr
+                                                        c_chara_nvci_vcdial
+                                                        c_chara_nvci_vudial
+                                                        c_sparte_02
+                                                        c_ccat_gen3
+                                              CHANGING  v_new_gcorr_stat
+                                                        i_char_val_nvci
+                                                        i_inst_data_gcorr
+                                                        v_anlage_gcorr
+                                                        v_logiknr_gcorr
+                                                        v_new_egerh_gcorr
+                                                        v_new_intyp_gcorr
+                                                        v_old_equi_gcorr
+                                                        v_new_equi_gcorr
+                                                        v_tplnr_gcorr
+                                                        v_error
+                                                        v_error_txt.
+
+                  IF v_error        IS NOT INITIAL OR
+                     v_error_dept   IS NOT INITIAL OR
+                     v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error NE 'X'.
+                  v_msg_device = c_gas_gcm. "c_gas_corr.   "need to revisit
+                  PERFORM validate_gas_comm_module USING c_kombinat_m
+                                                         c_class_ngcm
+                                                         c_chara_ngcm_meter
+                                                         c_sparte_02
+                                                CHANGING v_new_gcorr_stat
+                                                         i_char_val_ngcm
+                                                         i_inst_data_ggcm
+                                                         v_anlage_ggcm
+                                                         v_logiknr_ggcm
+                                                         v_new_egerh_ggcm
+                                                         v_new_intyp_ggcm
+                                                         v_old_equi_ggcm
+                                                         v_new_equi_ggcm
+                                                         v_tplnr_ggcm
+                                                         v_error
+                                                         v_error_txt.
+
+                  IF v_error        IS NOT INITIAL OR
+                     v_error_dept   IS NOT INITIAL OR
+                     v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error NE 'X'.
+                  PERFORM reverse_meter_read USING v_anlage_gmtr
+                                                   v_actdate
+                                                   c_reason_09
+                                          CHANGING v_error.
+                  IF v_error = abap_true.
+                    v_error_sparte = c_sparte_02.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error NE 'X'.
+                  PERFORM refresh_global_data.
+                  v_msg_device = c_gas_mtr.
+
+                  PERFORM replace_gas_meter USING wa_caufvd
+                                                  c_class_egmi
+                                                  c_class_ngmi
+                                                  i_notif_item
+                                                  v_actdate
+                                                  c_sparte_02
+                                                  i_inst_data_gmtr
+                                                  c_action_03
+                                                  c_chara_ngmi_mloc
+                                                  v_tplnr_gmtr
+                                                  v_new_egerh_gmtr
+                                                  v_acttime
+                                         CHANGING v_anlage_gmtr
+                                                  v_old_equi_gmtr
+                                                  v_new_equi_gmtr
+                                                  i_char_val_egmi
+                                                  i_char_val_ngmi
+                                                  v_error.
+
+                  IF v_error_dept   IS NOT INITIAL OR
+                     v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+
+                  PERFORM refresh_global_data.
+                  v_msg_device = c_gas_corr.
+                  PERFORM replace_gas_corrector USING wa_caufvd
+                                                      c_class_evci
+                                                      c_class_nvci
+                                                      i_notif_item
+                                                      v_actdate
+                                                      c_sparte_02
+                                                      i_inst_data_gcorr
+                                                      c_action_03
+                                                      v_tplnr_gcorr
+                                                      v_new_egerh_gcorr
+                                                      v_acttime
+                                            CHANGING  v_anlage_gcorr
+                                                      v_old_equi_gcorr
+                                                      v_new_equi_gcorr
+                                                      i_char_val_evci
+                                                      i_char_val_nvci
+                                                      v_error.
+
+                  IF v_error = abap_false.
+                    PERFORM deactivate_registers USING v_new_equi_gcorr
+                                                       v_actdate
+                                                       c_skip_reading
+                                              CHANGING v_error.
+                  ENDIF.
+
+                  IF v_error_dept   IS NOT INITIAL OR
+                     v_error_sparte IS NOT INITIAL.
+                    v_error_title2 = v_error_title.
+                    v_error_txt2   = v_error_txt.
+                  ENDIF.
+
+                  PERFORM refresh_global_data.
+                  v_msg_device = c_gcm.
+                  PERFORM replace_gas_corrector USING wa_caufvd
+                                                      c_class_egcm
+                                                      c_class_ngcm
+                                                      i_notif_item
+                                                      v_actdate
+                                                      c_sparte_02
+                                                      i_inst_data_ggcm
+                                                      c_action_03
+                                                      v_tplnr_ggcm
+                                                      v_new_egerh_ggcm
+                                                      v_acttime
+                                            CHANGING  v_anlage_ggcm
+                                                      v_old_equi_ggcm
+                                                      v_new_equi_ggcm
+                                                      i_char_val_egcm
+                                                      i_char_val_ngcm
+                                                      v_error.
+
+                  IF v_error_dept   IS NOT INITIAL OR
+                     v_error_sparte IS NOT INITIAL.
+                    v_error_title3 = v_error_title.
+                    v_error_txt3   = v_error_txt.
+                  ENDIF.
+
+                  IF v_error NE 'X'.
+                    PERFORM update_giu_association USING v_new_equi_gmtr
+                                                         v_new_equi_ggcm
+                                                         c_giu_update_action-assemble
+                                                CHANGING v_error
+                                                         v_error_title3
+                                                         v_error_txt3.
+
+                    IF v_error = abap_false.
+                      PERFORM update_giu_association USING v_old_equi_gmtr
+                                                           v_old_equi_ggcm
+                                                           c_giu_update_action-dismantle
+                                                  CHANGING v_error
+                                                           v_error_title3
+                                                           v_error_txt3.
+                    ENDIF.
+                  ENDIF.
+                ENDIF.
+
+                PERFORM update_devloc_amr_boosted_comm USING v_new_equi_ggcm-equnr
+                                                             wa_caufvd-tplnr
+                                                             v_actdate
+                                                             i_char_val_ngcm[]
+                                                    CHANGING v_error
+                                                             v_error_title1
+                                                             v_error_txt1.
+                " End of c_priok_b_mtr_corr_gcm
+              WHEN c_priok_f_corr_gcm.
+                v_msg_device = c_gas_corr.
+                PERFORM validate_gas_corrector USING c_kombinat_m
+                                                     c_class_nvci
+                                                     c_chara_nvci_einr
+                                                     c_chara_nvci_vcdial
+                                                     c_chara_nvci_vudial
+                                                     c_sparte_02
+                                                     c_ccat_gen3
+                                           CHANGING  v_new_gcorr_stat
+                                                     i_char_val_nvci
+                                                     i_inst_data_gcorr
+                                                     v_anlage_gcorr
+                                                     v_logiknr_gcorr
+                                                     v_new_egerh_gcorr
+                                                     v_new_intyp_gcorr
+                                                     v_old_equi_gcorr
+                                                     v_new_equi_gcorr
+                                                     v_tplnr_gcorr
+                                                     v_error
+                                                     v_error_txt.
+
+                IF v_error        IS NOT INITIAL OR
+                   v_error_dept   IS NOT INITIAL OR
+                   v_error_sparte IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+                ENDIF.
+
+                IF v_error NE 'X'.
+                  v_msg_device = c_gas_gcm.
+                  PERFORM validate_gas_comm_module USING c_kombinat_m
+                                                         c_class_ngcm
+                                                         c_chara_ngcm_meter
+                                                         c_sparte_02
+                                                CHANGING v_new_gcorr_stat
+                                                         i_char_val_ngcm
+                                                         i_inst_data_ggcm
+                                                         v_anlage_ggcm
+                                                         v_logiknr_ggcm
+                                                         v_new_egerh_ggcm
+                                                         v_new_intyp_ggcm
+                                                         v_old_equi_ggcm
+                                                         v_new_equi_ggcm
+                                                         v_tplnr_ggcm
+                                                         v_error
+                                                         v_error_txt.
+
+                  IF v_error        IS NOT INITIAL OR
+                     v_error_dept   IS NOT INITIAL OR
+                     v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error NE 'X'.
+                  PERFORM reverse_meter_read USING v_anlage_gcorr
+                                                   v_actdate
+                                                   c_reason_09
+                                          CHANGING v_error.
+                  IF v_error = abap_true.
+                    v_error_sparte = c_sparte_02.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+
+                IF v_error NE 'X'.
+                  PERFORM refresh_global_data.
+                  v_msg_device = c_gas_corr.
+                  PERFORM replace_gas_corrector USING wa_caufvd
+                                                      c_class_evci
+                                                      c_class_nvci
+                                                      i_notif_item
+                                                      v_actdate
+                                                      c_sparte_02
+                                                      i_inst_data_gcorr
+                                                      c_action_03
+                                                      v_tplnr_gcorr
+                                                      v_new_egerh_gcorr
+                                                      v_acttime
+                                            CHANGING  v_anlage_gcorr
+                                                      v_old_equi_gcorr
+                                                      v_new_equi_gcorr
+                                                      i_char_val_evci
+                                                      i_char_val_nvci
+                                                      v_error.
+
+                  IF v_error = abap_false.
+                    PERFORM deactivate_registers USING v_new_equi_gcorr
+                                                       v_actdate
+                                                       c_skip_reading
+                                              CHANGING v_error.
+                  ENDIF.
+
+                  IF v_error_dept   IS NOT INITIAL OR
+                     v_error_sparte IS NOT INITIAL.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+
+                  PERFORM refresh_global_data.
+                  v_msg_device = c_gcm.
+                  PERFORM replace_gas_corrector USING wa_caufvd
+                                                      c_class_egcm
+                                                      c_class_ngcm
+                                                      i_notif_item
+                                                      v_actdate
+                                                      c_sparte_02
+                                                      i_inst_data_ggcm
+                                                      c_action_03
+                                                      v_tplnr_ggcm
+                                                      v_new_egerh_ggcm
+                                                      v_acttime
+                                            CHANGING  v_anlage_ggcm
+                                                      v_old_equi_ggcm
+                                                      v_new_equi_ggcm
+                                                      i_char_val_egcm
+                                                      i_char_val_ngcm
+                                                      v_error.
+
+                  IF v_error_dept   IS NOT INITIAL OR
+                     v_error_sparte IS NOT INITIAL.
+                    v_error_title2 = v_error_title.
+                    v_error_txt2   = v_error_txt.
+                  ENDIF.
+
+                  IF v_error = abap_false.
+                    PERFORM update_giu_association USING v_old_equi_gmtr
+                                                         v_new_equi_ggcm
+                                                         c_giu_update_action-exchange
+                                                CHANGING v_error
+                                                         v_error_title2
+                                                         v_error_txt2.
+                  ENDIF.
+                ENDIF.
+
+                PERFORM update_devloc_amr_boosted_comm USING v_new_equi_ggcm-equnr
+                                                             wa_caufvd-tplnr
+                                                             v_actdate
+                                                             i_char_val_ngcm[]
+                                                    CHANGING v_error
+                                                             v_error_title1
+                                                             v_error_txt1.
+                " End of c_priok_f_corr_gcm
+              WHEN OTHERS.
+            ENDCASE.
+* GM to GIU Exchange
+          ELSEIF p_refdata-modify_section = 'B'.
+            v_priok = 'A'.
+            v_msg_device = c_gas_mtr.
+            PERFORM validate_gas_meter USING c_kombinat_z
+                                              c_class_ngmi
+                                              c_chara_ngmi_mnum
+                                              c_chara_ngmi_dials
+                                              c_sparte_02
+                                              c_zwnummer1
+                                              c_ccat_gen3
+                                     CHANGING v_new_gmtr_stat
+                                              i_char_val_ngmi
+                                              i_inst_data_gmtr
+                                              v_anlage_gmtr
+                                              v_logiknr_gmtr
+                                              v_new_egerh_gmtr
+                                              v_new_intyp_gmtr
+                                              v_old_equi_gmtr
+                                              v_new_equi_gmtr
+                                              v_tplnr_gmtr
+                                              v_error.
+
+            IF v_error        IS NOT INITIAL OR
+                v_error_dept   IS NOT INITIAL OR
+                v_error_sparte IS NOT INITIAL.
+              v_error_title1 = v_error_title.
+              v_error_txt1   = v_error_txt.
+            ELSE.
+              v_msg_device = c_gas_gcm.
+
+              PERFORM validate_gas_comm_module  USING c_kombinat_z
+                                                      c_class_ngcm
+                                                      c_chara_ngcm_meter
+                                                      c_sparte_02
+                                             CHANGING v_new_gcorr_stat
+                                                      i_char_val_ngcm
+                                                      i_inst_data_gcorr
+                                                      v_anlage_gcorr
+                                                      v_logiknr_gcorr
+                                                      v_new_egerh_gcorr
+                                                      v_new_intyp_gcorr
+                                                      v_old_equi_gmtr
+                                                      v_new_equi_gcorr
+                                                      v_tplnr_gcorr
+                                                      v_error
+                                                      v_error_txt.
+
+              IF v_error IS NOT INITIAL OR
+                 v_error_dept   IS NOT INITIAL OR
+                 v_error_sparte IS NOT INITIAL.
+                v_error_title1 = v_error_title.
+                v_error_txt1   = v_error_txt.
+              ELSE.
+                IF v_error NE c_flag_x.
+                  PERFORM reverse_meter_read USING v_anlage_gmtr
+                                                   v_actdate
+                                                   c_reason_09
+                                          CHANGING v_error.
+                  IF v_error = abap_true.
+                    v_error_sparte = c_sparte_02.
+                    v_error_title1 = v_error_title.
+                    v_error_txt1   = v_error_txt.
+                  ENDIF.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM install_gcm_device USING   wa_caufvd
+                                                                 c_class_egcm
+                                                                 c_class_ngcm
+                                                                 i_notif_item
+                                                                 v_actdate
+                                                                 c_sparte_02
+                                                                 i_inst_data_gcorr
+                                                                 c_action_01
+                                                                 v_tplnr_gmtr
+                                                                 v_new_egerh_gcorr
+                                                                 v_new_intyp_gcorr
+                                                        CHANGING v_anlage_gmtr
+                                                                 v_old_equi_gmtr
+                                                                 v_new_equi_gcorr
+                                                                 i_char_val_egcm
+                                                                 i_char_val_ngcm
+                                                                 v_error.
+              IF v_error IS NOT INITIAL OR
+                v_error_dept   IS NOT INITIAL OR
+                v_error_sparte IS NOT INITIAL.
+                v_error_title1 = v_error_title.
+                v_error_txt1   = v_error_txt.
+              ELSE.
+                PERFORM align_logical_registers  USING  v_new_equi_gcorr
+                                                        v_old_equi_gmtr
+                                                        wa_caufvd
+                                                        v_anlage_gmtr
+                                                        v_actdate
+                                                        c_sparte_02
+                                                        v_priok
+                                              CHANGING  v_error.
+
+                IF v_error IS NOT INITIAL.
+                  v_error_title1 = v_error_title.
+                  v_error_txt1   = v_error_txt.
+                ENDIF.
+
+                CREATE OBJECT lobj_class.
+                IF v_new_egerh_gmtr-zwgruppe <> 'GDR'.
+                  lwa_devmod_data-sernr     = v_new_equi_gmtr-sernr.
+                  lwa_devmod_data-matnr     = v_new_equi_gmtr-matnr.
+                  lwa_devmod_data-zwgruppe  = 'GDR'.
+                  APPEND lwa_devmod_data TO li_devmod_data.
+
+                  lobj_class->perform_device_modification(
+                    EXPORTING
+                      it_input   = li_devmod_data
+                      iv_date    = v_actdate
+                      iv_equnr   = v_new_equi_gmtr-equnr
+                   IMPORTING
+                      ex_error_log  = lwa_error_log ).
+                  IF lwa_error_log IS NOT INITIAL.
+                    v_error        = abap_true.
+                    v_error_dept   = c_dept_admn.
+                    v_error_sparte = c_sparte_02.
+                    v_error_title1 = |GIU Replace: Dev Modication fail for { v_new_equi_gmtr-sernr }|.
+                    v_error_txt1   = lwa_error_log-error_desc.
+                  ENDIF.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM get_installation_type_gas USING  v_new_equi_gmtr-equnr
+                                                       v_anlage_gmtr
+                                              CHANGING v_new_egerh_gmtr
+                                                       v_new_intyp_gmtr.
+
+              PERFORM get_installation_data_gas USING v_new_egerh_gmtr
+                                                      v_new_intyp_gmtr
+                                                      v_anlage_gmtr
+                                             CHANGING i_inst_data_gmtr
+                                                      v_error
+                                                      l_tariftyp.
+
+              IF v_error IS NOT INITIAL.
+                v_error_title1 = v_error_title.
+                v_error_txt1   = v_error_txt.
+              ENDIF.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM replace_gas_meter         USING wa_caufvd
+                                                      c_class_egmi
+                                                      c_class_ngmi
+                                                      i_notif_item
+                                                      v_actdate
+                                                      c_sparte_02
+                                                      i_inst_data_gmtr
+                                                      c_action_03
+                                                      c_chara_ngmi_mloc
+                                                      v_tplnr_gmtr
+                                                      v_new_egerh_gmtr
+                                                      v_acttime
+                                             CHANGING v_anlage_gmtr
+                                                      v_old_equi_gmtr
+                                                      v_new_equi_gmtr
+                                                      i_char_val_egmi
+                                                      i_char_val_ngmi
+                                                      v_error.
+              IF v_error_dept   IS NOT INITIAL OR
+                  v_error_sparte IS NOT INITIAL.
+                v_error_title1 = v_error_title.
+                v_error_txt1   = v_error_txt.
+              ELSE.
+                CALL FUNCTION 'ZSC_GAS_GIU_UPDATE'
+                  EXPORTING
+                    iv_mainmatno       = v_new_equi_gmtr-matnr
+                    iv_mainserno       = v_new_equi_gmtr-sernr
+                    iv_asocmatno       = v_new_equi_gcorr-matnr
+                    iv_asocserno       = v_new_equi_gcorr-sernr
+                    iv_relation        = 'A'
+                    iv_ustatus         = 'GIU'
+                  IMPORTING
+                    ex_error_msg       = lv_message
+                  EXCEPTIONS
+                    invalid_assoc_mat  = 1
+                    invalid_main_mat   = 2
+                    record_not_match   = 3
+                    association_exists = 4
+                    OTHERS             = 5.
+                IF NOT lv_message IS INITIAL
+                  AND sy-subrc <> 4.
+                  v_error        = abap_true.
+                  v_error_dept   = c_dept_admn.
+                  v_error_sparte = c_sparte_02.
+                  v_error_title1 = |GIU Replace: Gas and GCM Assocation fail for { v_new_equi_gmtr-sernr }|.
+                  v_error_txt1   = lv_message.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+
+            PERFORM update_devloc_amr_boosted_comm USING v_new_equi_gcorr-equnr
+                                                         wa_caufvd-tplnr
+                                                         v_actdate
+                                                         i_char_val_ngcm[]
+                                                CHANGING v_error
+                                                         v_error_title1
+                                                         v_error_txt1.
+            " End of modify_section B, c_priok_a
+          ENDIF.
+        ENDIF.
+      WHEN OTHERS.
+    ENDCASE.
+*----|START-OF-CHANGE|MMRobson|01/04/2008|QC 9848|----*
+  ENDIF.
+*----|END-OF-CHANGE|MMRobson|01/04/2008|QC 9848|----*
+
+*----|START-OF-CHANGE|MMRobson|03/28/2008|QC 13397|----*
+  IF v_error <> c_flag_x AND
+     v_error_dept IS INITIAL AND
+     v_error_sparte IS INITIAL.
+    CALL FUNCTION 'Z_UPDATE_DEVLOC_NOTE'
+      EXPORTING
+        p_aufnr      = p_aufnr
+      IMPORTING
+        v_err_txt    = v_error_title1
+        v_err        = v_error
+        v_err_body   = v_error_txt1
+        v_dept       = v_error_dept
+*----|START-OF-CHANGE|MMRobson|03/25/2009|PM821131|----*
+*       v_sparte     = v_error_sparte.
+        v_sparte     = v_error_sparte
+      EXCEPTIONS
+        order_locked = 1
+        OTHERS       = 2.
+*----|END-OF-CHANGE|MMRobson|03/25/2009|PM821131|----*
+  ENDIF.
+*----|END-OF-CHANGE|MMRobson|03/28/2008|QC 13397|----*
+
+*-----This is being done to capture the error messages for each device.
+* We will consider only those messages when either v_error_dept or v_error_sparte is populated.
+* This is because whenever, a workitem needs to be sent, wither of v_error_dept or v_error_sparte will be populated.
+* Also, refer to perform refresh_global_data.
+  CONCATENATE v_error_title1
+              v_error_title2
+              v_error_title3
+              v_error_title4
+              v_error_title5
+              INTO v_error_title
+              SEPARATED BY space.
+
+  CONCATENATE v_error_txt1
+              v_error_txt2
+              v_error_txt3
+              v_error_txt4
+              v_error_txt5
+              INTO v_error_txt
+              SEPARATED BY space.
+
+*-----Work Item will be sent only when the flag (e_error) is marked and (either e_dept or e_sparte) has some value
+  e_error       = v_error.
+  e_error_txt   = v_error_txt.
+  e_error_title = v_error_title.
+  e_sparte      = v_error_sparte.
+  e_dept        = v_error_dept.
+
+  IF v_error_dept   IS NOT INITIAL OR
+      v_error_sparte IS NOT INITIAL.
+    e_error = c_flag_x.
+  ENDIF.
+
+  DATA(lv_short_aufnr) = shift_left( val = v_aufnr sub = '0' ).
+  " SWWWIHEAD-WI_TEXT field is 120 characters, but only 100 characters are displayed
+  " in the SAP Business Workplace (SBWP) list view, 2 characters for the colon and space.
+  DATA(lv_max_title_length) = 100 - strlen( lv_short_aufnr ) - 2.
+
+  IF e_error = abap_true.
+    IF e_error_title IS INITIAL.
+      e_error_title = e_error_txt.
+    ENDIF.
+
+    IF find( val = e_error_title regex = lv_short_aufnr ) < 0.
+      IF strlen( e_error_title ) > lv_max_title_length.
+        e_error_title = |{ e_error_title(lv_max_title_length) }: { lv_short_aufnr }|.
+      ELSE.
+        e_error_title = |{ e_error_title }: { lv_short_aufnr }|.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDFUNCTION.

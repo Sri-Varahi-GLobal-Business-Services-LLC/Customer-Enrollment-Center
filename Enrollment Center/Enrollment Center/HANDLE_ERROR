@@ -1,0 +1,72 @@
+METHOD HANDLE_ERROR.
+  CONSTANTS:
+    lc_equnr   TYPE swo_objtyp     VALUE 'DEVICE',
+    lc_runid   TYPE emma_ccontelem VALUE 'Runid',
+    lc_iden    TYPE emma_ccontelem VALUE 'Identity',
+    lc_ccat    TYPE emma_case-ccat VALUE 'ZM05'.
+
+  DATA:
+
+*   For creating cases
+    ls_case    TYPE bapi_emma_case_create,
+    lt_objects TYPE STANDARD TABLE OF bapi_emma_case_object,
+    ls_objects TYPE bapi_emma_case_object,
+    lt_return  TYPE STANDARD TABLE OF bapiret2,
+    ls_return  TYPE bapiret2,
+    lt_message TYPE STANDARD TABLE OF bapi_emma_msg_link,
+    ls_message TYPE bapi_emma_msg_link,
+    lv_casenr  TYPE emma_case-casenr.
+
+* Fill in Case create structure
+  ls_case-ccat        = iv_ccat.
+  ls_case-mainobjtype = lc_equnr.
+  ls_case-mainobjkey  = is_return-equnr.
+  ls_case-orig_date   = sy-datum.
+  ls_case-orig_time   = sy-uzeit.
+
+* if case category EQ ZM05.
+  IF iv_ccat = lc_ccat.
+    CLEAR ls_objects.
+    ls_objects-celemname  = lc_iden.
+    ls_objects-refstruct  = 'ZTU_DM038_MASSD'.
+    ls_objects-reffield   = 'LAUFI'.
+    ls_objects-id         = iv_iden.
+    APPEND ls_objects TO lt_objects.
+
+    CLEAR ls_objects.
+    ls_objects-celemname  = lc_runid.
+    ls_objects-refstruct  = 'ZTU_DM038_MASSD'.
+    ls_objects-reffield   = 'LAUFD'.
+    ls_objects-id         = iv_runid.
+    APPEND ls_objects TO lt_objects.
+  ENDIF.
+
+
+  LOOP AT is_return-t_return INTO ls_return.
+    ls_message-msgid = ls_return-id.
+    ls_message-msgno = ls_return-number.
+    ls_message-msgv1 = ls_return-message_v1.
+    ls_message-msgv2 = ls_return-message_v2.
+    ls_message-msgv3 = ls_return-message_v3.
+    ls_message-msgv4 = ls_return-message_v4.
+    APPEND ls_message TO lt_message.
+  ENDLOOP.
+
+* Create Case
+  CALL FUNCTION 'BAPI_EMMA_CASE_CREATE'
+    EXPORTING
+      case_create = ls_case
+    IMPORTING
+      case        = lv_casenr
+    TABLES
+      objects     = lt_objects
+      messages    = lt_message
+      return      = lt_return.
+  IF sy-binpt IS INITIAL.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING
+        wait = 'X'.
+  ENDIF.
+
+ENDMETHOD.
+

@@ -1,0 +1,13 @@
+METHOD get_register_group.
+*  Fetch Register Group for the Device.
+  CLEAR rv_reggrp.
+  SELECT SINGLE zwgruppe
+    INTO rv_reggrp
+    FROM egerh
+    WHERE equnr = my_equnr AND
+          BIS EQ co_date_infinite.
+  IF NOT SY-SUBRC IS INITIAL.
+      populate_status_return space co_error co_value_27 my_equnr space space space.
+  ENDIF.
+ENDMETHOD.
+

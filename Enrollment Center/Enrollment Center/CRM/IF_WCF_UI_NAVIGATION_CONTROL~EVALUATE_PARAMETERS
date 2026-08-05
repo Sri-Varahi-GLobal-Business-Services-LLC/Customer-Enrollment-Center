@@ -1,0 +1,110 @@
+METHOD if_wcf_ui_navigation_control~evaluate_parameters.
+**********************************************************************************
+* MODIFICATION HISTORY
+*   Transport: C3DK904664 Defect 3039
+*      Author: MSWilson
+*        Date: 12/20/2011
+* Description: When CO Contract Create or ASP Contract Create, check for premise.
+*              If not found, throw an error.
+**********************************************************************************
+  DATA lv_cucoltx         TYPE REF TO cl_uicmp_lt_cucoltx_impl.
+  DATA lv_ltx_id          TYPE        crmt_ic_ltx_id.
+  DATA lv_navbar_srv      TYPE REF TO cl_crm_ui_navbar_srv.
+  DATA lv_data_collection TYPE REF TO if_bol_bo_col.
+
+  lv_ltx_id = iv_parameter.
+  lv_cucoltx ?= cl_crm_ui_ltx_cuco_access_srv=>get_instance( ).
+
+* if the current link is supposed to open a new window and to keep the current work area
+* then interrupt the current navigation
+  IF lv_cucoltx->get_keep_work_area( lv_ltx_id ) EQ abap_true.
+    rv_result = abap_false. " interrupt navigation
+
+*   store the data collection of the navigation for later usage
+    lv_data_collection = iv_data_collection.
+    lv_navbar_srv = cl_crm_ui_navbar_srv=>get_instance( ).
+    lv_navbar_srv->execute_special_link_handling(
+      EXPORTING
+        iv_link_id         = iv_link_id
+      CHANGING
+        cv_data_collection = lv_data_collection ).
+    lv_cucoltx->set_nav_collection( iv_data_collection = lv_data_collection ).
+
+  ELSE.
+    rv_result = abap_true. " continue navigation
+  ENDIF.
+
+  DATA: __gdc    TYPE REF TO if_crm_ui_data_context,
+      __source TYPE        string,
+      __line   TYPE        string,
+      __path   TYPE        crmt_ic_ac_identify_path.
+
+  DATA: lr_premise            TYPE REF TO cl_crm_bol_entity,  "to get confirmed premise
+        lr_account            TYPE REF TO cl_crm_bol_entity,  "to get confirmed business partner
+        lr_buag               TYPE REF TO cl_crm_bol_entity,  "to get confirmed business agreement
+        lr_msg_srv            TYPE REF TO cl_bsp_wd_message_service,  "to display messages
+        lr_ui_profile         TYPE REF TO if_crm_ui_profile,          "to identify business role used to login
+        lv_profile            TYPE        crmt_ic_configprof.
+
+  CONSTANTS: lc_create_co_contracts  TYPE string VALUE 'ZVAPS_COCONTRACTS_CR',  "calling id
+             lc_create_asp_contracts TYPE string VALUE 'ZVAPS_ASPCONTRACT_CR',  "calling id
+             lc_profile TYPE string VALUE 'ZCRM7_TEAM',                    "allowed business role
+             lc_mes_type_i  TYPE symsgty VALUE 'I',                        " message type information
+             lc_mes_type_e  TYPE symsgty VALUE 'E',                        " message type warning
+             lc_mes_class   TYPE symsgid VALUE 'ZSG_CRM',                  " message class
+             lc_mes_no_269  TYPE symsgno VALUE '269',                      " message number for unconfirmed Premise
+             lc_mes_no_029  TYPE symsgno VALUE '029',                      " message number for unconfirmed BP
+             lc_mes_no_032  TYPE symsgno VALUE '032',                      " message number for unauthorized business role.
+             lc_mes_no_050  TYPE symsgno VALUE '050',                      "message number for unconfirmed BP and BuAg
+             lc_mes_no_051  TYPE symsgno VALUE '051'.
+
+  __gdc ?=
+  cl_crm_ui_data_context_srv=>get_instance( ).
+
+  lr_msg_srv = cl_bsp_wd_message_service=>get_instance( ).
+
+* Get confirmed account
+  lr_account ?= __gdc->get_entity( 'CURRENTCUSTOMER' ).
+
+* Get current Business agreement
+  lr_buag ?= __gdc->get_entity( 'CURRENTBUAG' ).
+
+  "If BP and BuAg are confirmed, set gv_data_flow_complete to true so that transaction is launched
+  IF lr_account IS BOUND AND lr_buag IS BOUND.
+*      rv_result = abap_true.
+    "Otherwise set gv_data_flow_complete to false and display appropriate message
+  ELSE.
+    rv_result = abap_false.
+    IF lr_account IS BOUND AND lr_buag IS NOT BOUND.
+      lr_msg_srv->add_message( iv_msg_type       = lc_mes_type_e
+                               iv_msg_id         = lc_mes_class
+                               iv_msg_number     = lc_mes_no_050 ).
+    ELSEIF lr_buag IS BOUND AND lr_account IS NOT BOUND.
+      lr_msg_srv->add_message( iv_msg_type       = lc_mes_type_e
+                               iv_msg_id         = lc_mes_class
+                               iv_msg_number     = lc_mes_no_029 ).
+    ELSE.
+      lr_msg_srv->add_message( iv_msg_type       = lc_mes_type_e
+                               iv_msg_id         = lc_mes_class
+                               iv_msg_number     = lc_mes_no_051 ).
+    ENDIF.
+*      RETURN.
+  ENDIF.
+
+*Start Defect 3039.  When CO Contract Create or ASP Contract Create, check for premise.
+  IF iv_parameter = lc_create_co_contracts
+  OR iv_parameter = lc_create_asp_contracts.
+* Get confirmed premise
+    lr_premise ?= __gdc->get_entity( 'CURRENTPREMISE' ).
+* Check for premise
+    IF lr_premise IS NOT BOUND.
+      rv_result = abap_false.
+      lr_msg_srv->add_message( iv_msg_type       = lc_mes_type_e
+                               iv_msg_id         = lc_mes_class
+                               iv_msg_number     = lc_mes_no_269 ).  "Confirm Premise
+    ENDIF.
+  ENDIF.
+*End Defect 3039.
+
+ENDMETHOD.
+

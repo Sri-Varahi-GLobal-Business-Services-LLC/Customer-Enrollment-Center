@@ -1,0 +1,171 @@
+METHOD create_estimates.
+  CONSTANTS:
+    lc_mr_09 TYPE eablg-ablesgr VALUE '09'.
+  DATA:
+    lt_etdz   TYPE STANDARD TABLE OF etdz,
+    ls_etdz   TYPE etdz,
+    ls_eabl   TYPE eabl,
+    ls_te935  TYPE te935,
+    ls_obj    TYPE isu17_meterread,
+    ls_reabld TYPE reabld,
+    ls_return TYPE bapiret2,
+    ls_reads  TYPE zst_estmate_reads_per_reg,
+    lt_reabld TYPE STANDARD TABLE OF reabld,
+    lv_ebene  TYPE rel01-vb_ebene VALUE 'D'.
+
+  REFRESH et_reads.
+
+* Populate the obj structure
+  CALL FUNCTION 'ISU_O_METERREAD_OPEN'
+    EXPORTING
+      x_upd_online          = 'X'
+      x_action              = '01'
+      x_equnr               = iv_equnr "ls_etdz-equnr
+      x_adatsoll            = iv_adat
+      x_adat                = iv_adat
+      x_wmode               = '3'  "Create mode
+      x_ebene               = lv_ebene
+      x_karenzprfg          = 'X'
+      x_ablesgr             = lc_mr_09
+      x_no_dialog           = 'X'
+    IMPORTING
+      y_obj                 = ls_obj
+    EXCEPTIONS
+      not_found             = 1
+      foreign_lock          = 2
+      internal_error        = 3
+      input_error           = 4
+      existing              = 5
+      number_error          = 6
+      general_fault         = 7
+      system_error          = 8
+      manual_abort          = 9
+      gasdat_not_found      = 10
+      no_mrrel_registers    = 11
+      internal_warning      = 12
+      not_authorized        = 13
+      not_qualified         = 14
+      anpstorno_not_allowed = 15
+      already_billed        = 16
+      OTHERS                = 17.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            INTO ls_return-message.
+    msg_add ls_return et_return.
+    EXIT .
+  ENDIF.
+
+  ls_obj-contr-no_dialog = 'X'.
+
+* Open the meter reading estimation
+  CALL FUNCTION 'ISU_O_METERREAD_OPEN_SUBOBJ'
+    EXPORTING
+      x_action       = '01'
+      x_ablesgr      = lc_mr_09
+    CHANGING
+      xy_obj         = ls_obj
+    EXCEPTIONS
+      not_found      = 1
+      foreign_lock   = 2
+      internal_error = 3
+      input_error    = 4
+      existing       = 5
+      number_error   = 6
+      general_fault  = 7
+      system_error   = 8
+      manual_abort   = 9
+      OTHERS         = 10.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            INTO ls_return-message.
+    msg_add ls_return et_return.
+    EXIT .
+  ENDIF.
+
+  ls_obj-contr-wmode = '2'.
+
+* To estimate
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_okcode             = 'AMAR'
+    CHANGING
+      xy_obj               = ls_obj
+    EXCEPTIONS
+      cancelled            = 1
+      failed               = 2
+      action_not_supported = 3
+      system_error         = 4
+      input_error          = 5
+      not_allowed          = 6
+      not_customized       = 7
+      reestimation_failed  = 8
+      path_invalid         = 9
+      date_invalid         = 10
+      internal_error       = 11
+      general_fault        = 12
+      OTHERS               = 13.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            INTO ls_return-message.
+    msg_add ls_return et_return.
+    EXIT .
+  ENDIF.
+
+  LOOP AT ls_obj-i_reabld INTO ls_reabld WHERE massread NE 'PF'.
+    ls_reabld-line_mark = 'X'.
+    MODIFY ls_obj-i_reabld FROM ls_reabld.
+  ENDLOOP.
+
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_overestim          = space
+      x_okcode             = 'ESTA'
+    CHANGING
+      xy_obj               = ls_obj
+    EXCEPTIONS
+      cancelled            = 1
+      failed               = 2
+      action_not_supported = 3
+      system_error         = 4
+      input_error          = 5
+      not_allowed          = 6
+      not_customized       = 7
+      reestimation_failed  = 8
+      path_invalid         = 9
+      date_invalid         = 10
+      internal_error       = 11
+      general_fault        = 12
+      OTHERS               = 13.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            INTO ls_return-message.
+    msg_add ls_return et_return.
+    EXIT .
+  ENDIF.
+
+  LOOP AT ls_obj-ieabl INTO ls_eabl WHERE ablestyp EQ '03'. " WHERE NOT adat IS INITIAL.
+    CLEAR ls_reads.
+    ls_reads-equnr     = ls_eabl-equnr.
+    ls_reads-zwnummer  = ls_eabl-zwnummer.
+    ls_reads-v_zwstand = ls_eabl-v_zwstand.
+    APPEND ls_reads TO et_reads.
+  ENDLOOP.
+
+  CALL FUNCTION 'ISU_O_METERREAD_CLOSE'
+    EXPORTING
+      x_no_dialog    = 'X'
+    CHANGING
+      xy_obj         = ls_obj
+    EXCEPTIONS
+      not_customized = 1
+      failed         = 2
+      general_fault  = 3
+      OTHERS         = 4.
+  IF sy-subrc <> 0.
+  ENDIF.
+ENDMETHOD.
+

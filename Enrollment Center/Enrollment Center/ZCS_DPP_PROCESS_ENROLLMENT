@@ -1,0 +1,238 @@
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 10/14/2015
+*----------------------------------------------------------------*
+*  Description: This program is used to Process DPP Enrollment
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+REPORT zcs_dpp_process_enrollment.
+
+************************************************************************
+*     TABLES                                                           *
+************************************************************************
+TABLES: ztpgm_enroll, but000, fkkvk, iflot.
+
+************************************************************************
+*     TYPES                                                            *
+************************************************************************
+TYPES:
+  BEGIN OF t_contract,
+    vertrag TYPE vertrag,
+    anlage  TYPE anlage,
+    vkont   TYPE vkont_kk,
+    abrdats TYPE abrdats,
+  END OF t_contract.
+
+TYPES:
+  tt_contract TYPE STANDARD TABLE OF t_contract.
+
+TYPES:
+  BEGIN OF t_everh,
+    vertrag      TYPE vertrag,
+    contracthead TYPE guid_16,
+    contractpos  TYPE guid_16,
+    crm_product  TYPE esales_crm_product,
+    product_guid TYPE guid_16,
+  END OF t_everh .
+TYPES:
+  tt_everh TYPE STANDARD TABLE OF t_everh.
+
+
+TYPES:
+  BEGIN OF t_outputtable,
+    gpart         TYPE gpart_kk,
+    vkont         TYPE vkont_kk,
+    pgm_type      TYPE zpgm_type,
+    zenrl_reqdat  TYPE zenrl_reqdat,
+    zenrlstatus   TYPE zenrlstatus,
+    zenrl_msgtyp  TYPE zenrl_msgtyp,
+    zenrl_msg     TYPE zexmsg,
+    drms_msgtyp   TYPE zenrl_msgtyp,
+    drms_status   TYPE char20,
+    drms_comment  TYPE char100,
+    vertrag       TYPE vertrag,
+    header_guid   TYPE guid_16,
+    item_guid     TYPE guid_16,
+    product_guid  TYPE guid_16,
+    crm_product   TYPE crmt_ordered_prod_db,
+    prod_chg_date TYPE datum,
+  END OF t_outputtable .
+
+TYPES:
+  tt_outputtable TYPE STANDARD TABLE OF t_outputtable.
+
+************************************************************************
+*     DATA                                                             *
+************************************************************************
+
+DATA: gt_int_data TYPE STANDARD TABLE OF ztpgm_int_data,
+      gt_enroll   TYPE STANDARD TABLE OF ztpgm_enroll,
+      gt_progid   TYPE STANDARD TABLE OF ztpgm_progid,
+      gt_contract TYPE tt_contract,
+      gt_conthist TYPE tt_everh,
+      gt_output   TYPE tt_outputtable,
+      gt_process  TYPE tt_outputtable,
+      gv_error    TYPE abap_bool.
+
+DATA: lt_but000 TYPE STANDARD TABLE OF but000,
+      lt_fkkvk  TYPE STANDARD TABLE OF fkkvk,
+      lt_iflot  TYPE STANDARD TABLE OF iflot.
+
+
+CLASS lcl_handle_events DEFINITION DEFERRED.
+
+DATA: lr_salv_table TYPE REF TO cl_salv_table.
+
+DATA: lr_events TYPE REF TO lcl_handle_events.
+
+************************************************************************
+*     EVENTS CLASS                                                     *
+************************************************************************
+
+*---------------------------------------------------------------------*
+*       CLASS lcl_handle_events DEFINITION
+*---------------------------------------------------------------------*
+* §5.1 define a local class for handling events of cl_salv_table
+*---------------------------------------------------------------------*
+CLASS lcl_handle_events DEFINITION ##CLASS_FINAL.
+  PUBLIC SECTION.
+    METHODS:
+      on_user_command FOR EVENT added_function OF cl_salv_events
+        IMPORTING e_salv_function.
+
+ENDCLASS.                    "lcl_handle_events DEFINITION
+
+*---------------------------------------------------------------------*
+*       CLASS lcl_handle_events IMPLEMENTATION
+*---------------------------------------------------------------------*
+* §5.2 implement the events for handling the events of cl_salv_table
+*---------------------------------------------------------------------*
+CLASS lcl_handle_events IMPLEMENTATION ##CLASS_FINAL.
+  METHOD on_user_command.
+    PERFORM handle_user_command USING e_salv_function.
+  ENDMETHOD.                    "on_user_command
+ENDCLASS.                    "lcl_handle_events IMPLEMENTATION
+
+************************************************************************
+*     SELECTION SCREEN                                                 *
+************************************************************************
+SELECTION-SCREEN:BEGIN OF BLOCK a WITH FRAME TITLE text-001.
+
+*** Select Options ***
+SELECT-OPTIONS:
+                s_bp   FOR but000-partner,
+                s_ca   FOR fkkvk-vkont,
+                s_sdp  FOR iflot-tplnr,
+                s_pgm  FOR ztpgm_enroll-zpgm_type.
+
+SELECTION-SCREEN:END OF BLOCK a.
+
+SELECTION-SCREEN:BEGIN OF BLOCK b WITH FRAME TITLE text-031.
+
+PARAMETER : p_rate RADIOBUTTON GROUP gr1 DEFAULT 'X' USER-COMMAND upd,
+            p_drms RADIOBUTTON GROUP gr1.
+
+SELECTION-SCREEN:END OF BLOCK b.
+
+SELECTION-SCREEN:BEGIN OF BLOCK c WITH FRAME TITLE text-032.
+
+PARAMETER : p_err RADIOBUTTON GROUP gr2 DEFAULT 'X',
+            p_all RADIOBUTTON GROUP gr2.
+
+SELECTION-SCREEN:END OF BLOCK c.
+
+AT SELECTION-SCREEN OUTPUT.
+
+  IF p_rate = abap_true.
+    p_err = abap_true.
+    LOOP AT SCREEN.
+*         Use cs as this then captures all elements of the field inc text
+      IF screen-name CS 'P_ERR' OR
+         screen-name CS 'P_ALL'.
+        screen-active = 0. "remove field from screen
+        MODIFY SCREEN.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+************************************************************************
+*     INITIALIZATION                                                   *
+************************************************************************
+
+INITIALIZATION.
+  s_pgm-sign = 'I'.
+  s_pgm-option = 'EQ'.
+  s_pgm-low = 'CPP'.
+  APPEND s_pgm TO s_pgm.                                                     "+001 CHANGE DONE
+  s_pgm-low = 'PTR'.
+  APPEND s_pgm TO s_pgm.
+  CLEAR s_pgm.
+
+
+************************************************************************
+*     AT SELECTION SCREEN                                              *
+************************************************************************
+AT SELECTION-SCREEN.
+
+  IF NOT s_bp[] IS INITIAL.
+    SELECT  * FROM but000 INTO TABLE lt_but000
+                               WHERE partner IN s_bp.
+    IF sy-subrc <> 0.
+      MESSAGE e000(zcs_rpt) WITH 'Please enter a valid BP'(028).
+    ENDIF.
+  ENDIF.
+  IF NOT s_ca[] IS INITIAL.
+    SELECT * FROM fkkvk INTO TABLE lt_fkkvk
+                              WHERE vkont IN s_ca.
+    IF sy-subrc <> 0.
+      MESSAGE e000(zcs_rpt) WITH 'Please enter a valid CA'(029).
+    ENDIF.
+  ENDIF.
+  IF NOT s_sdp[] IS INITIAL.
+    SELECT * FROM iflot INTO TABLE lt_iflot
+                              WHERE tplnr IN s_sdp.
+    IF sy-subrc <> 0.
+      MESSAGE e000(zcs_rpt) WITH 'Please enter a valid SDP'(030).
+    ENDIF.
+  ENDIF.
+
+
+************************************************************************
+*     START OF SELECTION                                               *
+************************************************************************
+
+START-OF-SELECTION.
+
+* Initialise
+  PERFORM init.
+
+* Get Data
+  PERFORM get_data.
+
+* Process Data
+  PERFORM process_data.
+
+************************************************************************
+*     END OF SELECTION                                               *
+************************************************************************
+
+END-OF-SELECTION.
+
+  IF gt_output[] IS NOT INITIAL.
+    SORT gt_output BY gpart vkont pgm_type zenrl_reqdat.
+
+    CALL SCREEN 100.
+
+  ENDIF.
+
+
+  INCLUDE zcs_dpp_process_enrollment_f01.
+

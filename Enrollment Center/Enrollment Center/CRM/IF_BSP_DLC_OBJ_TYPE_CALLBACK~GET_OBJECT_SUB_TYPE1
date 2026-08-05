@@ -1,0 +1,149 @@
+METHOD if_bsp_dlc_obj_type_callback~get_object_sub_types.
+
+  DATA:   lv_sub_object TYPE bsp_dlc_object_sub_type.
+
+  IF iv_object_type = 'ZSO_OBJTYP'.
+
+    lv_sub_object = 'V1'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V2'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V3'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V4'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V5'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V6'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V7'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V8'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V9'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V10'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V11'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V12'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V13'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V14'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V15'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V16'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V17'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V18'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V19'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V20'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V21'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V22'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V23'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V24'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V25'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V26'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V27'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V28'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V29'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V30'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V31'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V32'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V33'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V34'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+
+    lv_sub_object = 'V35'.
+    APPEND lv_sub_object TO result.
+    CLEAR lv_sub_object.
+  ENDIF.
+
+ENDMETHOD.
+

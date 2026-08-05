@@ -1,0 +1,202 @@
+class ZCL_RANGE_UTILITY definition
+  public
+  create public .
+
+public section.
+*"* public components of class ZCL_RANGE_UTILITY
+*"* do not include other source files here!!!
+
+  constants:
+    BEGIN OF c_sign,
+        include TYPE ddsign VALUE 'I',
+        exclude TYPE ddsign VALUE 'E',
+      END OF c_sign .
+  constants:
+    BEGIN OF c_option,
+        equal_to                 TYPE ddoption VALUE 'EQ',
+        between                  TYPE ddoption VALUE 'BT',
+        contains                 TYPE ddoption VALUE 'CP',
+        less_than_or_equal_to    TYPE ddoption VALUE 'LE',
+        greater_than_or_equal_to TYPE ddoption VALUE 'GE',
+        not_equal_to             TYPE ddoption VALUE 'NE',
+        not_between              TYPE ddoption VALUE 'NB',
+        does_not_contain         TYPE ddoption VALUE 'NP',
+        greater_than             TYPE ddoption VALUE 'GT',
+        less_than                TYPE ddoption VALUE 'LT',
+      END OF c_option .
+
+  class-methods SIMPLE_RANGE_FROM_TABLE
+    importing
+      !IM_SOURCE_TABLE type TABLE
+      !IM_SIGN type DDSIGN default C_SIGN-INCLUDE
+      !IM_OPTION type DDOPTION default C_OPTION-EQUAL_TO
+      !IM_LOW_FIELD_NAME type CSEQUENCE optional
+      !IM_HIGH_FIELD_NAME type CSEQUENCE optional
+    changing
+      !CH_RANGE type STANDARD TABLE .
+  class-methods SIMPLE_RANGE_FROM_STRUCTURE
+    importing
+      !IM_SOURCE_STRUCTURE type ANY
+      !IM_SIGN type DDSIGN default C_SIGN-INCLUDE
+      !IM_OPTION type DDOPTION default C_OPTION-EQUAL_TO
+    changing
+      !CH_RANGE type STANDARD TABLE .
+  class-methods SIMPLE_RANGE_FROM_FIELDS
+    importing
+      !IM_LOW type ANY
+      !IM_HIGH type ANY optional
+      !IM_SIGN type DDSIGN default C_SIGN-INCLUDE
+      !IM_OPTION type DDOPTION default C_OPTION-EQUAL_TO
+    changing
+      !CH_RANGE type STANDARD TABLE .
+protected section.
+*"* protected components of class ZCL_RANGE_UTILITY
+*"* do not include other source files here!!!
+private section.
+*"* private components of class ZCL_RANGE_UTILITY
+*"* do not include other source files here!!!
+ENDCLASS.
+
+
+
+CLASS ZCL_RANGE_UTILITY IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_RANGE_UTILITY=>SIMPLE_RANGE_FROM_FIELDS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_LOW                         TYPE        ANY
+* | [--->] IM_HIGH                        TYPE        ANY(optional)
+* | [--->] IM_SIGN                        TYPE        DDSIGN (default =C_SIGN-INCLUDE)
+* | [--->] IM_OPTION                      TYPE        DDOPTION (default =C_OPTION-EQUAL_TO)
+* | [<-->] CH_RANGE                       TYPE        STANDARD TABLE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD simple_range_from_fields.
+  DATA: lr_target_row TYPE REF TO data.
+
+  FIELD-SYMBOLS: <lfs_target_row>    TYPE any,
+                 <lfs_target_sign>   TYPE ddsign,
+                 <lfs_target_option> TYPE ddoption,
+                 <lfs_target_low>    TYPE any,
+                 <lfs_target_high>   TYPE any.
+
+  CREATE DATA lr_target_row LIKE LINE OF ch_range.
+
+  ASSIGN:
+    lr_target_row->*          TO <lfs_target_row>,
+    lr_target_row->('SIGN')   TO <lfs_target_sign>,
+    lr_target_row->('OPTION') TO <lfs_target_option>,
+    lr_target_row->('LOW')    TO <lfs_target_low>.
+
+  <lfs_target_sign>   = im_sign.
+  <lfs_target_option> = im_option.
+  <lfs_target_low>    = im_low.
+
+  IF im_high IS SUPPLIED.
+    ASSIGN  lr_target_row->('HIGH') TO <lfs_target_high>.
+    <lfs_target_high> = im_high.
+  ENDIF.
+
+  APPEND <lfs_target_row> TO ch_range.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_RANGE_UTILITY=>SIMPLE_RANGE_FROM_STRUCTURE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_SOURCE_STRUCTURE            TYPE        ANY
+* | [--->] IM_SIGN                        TYPE        DDSIGN (default =C_SIGN-INCLUDE)
+* | [--->] IM_OPTION                      TYPE        DDOPTION (default =C_OPTION-EQUAL_TO)
+* | [<-->] CH_RANGE                       TYPE        STANDARD TABLE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD simple_range_from_structure.
+  DATA: lr_target_row TYPE REF TO data.
+
+  FIELD-SYMBOLS: <lfs_source_field>  TYPE any,
+                 <lfs_target_row>    TYPE any,
+                 <lfs_target_sign>   TYPE ddsign,
+                 <lfs_target_option> TYPE ddoption,
+                 <lfs_target_low>    TYPE any.
+
+  CREATE DATA lr_target_row LIKE LINE OF ch_range.
+
+  ASSIGN:
+    lr_target_row->*          TO <lfs_target_row>,
+    lr_target_row->('SIGN')   TO <lfs_target_sign>,
+    lr_target_row->('OPTION') TO <lfs_target_option>,
+    lr_target_row->('LOW')    TO <lfs_target_low>.
+
+  <lfs_target_sign>   = im_sign.
+  <lfs_target_option> = im_option.
+
+  DO.
+    ASSIGN COMPONENT sy-index OF STRUCTURE im_source_structure TO <lfs_source_field>.
+    IF sy-subrc <> 0.
+      EXIT.
+    ENDIF.
+
+    <lfs_target_low> = <lfs_source_field>.
+    APPEND <lfs_target_row> TO ch_range.
+  ENDDO.
+ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_RANGE_UTILITY=>SIMPLE_RANGE_FROM_TABLE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_SOURCE_TABLE                TYPE        TABLE
+* | [--->] IM_SIGN                        TYPE        DDSIGN (default =C_SIGN-INCLUDE)
+* | [--->] IM_OPTION                      TYPE        DDOPTION (default =C_OPTION-EQUAL_TO)
+* | [--->] IM_LOW_FIELD_NAME              TYPE        CSEQUENCE(optional)
+* | [--->] IM_HIGH_FIELD_NAME             TYPE        CSEQUENCE(optional)
+* | [<-->] CH_RANGE                       TYPE        STANDARD TABLE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+METHOD simple_range_from_table.
+  DATA: lr_source_row TYPE REF TO data,
+        lr_target_row TYPE REF TO data.
+
+  FIELD-SYMBOLS: <lfs_source_row>    TYPE any,
+                 <lfs_source_low>    TYPE any,
+                 <lfs_source_high>   TYPE any,
+                 <lfs_target_row>    TYPE any,
+                 <lfs_target_sign>   TYPE ddsign,
+                 <lfs_target_option> TYPE ddoption,
+                 <lfs_target_low>    TYPE any,
+                 <lfs_target_high>   TYPE any.
+
+  CREATE DATA lr_source_row LIKE LINE OF im_source_table.
+
+  ASSIGN lr_source_row->* TO <lfs_source_row>.
+
+  IF im_low_field_name IS SUPPLIED.
+    ASSIGN lr_source_row->(im_low_field_name) TO <lfs_source_low>.
+    IF im_high_field_name IS SUPPLIED.
+      ASSIGN lr_source_row->(im_high_field_name) TO <lfs_source_high>.
+    ENDIF.
+  ELSE.
+    ASSIGN lr_source_row->* TO <lfs_source_low>.
+  ENDIF.
+
+  CREATE DATA lr_target_row LIKE LINE OF ch_range.
+
+  ASSIGN:
+    lr_target_row->*          TO <lfs_target_row>,
+    lr_target_row->('SIGN')   TO <lfs_target_sign>,
+    lr_target_row->('OPTION') TO <lfs_target_option>,
+    lr_target_row->('LOW')    TO <lfs_target_low>,
+    lr_target_row->('HIGH')   TO <lfs_target_high>.
+
+  <lfs_target_sign>   = im_sign.
+  <lfs_target_option> = im_option.
+
+  LOOP AT im_source_table INTO <lfs_source_row>.
+    <lfs_target_low> = <lfs_source_low>.
+
+    IF <lfs_source_high> IS ASSIGNED.
+      <lfs_target_high> = <lfs_source_high>.
+    ENDIF.
+
+    APPEND <lfs_target_row> TO ch_range.
+  ENDLOOP.
+ENDMETHOD.
+ENDCLASS.

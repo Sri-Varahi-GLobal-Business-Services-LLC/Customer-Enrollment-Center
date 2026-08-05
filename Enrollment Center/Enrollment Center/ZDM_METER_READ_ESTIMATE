@@ -1,0 +1,177 @@
+FUNCTION zdm_meter_read_estimate.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(X_ANLAGE) TYPE  ANLAGE
+*"     REFERENCE(X_DATE) TYPE  ADATSOLL
+*"     REFERENCE(X_MRREASON) TYPE  ABLESGRE
+*"     REFERENCE(X_NODIALOG) TYPE  E_DARK OPTIONAL
+*"     REFERENCE(X_COMMIT) TYPE  KENNZX OPTIONAL
+*"  EXPORTING
+*"     REFERENCE(YT_EABL) TYPE  EABL_TAB
+*"     REFERENCE(Y_OBJ) TYPE  ISU17_METERREAD
+*"  EXCEPTIONS
+*"      GENERAL_ERROR
+*"      NO_MRREL_REGISTERS
+*"----------------------------------------------------------------------
+  DATA : lv_obj TYPE isu17_meterread,
+         lv_auto TYPE  isu17_meterread_auto,
+         lv_dbupdate LIKE regen-db_update.
+
+  FIELD-SYMBOLS: <fs_reabld> TYPE reabld.
+
+
+  CALL FUNCTION 'ISU_O_METERREAD_OPEN'
+    EXPORTING
+      x_anlage              = x_anlage
+      x_adatsoll            = x_date
+      x_ablesgr             = x_mrreason
+      x_wmode               = co_create
+      x_no_dialog           = x_nodialog
+      x_ebene               = co_ebene_instln
+    IMPORTING
+      y_obj                 = lv_obj
+      y_auto                = lv_auto
+    EXCEPTIONS
+      not_found             = 1
+      foreign_lock          = 2
+      internal_error        = 3
+      input_error           = 4
+      existing              = 5
+      number_error          = 6
+      general_fault         = 7
+      system_error          = 8
+      manual_abort          = 9
+      gasdat_not_found      = 10
+      no_mrrel_registers    = 11
+      internal_warning      = 12
+      not_authorized        = 13
+      not_qualified         = 14
+      anpstorno_not_allowed = 15
+      already_billed        = 16
+      OTHERS                = 17.
+
+  case sy-subrc.
+    when 0.
+    when 11.
+        MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING NO_MRREL_REGISTERS.
+    when others.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  endcase.
+
+  CALL FUNCTION 'ISU_O_METERREAD_OPEN_SUBOBJ'
+    CHANGING
+      xy_obj         = lv_obj
+    EXCEPTIONS
+      not_found      = 1
+      foreign_lock   = 2
+      internal_error = 3
+      input_error    = 4
+      existing       = 5
+      number_error   = 6
+      general_fault  = 7
+      system_error   = 8
+      manual_abort   = 9
+      OTHERS         = 10.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+
+
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_okcode     = co_mark_all
+      x_no_message = x_nodialog
+    CHANGING
+      xy_obj       = lv_obj
+    EXCEPTIONS
+      OTHERS       = 99.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_okcode     = co_estim_all
+      x_no_message = x_nodialog
+    CHANGING
+      xy_obj       = lv_obj
+    EXCEPTIONS
+      OTHERS       = 99.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_okcode     = co_prep_save
+      x_no_message = x_nodialog
+    CHANGING
+      xy_obj       = lv_obj
+    EXCEPTIONS
+      OTHERS       = 99.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+  CALL FUNCTION 'ISU_O_METERREAD_ACTION'
+    EXPORTING
+      x_okcode     = co_save
+      x_no_message = x_nodialog
+    IMPORTING
+      y_db_update  = lv_dbupdate
+    CHANGING
+      xy_obj       = lv_obj
+    EXCEPTIONS
+      failed       = 1.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+  IF lv_dbupdate EQ 'X'
+   AND yt_eabl IS REQUESTED.
+    yt_eabl[] = lv_obj-ieabl[].
+  ENDIF.
+
+  IF NOT y_obj IS REQUESTED.
+    CALL FUNCTION 'ISU_O_METERREAD_CLOSE'
+      EXPORTING
+        x_no_dialog = x_nodialog
+      CHANGING
+        xy_obj      = lv_obj
+      EXCEPTIONS
+        other       = 99.
+  else.
+    y_obj = lv_obj.
+  ENDIF.
+
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+            RAISING general_error.
+  ENDIF.
+
+  IF x_commit = 'X'.
+    COMMIT WORK.
+  ENDIF.
+ENDFUNCTION.

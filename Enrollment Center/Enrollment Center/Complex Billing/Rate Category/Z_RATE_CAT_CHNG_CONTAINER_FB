@@ -1,0 +1,41 @@
+FUNCTION z_rate_cat_chng_container_fb.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(CHANGE_DOC_OBJECT) TYPE  SWECDOBJ-CDOBJECTCL OPTIONAL
+*"     VALUE(OBJTYPE) TYPE  SWECDOBJ-OBJTYPE OPTIONAL
+*"     VALUE(OBJKEY) TYPE  SWEINSTCOU-OBJKEY OPTIONAL
+*"     VALUE(EVENT) TYPE  SWOTRE-EVENT OPTIONAL
+*"  TABLES
+*"      EVENT_CONTAINER STRUCTURE  SWCONT OPTIONAL
+*"      CHANGEDOCUMENT_POSITION STRUCTURE  CDPOS OPTIONAL
+*"----------------------------------------------------------------------
+
+* This is the template-FB to fill the event-container before raising
+* the event from a change-document.
+
+* Since this FB-Interface cannot handle BOR-References and References to
+* Business-classes, there is a new Template
+
+  DATA:
+    lwa_cdpos TYPE cdpos,
+    lwa_cont  TYPE swcont.
+
+  LOOP AT changedocument_position INTO lwa_cdpos WHERE objectclas = 'ISU_EANL'
+                                                   AND fname = 'TARIFTYP'
+                                                   AND chngind = 'U'.
+    lwa_cont-element = 'OLD_RATECATEGORY'.
+    lwa_cont-elemlength = '010'.
+    lwa_cont-type    = 'C'.
+    lwa_cont-value   = lwa_cdpos-value_old.
+    APPEND lwa_cont TO event_container.
+
+    CLEAR: lwa_cont.
+    lwa_cont-element = 'NEW_RATECATEGORY'.
+    lwa_cont-elemlength = '010'.
+    lwa_cont-type    = 'C'.
+    lwa_cont-value   = lwa_cdpos-value_new.
+    APPEND lwa_cont TO event_container.
+    EXIT.
+  ENDLOOP.
+ENDFUNCTION.

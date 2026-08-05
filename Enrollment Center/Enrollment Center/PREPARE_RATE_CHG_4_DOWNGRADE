@@ -1,0 +1,197 @@
+  METHOD prepare_rate_chg_4_downgrade.
+    CONSTANTS:
+      lc_header   TYPE etdz-zwnummer VALUE '000',
+      lc_maxbis   TYPE etdz-bis VALUE '99991231',
+      lc_wmode    TYPE regen-wmode VALUE '2',
+      lc_nodialog TYPE regen-no_dialog VALUE 'X',
+      lc_prorate  TYPE regen-kennzx VALUE 'X',
+      lc_periodic TYPE eablg-ablesgr VALUE '01',
+      lc_alltarif TYPE tariftyp VALUE '*',
+      lc_bcrs     TYPE char4 VALUE 'BCRS',                  "D00K926383
+      lc_rse      TYPE char3 VALUE 'RSE',                   "D00K926383
+      lc_buf_clr  TYPE char64 VALUE '(SAPLEL55)EASTED'.
+
+    FIELD-SYMBOLS <lfs_fld> TYPE any.
+
+    DATA:
+      lv_tabix       TYPE syst-tabix,
+      lv_equnr       TYPE equi-equnr,
+      ls_auto        TYPE isu70_devicerate_auto,
+      ls_obj         TYPE isu70_devicerate,
+      ls_input       TYPE ztdm_mass_devmod,
+      lv_keydate     TYPE reg70-stichtag,
+      ls_return      TYPE bapiret2,
+      ls_dev         TYPE reg70_d,
+      ls_reg         TYPE reg70_r,
+      lv_upd_needed  TYPE boolean,
+      lv_dbupdate    TYPE regen-db_update,
+      lt_ratecat     TYPE STANDARD TABLE OF ztdm_mass_rtetyp,
+      ls_ratecat     TYPE ztdm_mass_rtetyp,
+      lv_tariftyp    TYPE eanlh-tariftyp,
+      ls_newreg      TYPE zst_mdmod_new_register,
+      lv_tarifart    TYPE tarifart,
+      lv_kondigr     TYPE kondigr,
+      ls_perconauto  TYPE pecon_easte_auto,
+      ls_easted      TYPE easted,
+      ls_billinst    TYPE ztcc_bilins_elec,
+      lv_upd         TYPE regen-db_update,
+
+      lit_easts      TYPE STANDARD TABLE OF easts,
+      ls_easts       TYPE easts,
+      ls_integ       TYPE isu07_integration_data.
+
+    FIELD-SYMBOLS : <fs_obj_reg>  TYPE reg70_r.
+
+   ls_integ = it_integration.
+    READ TABLE it_input INTO ls_input INDEX 1.
+    CHECK sy-subrc IS INITIAL.
+
+    es_return-matnr  = ls_input-matnr.
+    es_return-sernr  = ls_input-sernr.
+    es_return-equnr  = iv_equnr.
+    es_return-devloc = ls_input-devloc.
+
+    CHECK sy-subrc IS INITIAL.
+    lv_keydate = iv_date.
+
+    CALL FUNCTION 'ISU_S_DEVICERATE_PROVIDE'
+      EXPORTING
+        x_anlage       = ls_input-anlage
+        x_equnr        = lv_equnr
+        x_stichtag     = lv_keydate
+        x_wmode        = lc_wmode
+        x_prorate      = lc_prorate
+        x_upd_online   = 'X'
+        x_no_dialog    = lc_nodialog
+      IMPORTING
+        y_obj          = ls_obj
+        y_auto         = ls_auto
+      CHANGING
+        xy_integration = ls_integ
+      EXCEPTIONS
+        not_found      = 1
+        invalid        = 2
+        foreign_lock   = 3
+        input_error    = 4
+        system_error   = 5
+        internal_error = 6
+        not_qualified  = 7
+        cancelled      = 8
+        OTHERS         = 9.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4
+              INTO ls_return-message.
+      msg_add ls_return es_return-t_return.
+      EXIT.
+    ENDIF.
+
+    SELECT * FROM easts
+      INTO TABLE lit_easts
+      FOR ALL ENTRIES IN ls_auto-reg
+      WHERE anlage   EQ ls_input-anlage AND
+            logikzw  EQ ls_auto-reg-logikzw AND
+            bis      EQ lc_maxbis.
+
+* Register Level
+    LOOP AT ls_auto-reg INTO ls_reg WHERE bis GT lv_keydate.
+      CLEAR ls_newreg.
+      lv_tabix = sy-tabix.
+      READ TABLE it_input INTO ls_input
+                          WITH KEY zwnummer = ls_reg-zwnummer.
+      IF NOT sy-subrc IS INITIAL.
+        READ TABLE it_newreg INTO ls_newreg
+                             WITH KEY zwnummer = ls_reg-zwnummer.
+        IF NOT sy-subrc IS INITIAL.
+          CONTINUE.
+        ENDIF.
+* Being of R4C post cutover changes
+      ELSE.
+        READ TABLE lit_easts INTO ls_easts WITH KEY
+                             logikzw = ls_reg-logikzw.
+        IF sy-subrc NE 0.
+          CONTINUE.
+        ENDIF.
+* End of R4C post cutover changes
+      ENDIF.
+
+      CLEAR ls_easted.
+      IF NOT ls_input-perverbrd IS INITIAL.
+        ls_easted-equnr             = lv_equnr.
+        ls_easted-zwnummer          = ls_reg-zwnummer.
+        ls_easted-perverbrd         = ls_input-perverbrd.
+        ls_easted-anzdaysofperiod   = ls_input-adofper.
+        ls_easted-logikzw           = ls_reg-logikzw.
+        ls_easted-ab                = iv_date.
+        APPEND  ls_easted TO ls_perconauto-easted.
+      ENDIF.
+
+      READ TABLE it_bilinst TRANSPORTING NO FIELDS WITH KEY register = ls_reg-zwnummer
+                                                            rate_type = ls_reg-tarifart
+                                                            rate_fact_group = ls_reg-kondigr.
+      IF sy-subrc IS INITIAL AND
+         ls_input-zwnabr EQ ls_easts-zwnabr.  "R4C post cutover changes
+        CONTINUE.
+      ENDIF.
+
+*    Do not Bill
+      IF ls_input-zwnabr EQ 'X'.
+        ls_reg-zwnabr = 'X'.
+        CLEAR ls_reg-tarifart.
+      ELSEIF ls_input-zwnabr IS INITIAL OR
+        NOT ls_reg-kennziff IS INITIAL.
+        CLEAR: ls_reg-zwnabr, ls_ratecat.
+
+        ls_reg-tarifart         = ls_input-tarifart.
+        ls_reg-kondigr          = ls_input-kondigr.
+        ls_reg-perverbrd        = ls_input-perverbrd.       "D00K926383
+        ls_reg-anzdaysofperiod  = ls_input-adofper.         "D00K926383
+      ENDIF.
+
+*   Rate Type
+      IF NOT ls_input-tarifart IS INITIAL.
+        ls_reg-tarifart         = ls_input-tarifart.
+        ls_reg-kondigr          = ls_input-kondigr.
+        ls_reg-perverbrd        = ls_input-perverbrd.       "D00K926383
+        ls_reg-anzdaysofperiod  = ls_input-adofper.         "D00K926383
+      ENDIF.
+      MODIFY ls_auto-reg FROM ls_reg INDEX lv_tabix.
+      lv_upd_needed = abap_true.
+      LOOP AT ls_obj-obj-reg ASSIGNING <fs_obj_reg>
+                          WHERE anlage   = ls_reg-anlage AND
+                                logikzw  = ls_reg-logikzw AND
+                                bis      = ls_reg-bis.
+        <fs_obj_reg>-tarifart = ls_reg-tarifart.
+        <fs_obj_reg>-kondigr = ls_reg-kondigr.
+        <fs_obj_reg>-perverbrd = ls_reg-perverbrd.
+        <fs_obj_reg>-anzdaysofperiod  = ls_reg-anzdaysofperiod.
+
+      ENDLOOP.
+
+    ENDLOOP.
+
+* Fill in Header Rate Details
+    READ TABLE it_input INTO ls_input
+                        WITH KEY zwnummer = lc_header.
+
+    IF sy-subrc IS INITIAL.
+      LOOP AT ls_auto-dev INTO ls_dev.
+        lv_tabix = sy-tabix.
+        IF NOT ls_input-kondigr IS INITIAL.
+          ls_dev-tarifart = ls_input-tarifart.
+        ENDIF.
+        MODIFY ls_auto-dev FROM ls_dev INDEX lv_tabix.
+        lv_upd_needed = abap_true.
+      ENDLOOP.
+    ENDIF.
+
+    ls_auto-contr-use-okcode = 'X'.
+    ls_auto-contr-okcode = 'SAVE'.
+
+    IF NOT ls_obj IS INITIAL
+      AND NOT ls_auto IS INITIAL.
+      cwa_input-temp_dev_rat      = ls_obj.
+      cwa_input-temp_dev_rat_auto = ls_auto.
+    ENDIF.
+  ENDMETHOD.
+

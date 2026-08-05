@@ -1,0 +1,316 @@
+FUNCTION-POOL zfocs_mi_verify.              "MESSAGE-ID ..
+
+INCLUDE <cntn01>.
+TYPE-POOLS: zfopr.
+CONSTANTS: c_back    TYPE sy-ucomm     VALUE 'BACK',
+           c_exit    TYPE sy-ucomm     VALUE 'EXIT',
+           c_canc    TYPE sy-ucomm     VALUE 'CANC',
+           c_pmi     TYPE sy-ucomm     VALUE 'PMI',
+           c_cancel  TYPE sy-ucomm     VALUE 'CNC',
+           c_marked  TYPE kennzx       VALUE 'X',
+           c_connfee TYPE sy-ucomm     VALUE 'CONFEE',
+           c_secdep  TYPE sy-ucomm     VALUE 'SECDEP',
+           c_ok      TYPE sy-ucomm     VALUE 'OK',
+           c_com_class TYPE ktoklasse  VALUE 'COM',
+           c_res_class TYPE ktoklasse  VALUE 'RES',
+           c_end_date  TYPE sy-datum   VALUE '99991231'.
+* 08/15/2007 GCHONG Defect #4040 BEGIN
+CONSTANTS : c_mainwo  TYPE hvorg_kk VALUE '6999',
+            c_subwo   TYPE tvorg_kk VALUE '0010',
+            c_clear   TYPE augst_kk VALUE '9'.
+* 08/15/2007 GCHONG Defect #4040 END
+* 09/07/2007 GCHONG Defect $4868 BEGIN
+CONSTANTS : c_mainfb TYPE hvorg_kk VALUE '0200',
+            c_cnv_mainfb TYPE hvorg_kk VALUE '8005',
+            c_cnv_mainwo  TYPE hvorg_kk VALUE '8010'.
+* 09/07/2007 GCHONG Defect #4868 END
+
+*----|START-OF-CHANGE|MMRobson|03/17/2009|PM823391|----*
+CONSTANTS: c_facta_rc_pass  TYPE char01 VALUE 'P',
+           c_facta_rc_fail  TYPE char01 VALUE 'F',
+           c_facta_rc_error TYPE char01 VALUE 'E',
+           c_facta_rc_noid  TYPE char01 VALUE 'R'.
+*----|END-OF-CHANGE|MMRobson|03/17/2009|PM823391|----*
+
+*----|START-OF-CHANGE|MMRobson|05/13/2009|PM844409|----*
+CONSTANTS: c_preprompt_mv90            TYPE char02              VALUE 'A0',
+           c_preprompt_premise_bcenter TYPE char02              VALUE 'B0',
+           c_preprompt_partner_bcenter TYPE char02              VALUE 'C0',
+           c_postprompt_pir            TYPE char02              VALUE 'A0',
+           c_postprompt_rate_q         TYPE char02              VALUE 'ZZ',
+           c_bpclass_business_center   TYPE ekun-classification VALUE '01',
+           c_grp1_primary_res_only     TYPE char03              VALUE 'PRO',
+           c_grp1_secondary_res_only   TYPE char03              VALUE 'SRO',
+           c_grp1_any_res              TYPE char03              VALUE 'AR',
+           c_grp2_alert                TYPE char03              VALUE 'LRT',
+           c_screen_on                 TYPE char01              VALUE '1',
+           c_screen_off                TYPE char01              VALUE '0',
+           c_ucomm_primary_res_yes     TYPE syst-ucomm          VALUE 'PRIMARY_YES',
+           c_ucomm_primary_res_no      TYPE syst-ucomm          VALUE 'PRIMARY_NO',
+           c_ucomm_old                 TYPE syst-ucomm          VALUE 'OLD',
+           c_bool_true                 TYPE boolean             VALUE 'X',
+           c_bool_false                TYPE boolean             VALUE '-',
+           c_bool_unknown              TYPE boolean             VALUE space.
+*----|END-OF-CHANGE|MMRobson|05/13/2009|PM844409|----*
+
+*----|START-OF-CHANGE|MMRobson|05/25/2010|CM159974|----*
+CONSTANTS: c_ucomm_bill_class_residential TYPE syst-ucomm      VALUE 'BC_RES',
+           c_ucomm_bill_class_commercial  TYPE syst-ucomm      VALUE 'BC_COM',
+           c_grp4_residential             TYPE char03          VALUE 'RES',
+           c_grp4_commercial              TYPE char03          VALUE 'COM',
+           c_hfuel_default                TYPE zfuel_type_home VALUE 'GAS',
+           c_el_rate_type_primary         TYPE c LENGTH 1      VALUE 'P',
+           c_el_rate_type_secondary       TYPE c LENGTH 1      VALUE 'S',
+           c_opnd_elec_residential        TYPE e_operand       VALUE 'FLG_RES',
+           c_opnd_gas_residential         TYPE e_operand       VALUE 'FLGG_RES',
+           c_opnd_primary                 TYPE e_operand       VALUE 'FLG_PRIME',
+           c_sparte_electric              TYPE sparte          VALUE '01',
+           c_sparte_gas                   TYPE sparte          VALUE '02',
+           c_tariftyp_res_to_com          TYPE tariftyp        VALUE '_RES2COM',
+           c_tariftyp_com_to_res          TYPE tariftyp        VALUE '_COM2RES'.
+*----|END-OF-CHANGE|MMRobson|05/25/2010|CM159974|----*
+
+TABLES fkkvkp.
+TYPES: item_table_type LIKE STANDARD TABLE OF mtreeitm WITH DEFAULT KEY.
+
+TYPES: BEGIN OF cntl_event,
+         eventid    TYPE i,
+         appl_event TYPE c,
+       END OF cntl_event.
+TYPES: BEGIN OF t_equi_list,
+          equnr  TYPE equi-equnr,
+          matnr  TYPE equi-matnr,
+          sernr  TYPE equi-sernr,
+          devloc TYPE v_eger-devloc,
+          anlage TYPE eanl-anlage,
+       END OF t_equi_list,
+
+       BEGIN OF t_premise_objects,
+          tree_list   TYPE snodetext            OCCURS 0,
+          tree_object TYPE zfopr_tree_object    OCCURS 0,
+          equi_list   TYPE t_equi_list          OCCURS 0,
+          install_opt TYPE zfopr_install_option OCCURS 0,
+        END OF t_premise_objects.
+
+*----|START-OF-CHANGE|MMRobson|05/13/2009|PM844409|----*
+TYPES: t_i_prompt TYPE TABLE OF char02,
+       BEGIN OF t_yes_no,
+         value TYPE cfx_bi_api_t_bool,
+       END OF t_yes_no.
+*----|END-OF-CHANGE|MMRobson|05/13/2009|PM844409|----*
+
+*----|START-OF-CHANGE|MMRobson|05/14/2009|PM863791|----*
+TYPES: BEGIN OF t_contract,
+         contract TYPE ever-vertrag,
+         account  TYPE ever-vkonto,
+         partner  TYPE fkkvkp-gpart,
+       END OF t_contract,
+       t_i_contract TYPE TABLE OF t_contract.
+*----|END-OF-CHANGE|MMRobson|05/14/2009|PM863791|----*
+
+DATA: v_okcode  TYPE sy-ucomm,
+      save_code TYPE sy-ucomm.
+
+DATA:   BEGIN OF i_notord OCCURS 0,
+         docty     TYPE c,
+         key(12)   TYPE c,
+         doc_date  TYPE dats,
+         text(40)  TYPE c,
+         equnr     LIKE equi-equnr,
+         sernr     LIKE equi-sernr,
+         tplnr     LIKE iflot-tplnr,
+         ussts(40) TYPE c,
+         sysys(40) TYPE c,
+         nodky     TYPE tv_nodekey,
+       END OF i_notord,
+       BEGIN OF i_fica OCCURS 0,
+         docty(12) TYPE c,
+         key(12)   TYPE c,
+         amount    TYPE wrshb_d,
+         text(30)  TYPE c,
+         nodky     TYPE tv_nodekey,
+       END OF i_fica,
+       BEGIN OF i_vkont OCCURS 0,
+         fica_doc TYPE vertrag,
+       END OF i_vkont,
+       g_first_pass  TYPE kennzx,
+       g_load_obj    TYPE c.
+
+DATA:  g_partner       TYPE but000-partner,
+       g_vstelle       TYPE evbs-vstelle,
+       g_einzdat       TYPE eumzdkopf-einzdat,
+       g_same_bp       TYPE kennzx,
+       g_bankruptcy     TYPE c,
+       eumzdkopf       TYPE eumzdkopf,
+       g_reuse_vkont   TYPE fkkvkp-vkont,
+       gw_reuse_ca     TYPE kennzx,
+       g_bp_text(35)   TYPE c,
+       gw_pmi_cos      TYPE zfocs_pmi_cos,
+       gi_sec_dep_err  TYPE zsca_errors_t,
+       g_conn_fee      TYPE betrw_kk,
+       g_sec_dep       TYPE zsecdep,
+       g_new_vkont     TYPE vkont_kk,
+       g_new_premise   TYPE kennzx,
+       g_sec_dep_flag  TYPE kennzx,
+       g_sec_dep_trig  TYPE kennzx,
+       g_conn_fee_flag TYPE kennzx,
+       g_conn_fee_trig TYPE kennzx,
+       g_dwelling_type TYPE zdwelling_type,
+       g_home_fuel     TYPE zfuel_type_home,
+*----|START-OF-CHANGE|MMRobson|05/15/2009|PM844409|----*
+*       g_water_fuel    TYPE zfuel_type_water,
+*----|END-OF-CHANGE|MMRobson|05/15/2009|PM844409|----*
+       g_old           TYPE kennzx,
+       g_life          TYPE kennzx,
+       g_tax_exempt    TYPE kennzx,
+       g_same_ind      TYPE kennzx,
+       g_bill_class    TYPE ktoklasse,
+       g_bp_risk(48)   TYPE c,
+       gi_rate_category TYPE STANDARD TABLE OF ztfo_dflt_rate,
+       gw_rate_category TYPE ztfo_dflt_rate,
+       gw_mult_dwell_txt(40) TYPE c.
+
+DATA: g_premise_obj TYPE t_premise_objects.
+DATA :
+*      Premise
+       o_premise_env_container TYPE REF TO cl_gui_custom_container,
+       o_premise_env           TYPE REF TO cl_gui_list_tree,
+*      Installation
+       o_instln_container   TYPE REF TO cl_gui_custom_container,
+       o_instln             TYPE REF TO cl_gui_alv_grid,
+*      Security Deposit Errors
+       o_sec_dep_err_container  TYPE REF TO cl_gui_custom_container,
+       o_sec_dep_err            TYPE REF TO cl_gui_alv_grid,
+*      Service Orders Notification and SD Orders
+       o_ord_notif_container   TYPE REF TO cl_gui_custom_container,
+       o_ord_notif             TYPE REF TO cl_gui_column_tree,
+*      FICA
+       o_fica_container       TYPE REF TO cl_gui_custom_container,
+       o_fica_doc             TYPE REF TO cl_gui_column_tree,
+*      Premises
+       o_premises              TYPE swc_object.
+
+*----------------------------------------------------------------------*
+*                         Local Class Definition                       *
+*----------------------------------------------------------------------*
+* Local Class for Objects Event Handling
+CLASS lcl_object_event_receiver DEFINITION.
+  PUBLIC SECTION.
+*   Methods for CL_GUI_LIST_TREE events
+    METHODS:
+      handle_node_double_click
+        FOR EVENT node_double_click
+        OF cl_gui_list_tree
+        IMPORTING node_key,
+      handle_expand_no_children
+        FOR EVENT expand_no_children
+        OF cl_gui_list_tree
+        IMPORTING node_key,
+      handle_item_double_click
+        FOR EVENT item_double_click
+        OF cl_gui_list_tree
+        IMPORTING node_key,
+      handle_node_context_menu_req
+        FOR EVENT node_context_menu_request
+        OF cl_gui_list_tree
+        IMPORTING node_key menu,
+      handle_item_context_menu_req
+        FOR EVENT item_context_menu_request
+        OF cl_gui_list_tree
+        IMPORTING node_key menu,
+      handle_node_context_menu_sel
+        FOR EVENT node_context_menu_select
+        OF cl_gui_list_tree
+        IMPORTING node_key fcode,
+      handle_item_context_menu_sel
+        FOR EVENT item_context_menu_select
+        OF cl_gui_list_tree
+        IMPORTING node_key fcode.
+*   Methods for CL_GUI_COLUMN_TREE events
+    METHODS:
+      handle_node_double_click1
+        FOR EVENT node_double_click
+        OF cl_gui_column_tree
+        IMPORTING node_key,
+      handle_expand_no_children1
+        FOR EVENT expand_no_children
+        OF cl_gui_column_tree
+        IMPORTING node_key,
+      handle_item_double_click1
+        FOR EVENT item_double_click
+        OF cl_gui_column_tree
+        IMPORTING node_key,
+      handle_node_context_menu_req1
+        FOR EVENT node_context_menu_request
+        OF cl_gui_column_tree
+        IMPORTING node_key menu,
+      handle_item_context_menu_req1
+        FOR EVENT item_context_menu_request
+        OF cl_gui_column_tree
+        IMPORTING node_key menu,
+      handle_node_context_menu_sel1
+        FOR EVENT node_context_menu_select
+        OF cl_gui_column_tree
+        IMPORTING node_key fcode,
+      handle_item_context_menu_sel1
+        FOR EVENT item_context_menu_select
+        OF cl_gui_column_tree
+        IMPORTING node_key fcode,
+
+*     Methods for CL_GUI_ALV_GRID events
+      handle_data_changed
+        FOR EVENT data_changed
+        OF cl_gui_alv_grid
+        IMPORTING er_data_changed,
+      handle_enter_kpress
+        FOR EVENT after_user_command
+        OF cl_gui_alv_grid
+        IMPORTING e_ucomm,
+      handle_double_click
+        FOR EVENT double_click
+        OF cl_gui_alv_grid
+        IMPORTING e_row e_column,
+      handle_aftr_usr_cmd
+        FOR EVENT after_user_command
+        OF cl_gui_alv_grid.
+ENDCLASS.                    "lcl_object_event_receiver DEFINITION
+
+DATA:  o_event TYPE REF TO lcl_object_event_receiver.
+
+*----|START-OF-CHANGE|MMRobson|03/17/2009|PM823391|----*
+DATA: g_facta_return TYPE z_facta_return_code.
+*----|END-OF-CHANGE|MMRobson|03/17/2009|PM823391|----*
+
+*----|START-OF-CHANGE|MMRobson|05/13/2009|PM844409|----*
+**----|START-OF-CHANGE|MMRobson|03/23/2009|PM855518|----*
+*DATA: g_auto_pir TYPE flag.
+**----|END-OF-CHANGE|MMRobson|03/23/2009|PM855518|----*
+DATA: g_i_pre_prompts  TYPE t_i_prompt,
+      g_i_post_prompts TYPE t_i_prompt,
+      g_i_yn_drop_down TYPE TABLE OF t_yes_no.
+DATA: g_okcode_copy        TYPE syst-ucomm,
+      g_primary_res_yes    TYPE flag,
+      g_primary_res_no     TYPE flag,
+      g_old_display        TYPE cfx_bi_api_t_bool,
+      g_farm_alert         TYPE flag,
+      g_old_alert          TYPE flag,
+      g_lifesupp_alert     TYPE flag,
+      g_income_alert       TYPE flag,
+      g_income_ast_display TYPE cfx_bi_api_t_bool.
+*----|END-OF-CHANGE|MMRobson|05/13/2009|PM844409|----*
+
+*----|START-OF-CHANGE|MMRobson|06/24/2009|PM863791|----*
+DATA: g_seasonal TYPE flag.
+*----|END-OF-CHANGE|MMRobson|06/24/2009|PM863791|----*
+
+*----|START-OF-CHANGE|MMRobson|05/11/2010|CM168174|----*
+DATA: g_income_alert_text TYPE string.
+*----|END-OF-CHANGE|MMRobson|05/11/2010|CM168174|----*
+
+*----|START-OF-CHANGE|MMRobson|05/25/2010|CM159974|----*
+DATA: g_bill_class_res       TYPE flag,
+      g_bill_class_com       TYPE flag,
+      g_orig_bill_class      TYPE ktoklasse,
+      g_orig_bill_class_text TYPE string,
+      g_com_el_rate_type     TYPE c LENGTH 1.
+*----|END-OF-CHANGE|MMRobson|05/25/2010|CM159974|----*

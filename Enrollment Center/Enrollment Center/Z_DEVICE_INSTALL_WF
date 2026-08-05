@@ -1,0 +1,2048 @@
+FUNCTION z_device_install_wf.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(P_AUFNR) TYPE  AUFK-AUFNR
+*"     REFERENCE(P_REFDATA) TYPE  ZTDM_WF_TRIGGER
+*"  EXPORTING
+*"     REFERENCE(V_ERROR) TYPE  AUFK-ASTKZ
+*"     REFERENCE(V_SPARTE) TYPE  SPARTE
+*"     REFERENCE(V_ERROR_TXT) TYPE  SOLISTI1-LINE
+*"     REFERENCE(V_DEPT) TYPE  KNVK-ABTNR
+*"     REFERENCE(V_ERROR_TITLE) TYPE  SOLISTI1-LINE
+*"     REFERENCE(V_EQUI_METER) TYPE  EQUI-EQUNR
+*"     REFERENCE(V_EQUI_CORR) TYPE  EQUI-EQUNR
+*"     REFERENCE(V_EQUI_REG) TYPE  EQUI-EQUNR
+*"     REFERENCE(V_NOTIFICATION) TYPE  CAUFVD-QMNUM
+*"     REFERENCE(V_POD) TYPE  EXT_UI
+*"     REFERENCE(V_ANLAGE_OUT) TYPE  ANLAGE
+*"  EXCEPTIONS
+*"      ORDER_LOCKED
+*"      GOODS_MOVEMENT_FAILURE
+*"----------------------------------------------------------------------
+
+*----|START-OF-CHANGE|MMRobson|04/15/2009|PM860253|----*
+  DATA: l_i_object_keys TYPE tt_dln_gen_obj_keys.
+  DATA: l_count TYPE i.
+*----|END-OF-CHANGE|MMRobson|04/15/2009|PM860253|----*
+
+*----|START-OF-CHANGE|MMRobson|05/12/2009|PM860253|----*
+  DATA: l_flag TYPE flag.
+*----|END-OF-CHANGE|MMRobson|05/12/2009|PM860253|----*
+
+  DATA: lv_gcm_meter_read          TYPE atwrt,
+        lwa_related_device         TYPE t_equi,
+        lv_related_meter_read      TYPE atwrt,
+        lv_related_device_category TYPE kombinat,
+        lv_error                   TYPE boolean,
+        lv_error_msg               TYPE bapi_msg,
+        lv_reading_result          TYPE readingresult,
+
+        li_failed_rec              TYPE ztgcm_data_log,
+        li_matched_rec             TYPE ztgcm_data_log,
+
+        lwa_equi_gas               TYPE t_equi,
+        lwa_error_log              TYPE zsdm_miv_err_log,
+        lwa_input_data             TYPE zsdm_gcm_inst_data,
+        lwa_failed_rec             TYPE zgcm_data_log,
+        lwa_matched_rec            TYPE zgcm_data_log.
+
+  CLEAR: v_error,
+         v_error_txt,
+         v_error_txt1,
+         v_dept,
+         v_pod.
+
+  PERFORM clear_globals.
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_aufnr
+    IMPORTING
+      output = v_aufnr.
+
+  v_old_ilart = p_refdata-old_ilart.
+  v_old_auart = p_refdata-old_auart.
+
+* Get the work order details
+  PERFORM get_work_order_data USING v_aufnr
+                              CHANGING wa_caufvd.
+
+  IF wa_caufvd-qmnum IS INITIAL.
+*   Notification number could not be fetched
+    MESSAGE e090(zsc_rf).
+  ENDIF.
+* Get the noftification details
+  PERFORM get_notification_details USING wa_caufvd-qmnum
+                                   CHANGING i_notif_item.
+* Get the decimal separator from USR01
+  PERFORM get_decimal_separator CHANGING v_decimal.
+  v_read_initial = c_num_initial.
+* Get activity date of device removal
+*----|START-OF-CHANGE|MMRobson|01/02/2008|QC 9848|----*
+*  PERFORM get_activity_date  USING    v_aufnr
+*                             CHANGING v_actdate.
+*  PERFORM get_activity_date USING    v_aufnr
+*                                     wa_caufvd-qmnum
+*                            CHANGING v_actdate
+*                                     v_error
+*                                     v_error_txt1
+*                                     v_error_title1.
+
+*Start SE R5 changes
+  PERFORM get_activity_date_time USING v_aufnr
+                                         wa_caufvd-qmnum
+                                CHANGING v_actdate
+                                         v_error
+                                         v_error_txt1
+                                         v_error_title1
+                                         v_acttime.
+*End SE R5 Changes
+*{   INSERT         E2DK912008                                        2
+*----|START-OF-CHANGE|Kgupta|05/16/2011|----*
+  IF v_error = 'X'.
+    v_error_val = 'X'.
+    v_error_dept = c_dept_bill.
+  ELSE.
+    PERFORM check_activity_date USING wa_caufvd-equnr
+                             CHANGING v_actdate
+                                      v_error
+                                      v_error_title1
+                                      v_error_txt1.
+
+
+  ENDIF.
+*----|END-OF-CHANGE|Kgupta|05/16/2011|----*
+*}   INSERT
+  IF v_error = 'X'.
+    v_error_val  = 'X'.
+    v_error_dept = c_dept_bill.
+  ELSE.
+* Start of Defect 10332
+    PERFORM modify_ref CHANGING wa_caufvd.
+* End of Defect 10332
+*----|END-OF-CHANGE|MMRobson|01/02/2008|QC 9848|----*
+    CASE p_refdata-old_auart.
+      WHEN c_auart_emtr.
+        v_sparte = c_sparte_01.
+        v_division = v_sparte.  "R4C changes by SKOTHURI
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*        IF v_error IS INITIAL.
+**       Get the installation number based on the Device location
+*          PERFORM get_installation_number USING wa_caufvd
+*                                                v_sparte
+*                                                v_actdate
+*                                                c_priok_initial
+*                                       CHANGING v_anlage
+*                                                v_error
+*                                                v_error_val.
+*        ENDIF.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+        IF v_error IS INITIAL.
+          v_msg_device = c_elec_mtr.
+          PERFORM get_transformer_data USING wa_caufvd-tplnr"DL
+                                             v_actdate
+                                    CHANGING wa_equi_trans  "Transformer
+                                             v_bill_factor  "Billing fact
+                                             v_trans_needed."Trans
+        ENDIF.
+        IF v_error IS INITIAL.
+          PERFORM validate_device_meter_elec USING wa_caufvd
+                                                   c_class_nemi
+                                                   i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                                   v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                                   v_actdate
+                                                   c_action_01
+                                                   v_sparte
+                                                   v_acttime
+                                          CHANGING wa_equi_meter
+                                                   v_error
+                                                   i_char_val_nemi
+                                                   wa_klah_nemi
+                                                   v_dept
+                                                   v_error_txt1
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                                   v_error_val.
+                                                   v_error_val
+                                                   v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                                   v_smart_meter_flg.
+        ENDIF.
+        IF v_error IS INITIAL.
+          PERFORM install_device_meter_elec USING wa_caufvd
+                                                  c_class_nemi
+                                                  i_notif_item
+                                                  v_anlage
+                                                  v_actdate
+                                                  c_action_01
+                                                  v_sparte
+                                                  v_smart_meter_flg
+                                                  v_acttime
+                                         CHANGING wa_equi_meter
+                                                  v_error
+                                                  i_char_val_nemi
+                                                  wa_klah_nemi
+                                                  v_dept
+                                                  v_error_txt1.
+        ENDIF.
+*----|START-OF-CHANGE|MMRobson|04/14/2009|PM860253|----*
+        IF v_error IS INITIAL AND
+           p_refdata-old_ilart = c_change_install_ele AND
+           wa_caufvd-tplnr IS NOT INITIAL.
+
+*----|START-OF-CHANGE|MMRobson|05/12/2009|PM860253|----*
+          PERFORM is_mv90 USING v_anlage CHANGING l_flag.
+          IF l_flag = 'X'.
+*----|END-OF-CHANGE|MMRobson|05/12/2009|PM860253|----*
+
+*         Check for a POD in the device location's notes
+            PERFORM get_obj_from_dev_loc_note USING wa_caufvd-tplnr
+                                                    c_dln_gen_obj_pod
+                                           CHANGING l_i_object_keys.
+
+            DESCRIBE TABLE l_i_object_keys LINES l_count.
+            IF l_count <> 1.
+              v_error = c_mark.
+              CONCATENATE text-e34 wa_caufvd-tplnr INTO v_error_title1
+                SEPARATED BY space.
+              v_error_txt1 = v_error_title1.
+            ELSE.
+              READ TABLE l_i_object_keys INTO v_pod INDEX 1.
+              PERFORM allocate_pod USING v_pod
+                                         wa_equi_meter
+                                         v_actdate
+                                CHANGING v_error
+                                         v_error_txt1.
+
+              IF v_error = c_mark.
+                v_error_title1 = text-e35.
+                REPLACE '&1' IN v_error_title1 WITH v_pod.
+                REPLACE '&2' IN v_error_title1 WITH v_aufnr.
+              ENDIF.
+            ENDIF.
+*----|START-OF-CHANGE|MMRobson|05/12/2009|PM860253|----*
+          ENDIF.
+*----|END-OF-CHANGE|MMRobson|05/12/2009|PM860253|----*
+        ENDIF.
+*----|END-OF-CHANGE|MMRobson|04/14/2009|PM860253|----*
+      WHEN c_auart_gmtr.
+        v_sparte = c_sparte_02.
+        v_division = v_sparte.  "R4C changes by SKOTHURI
+*     For Gas installation
+*     Process depending on priority
+        PERFORM get_priority_value USING wa_caufvd
+                                         v_aufnr
+                                CHANGING v_priok
+                                         v_error
+                                         v_error_title1
+                                         v_error_txt1
+                                         v_error_sparte.
+        CASE v_priok.
+          WHEN c_priok_1.
+            v_priority = c_priok_1.
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*            IF v_error IS INITIAL.
+*              PERFORM get_installation_number USING wa_caufvd
+*                                                    v_sparte
+*                                                    v_actdate
+*                                                    v_priok
+*                                           CHANGING v_anlage
+*                                                    v_error
+*                                                    v_error_val.
+*            ENDIF.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM validate_meter USING wa_caufvd
+                                           c_class_ngmi
+                                           i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                           v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                           v_actdate
+                                           c_action_01
+                                           v_priority
+                                           c_kombinat_z
+                                           v_sparte
+                                  CHANGING wa_equi_meter
+                                           v_error
+                                           i_char_val_ngmi
+                                           wa_klah_ngmi
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                           v_error_val.
+                                           v_error_val
+                                           v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM install_device_meter_gas USING wa_caufvd
+                                                     c_class_ngmi
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     c_kombinat_z
+                                                     v_sparte
+                                            CHANGING wa_equi_meter
+                                                     v_error
+                                                     i_char_val_ngmi
+                                                     wa_klah_ngmi.
+            ENDIF.
+            " End of c_priok_1
+          WHEN c_priok_2.
+            v_priority = c_priok_2.
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*            IF v_error IS INITIAL.
+*              PERFORM get_installation_number USING wa_caufvd
+*                                                    v_sparte
+*                                                    v_actdate
+*                                                    v_priok
+*                                           CHANGING v_anlage
+*                                                    v_error
+*                                                    v_error_val.
+*            ENDIF.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM validate_regulator USING c_class_nffr
+                                               wa_caufvd
+                                               i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                               v_logiknr
+                                               c_kombinat_d
+                                               v_actdate
+*                                            c_action_06 "Modified on
+                                               c_action_01  "July 16
+                                               v_priority
+                                               v_sparte
+                                      CHANGING i_char_val_nffr
+                                               wa_klah_nffr
+                                               wa_equi_reg
+                                               v_error
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_error_val.
+                                               v_error_val
+                                               v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM validate_meter USING wa_caufvd
+                                           c_class_ngmi
+                                           i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                           v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                           v_actdate
+                                           c_action_01
+                                           v_priority
+                                           c_kombinat_z
+                                           v_sparte
+                                  CHANGING wa_equi_meter
+                                           v_error
+                                           i_char_val_ngmi
+                                           wa_klah_ngmi
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                           v_error_val.
+                                           v_error_val
+                                           v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM install_device_regulator USING c_class_nffr
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_d
+                                                     v_actdate
+*                                                  c_action_06"Change on
+                                                     c_action_01 "July 16
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nffr
+                                                     wa_klah_nffr
+                                                     wa_equi_reg
+                                                     v_error.
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM install_device_meter_gas USING wa_caufvd
+                                                     c_class_ngmi
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     c_kombinat_z
+                                                     v_sparte
+                                            CHANGING wa_equi_meter
+                                                     v_error
+                                                     i_char_val_ngmi
+                                                     wa_klah_ngmi.
+            ENDIF.
+*----|START-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+            IF v_error IS INITIAL.
+              PERFORM validate_pressure_read USING i_char_val_nffr
+                                                   wa_equi_reg
+                                                   v_error.
+            ENDIF.
+            " End of c_priok_2
+*----|END-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+          WHEN c_priok_3.
+            v_priority = c_priok_3.
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*            IF v_error IS INITIAL.
+*              PERFORM get_installation_number USING wa_caufvd
+*                                                    v_sparte
+*                                                    v_actdate
+*                                                    v_priok
+*                                           CHANGING v_anlage
+*                                                    v_error
+*                                                    v_error_val.
+*            ENDIF.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM validate_regulator USING c_class_nffr
+                                               wa_caufvd
+                                               i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                               v_logiknr
+                                               c_kombinat_d
+                                               v_actdate
+*                                            c_action_06 "Modified on
+                                               c_action_01  "July 16
+                                               v_priority
+                                               v_sparte
+                                      CHANGING i_char_val_nffr
+                                               wa_klah_nffr
+                                               wa_equi_reg
+                                               v_error
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_error_val.
+                                               v_error_val
+                                               v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM install_device_regulator USING c_class_nffr
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_d
+                                                     v_actdate
+*                                                  c_action_06"Changed
+                                                     c_action_01 "on Jul 16
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nffr
+                                                     wa_klah_nffr
+                                                     wa_equi_reg
+                                                     v_error.
+            ENDIF.
+*----|START-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+            IF v_error IS INITIAL.
+              PERFORM validate_pressure_read USING i_char_val_nffr
+                                                   wa_equi_reg
+                                                   v_error.
+            ENDIF.
+*----|END-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+            " End of c_priok_3
+          WHEN c_priok_4.
+            v_priority = c_priok_4.
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*            IF v_error IS INITIAL.
+*              PERFORM get_installation_number USING wa_caufvd
+*                                                    v_sparte
+*                                                    v_actdate
+*                                                    v_priok
+*                                           CHANGING v_anlage
+*                                                    v_error
+*                                                    v_error_val.
+*            ENDIF.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM validate_corrector USING c_class_nvci
+                                               wa_caufvd
+                                               i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                               v_logiknr
+                                               c_kombinat_m
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                      CHANGING i_char_val_nvci
+                                               wa_klah_nvci
+                                               wa_equi_corr
+                                               v_error
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_error_val.
+                                               v_error_val
+                                               v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.         .
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM install_device_corrector USING c_class_nvci
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nvci
+                                                     wa_klah_nvci
+                                                     wa_equi_corr
+                                                     v_error.
+            ENDIF.
+            " End of c_priok_4
+          WHEN c_priok_5.
+            v_priority = c_priok_5.
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*            IF v_error IS INITIAL.
+*              PERFORM get_installation_number USING wa_caufvd
+*                                                    v_sparte
+*                                                    v_actdate
+*                                                    v_priok
+*                                           CHANGING v_anlage
+*                                                    v_error
+*                                                    v_error_val.
+*            ENDIF.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM validate_meter USING wa_caufvd
+                                           c_class_ngmi
+                                           i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                           v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                           v_actdate
+                                           c_action_01
+                                           v_priority
+                                           c_kombinat_z
+                                           v_sparte
+                                  CHANGING wa_equi_meter
+                                           v_error
+                                           i_char_val_ngmi
+                                           wa_klah_ngmi
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                           v_error_val.
+                                           v_error_val
+                                           v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM validate_corrector USING c_class_nvci
+                                               wa_caufvd
+                                               i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                               v_logiknr
+                                               c_kombinat_m
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                      CHANGING i_char_val_nvci
+                                               wa_klah_nvci
+                                               wa_equi_corr
+                                               v_error
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_error_val.
+                                               v_error_val
+                                               v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM install_device_corrector USING c_class_nvci
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nvci
+                                                     wa_klah_nvci
+                                                     wa_equi_corr
+                                                     v_error.
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM install_device_meter_gas USING wa_caufvd
+                                                     c_class_ngmi
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     c_kombinat_z
+                                                     v_sparte
+                                            CHANGING wa_equi_meter
+                                                     v_error
+                                                     i_char_val_ngmi
+                                                     wa_klah_ngmi.
+            ENDIF.
+            " End of c_priok_5
+          WHEN c_priok_6.
+            v_priority = c_priok_6.
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*            IF v_error IS INITIAL.
+*              PERFORM get_installation_number USING wa_caufvd
+*                                                    v_sparte
+*                                                    v_actdate
+*                                                    v_priok
+*                                           CHANGING v_anlage
+*                                                    v_error
+*                                                    v_error_val.
+*            ENDIF.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM validate_regulator USING c_class_nffr
+                                               wa_caufvd
+                                               i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                               v_logiknr
+                                               c_kombinat_d
+                                               v_actdate
+*                                            c_action_06 "Modified on
+                                               c_action_01  "July 16
+                                               v_priority
+                                               v_sparte
+                                      CHANGING i_char_val_nffr
+                                               wa_klah_nffr
+                                               wa_equi_reg
+                                               v_error
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_error_val.
+                                               v_error_val
+                                               v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM validate_corrector USING c_class_nvci
+                                               wa_caufvd
+                                               i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                               v_logiknr
+                                               c_kombinat_m
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                      CHANGING i_char_val_nvci
+                                               wa_klah_nvci
+                                               wa_equi_corr
+                                               v_error
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                               v_error_val.
+                                               v_error_val
+                                               v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM validate_meter USING wa_caufvd
+                                           c_class_ngmi
+                                           i_notif_item
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                           v_anlage
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+                                           v_actdate
+                                           c_action_01
+                                           v_priority
+                                           c_kombinat_z
+                                           v_sparte
+                                  CHANGING wa_equi_meter
+                                           v_error
+                                           i_char_val_ngmi
+                                           wa_klah_ngmi
+*----|START-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+*                                           v_error_val.
+                                           v_error_val
+                                           v_anlage.
+*----|END-OF-CHANGE|MMRobson|01/11/2008|QC 10478|----*
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM install_device_regulator USING c_class_nffr
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_d
+                                                     v_actdate
+*                                                  c_action_06 "Changed
+                                                     c_action_01 "July 16
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nffr
+                                                     wa_klah_nffr
+                                                     wa_equi_reg
+                                                     v_error.
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM install_device_corrector USING c_class_nvci
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nvci
+                                                     wa_klah_nvci
+                                                     wa_equi_corr
+                                                     v_error.
+            ENDIF.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM install_device_meter_gas USING wa_caufvd
+                                                     c_class_ngmi
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     c_kombinat_z
+                                                     v_sparte
+                                            CHANGING wa_equi_meter
+                                                     v_error
+                                                     i_char_val_ngmi
+                                                     wa_klah_ngmi.
+            ENDIF.
+*----|START-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+            IF v_error IS INITIAL.
+              PERFORM validate_pressure_read USING i_char_val_nffr
+                                                   wa_equi_reg
+                                                   v_error.
+            ENDIF.
+*----|END-OF-CHANGE|MMRobson|08/06/2009|PM886637|----*
+            " End of c_priok_6
+          WHEN c_priok_c.
+
+            v_priority = c_priok_c.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gcm.
+              PERFORM validate_gas_comm_module USING c_class_ngcm
+                                                     c_class_egmi
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_ngcm
+                                                     wa_klah_ngcm
+                                                     wa_equi_gcm
+                                                     lwa_related_device
+                                                     lv_related_device_category
+                                                     v_error
+                                                     v_error_val
+                                                     v_anlage
+                                                     lv_gcm_meter_read
+                                                     lv_related_meter_read.
+              IF lv_related_device_category = c_category_meter.
+                wa_equi_meter = lwa_related_device.
+              ENDIF.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              CASE lv_related_device_category.
+                WHEN c_category_meter.
+                  PERFORM check_materials_compatibility USING wa_caufvd
+                                                              v_sparte
+                                                              v_actdate
+                                                              wa_equi_gcm
+                                                     CHANGING v_error
+                                                              lwa_related_device.
+                WHEN c_category_corrector.
+                  PERFORM check_mat_compatibility_corr USING wa_caufvd
+                                                             wa_equi_gcm
+                                                    CHANGING v_error
+                                                             wa_equi_meter
+                                                             lwa_related_device.
+              ENDCASE.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM align_gcm_register_group USING wa_caufvd
+                                                     wa_equi_gcm
+                                                     lwa_related_device-equnr
+                                                     v_actdate
+                                            CHANGING v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+* Process remove device allocation when tvarv variable
+* maintained
+              PERFORM remove_unexpected_allocations USING wa_caufvd-tplnr
+                                                          v_actdate
+                                                          v_anlage
+                                                          wa_equi_gcm
+                                                          lwa_related_device
+                                                          lv_related_meter_read
+                                                 CHANGING v_error.
+
+              v_msg_device = c_gcm.
+              wa_equi_corr = lwa_related_device.       "VWILLIA
+              PERFORM install_gcm_device USING c_class_ngcm
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_anlage
+                                               v_logiknr
+                                               c_kombinat_m
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                               lv_gcm_meter_read
+                                               lwa_related_device
+                                      CHANGING i_char_val_ngcm
+                                               wa_klah_ngcm
+                                               wa_equi_gcm
+                                               v_error.
+
+              IF v_error IS INITIAL.
+* Align Logical register numbers for gas billing history
+                PERFORM align_logical_registers USING wa_equi_gcm
+                                                      wa_caufvd
+                                                      v_anlage
+                                                      v_actdate
+                                                      v_sparte
+                                                      v_priority
+                                                      lwa_related_device
+                                                      lv_related_meter_read
+                                             CHANGING v_error.
+              ENDIF.
+
+* Change register group for corrector only scenario
+              IF v_error IS INITIAL
+                AND wa_equi_gcm-equnr NE c_equnr_initial.
+                PERFORM change_register_2 USING v_actdate
+                                                abap_false
+                                                lwa_related_device
+                                                lv_related_device_category
+                                                lv_related_meter_read
+                                       CHANGING v_error.
+              ENDIF.
+
+              IF v_error IS INITIAL.
+                PERFORM associate_giu USING wa_caufvd-tplnr
+                                            v_actdate
+                                            wa_equi_gcm
+                                            wa_equi_meter
+                                   CHANGING v_error.
+              ENDIF.
+            ENDIF.
+
+            PERFORM update_devloc_amr_boosted_comm USING wa_equi_gcm-equnr
+                                                         wa_caufvd-tplnr
+                                                         v_actdate
+                                                         i_char_val_ngcm[]
+                                                CHANGING v_error
+                                                         v_error_title1
+                                                         v_error_txt1.
+            " End of c_priok_c
+          WHEN  c_priok_a.
+            v_priority = c_priok_a.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gcm.
+              PERFORM validate_gas_comm_module USING c_class_ngcm
+                                                     c_class_ngmi
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_ngcm
+                                                     wa_klah_ngcm
+                                                     wa_equi_corr
+                                                     lwa_equi_gas
+                                                     lv_related_device_category
+                                                     v_error
+                                                     v_error_val
+                                                     v_anlage
+                                                     lv_gcm_meter_read
+                                                     lv_related_meter_read.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM check_materials_compatibility USING wa_caufvd
+                                                          v_sparte
+                                                          v_actdate
+                                                          wa_equi_corr
+                                                 CHANGING v_error
+                                                          lwa_equi_gas.
+            ENDIF.
+
+*       Modify register group to GDR
+            IF v_error NE 'X'.
+              wa_equi_meter = lwa_equi_gas.
+              SELECT COUNT(*) FROM egerh
+                WHERE equnr = wa_equi_meter-equnr
+                  AND bis   GE v_actdate
+                  AND ab    LE v_actdate
+                  AND zwgruppe EQ c_zwgruppe_gdr
+                  AND devloc EQ space.
+              IF sy-subrc <> 0.
+                PERFORM modify_device_using_eg42 USING wa_equi_meter
+                                                       v_actdate
+                                                       c_zwgruppe_gdr
+                                              CHANGING v_error.
+              ENDIF.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM validate_meter USING wa_caufvd
+                                           c_class_ngmi
+                                           i_notif_item
+                                           v_actdate
+                                           c_action_01
+                                           v_priority
+                                           c_kombinat_z
+                                           v_sparte
+                                  CHANGING wa_equi_meter
+                                           v_error
+                                           i_char_val_ngmi
+                                           wa_klah_ngmi
+                                           v_error_val
+                                           v_anlage.
+            ENDIF.
+
+            wa_equi_meter = lwa_equi_gas.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM install_device_corrector USING c_class_ngcm
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_ngcm
+                                                     wa_klah_ngcm
+                                                     wa_equi_corr
+                                                     v_error.
+            ENDIF.
+            IF v_error IS INITIAL.
+              WAIT UP TO 60 SECONDS.
+*       unlock the installation
+              PERFORM unlock_installation USING v_obj.
+              DO 1000 TIMES.
+                CALL FUNCTION 'ENQUEUE_E_EANL'
+                  EXPORTING
+                    mode_eanl      = 'E'
+                    anlage         = v_anlage
+                  EXCEPTIONS
+                    foreign_lock   = 1
+                    system_failure = 2
+                    OTHERS         = 3.
+                IF sy-subrc <> 0.
+* Implement suitable error handling here
+                ELSE.
+                  CALL FUNCTION 'DEQUEUE_E_EANL'
+                    EXPORTING
+                      mode_eanl = 'E'
+                      mandt     = sy-mandt
+                      anlage    = v_anlage.
+                  EXIT.
+                ENDIF.
+              ENDDO.
+
+*              IF v_intyp_gas = '04'.
+*                v_intyp_gas = '14'.
+*              ELSEIF v_intyp_gas = '05'.
+*                v_intyp_gas = '15'.
+*              ENDIF.
+
+              v_msg_device = c_gas_mtr.
+              PERFORM install_device_meter_gas USING wa_caufvd
+                                                     c_class_ngmi
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     c_kombinat_z
+                                                     v_sparte
+                                            CHANGING wa_equi_meter
+                                                     v_error
+                                                     i_char_val_ngmi
+                                                     wa_klah_ngmi.
+            ENDIF.
+            IF v_error NE abap_true.
+              CALL FUNCTION 'ZSC_GASSUPPLY_GIU_DETAIL'
+                EXPORTING
+                  iv_matnr           = wa_equi_meter-matnr
+                  iv_sernr_start     = wa_equi_meter-sernr
+                  iv_asocmatnr       = wa_equi_corr-matnr
+                  iv_asocsernr       = wa_equi_corr-sernr
+                  iv_check_status    = 'GIU'
+                IMPORTING
+                  ev_error           = lv_error
+                  et_failed_rec      = li_failed_rec
+                  et_matched_rec     = li_matched_rec
+                EXCEPTIONS
+                  no_data_found      = 1
+                  no_assoc_gcm       = 2
+                  different_location = 3
+                  wrong_input        = 4
+                  not_giu            = 5
+                  OTHERS             = 6.
+              IF sy-subrc <> 0.
+                READ TABLE li_failed_rec  INTO lwa_failed_rec INDEX 1.
+                IF sy-subrc = 0.
+                  CALL FUNCTION 'ZSC_GAS_GIU_UPDATE'
+                    EXPORTING
+                      iv_mainmatno       = wa_equi_meter-matnr
+                      iv_mainserno       = wa_equi_meter-sernr
+                      iv_asocmatno       = wa_equi_corr-matnr
+                      iv_asocserno       = wa_equi_corr-sernr
+                      iv_relation        = 'A'
+                      iv_ustatus         = 'GIU'
+                    IMPORTING
+                      ex_error_msg       = lv_error_msg
+                    EXCEPTIONS
+                      invalid_assoc_mat  = 1
+                      invalid_main_mat   = 2
+                      record_not_match   = 3
+                      association_exists = 4
+                      OTHERS             = 5.
+                  IF sy-subrc <> 0.
+                    v_error = abap_true.
+                    v_error_txt1 = lv_error_msg.
+                  ELSE.
+                    v_error_dept   = c_dept_admn.
+                    v_error_sparte = c_sparte_02.
+                    v_error_title1 = |{ p_aufnr }:GIU association is not maintained|.
+                    v_error_txt1 = 'GIU association is not maintained on new gas mtr and new GCM prior to instln'.
+                  ENDIF.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+
+            PERFORM update_devloc_amr_boosted_comm USING wa_equi_corr-equnr
+                                                         wa_caufvd-tplnr
+                                                         v_actdate
+                                                         i_char_val_ngcm[]
+                                                CHANGING v_error
+                                                         v_error_title1
+                                                         v_error_txt1.
+            " End of c_priok_a
+*Begin of insert by VWILLIA2
+          WHEN c_priok_b_mtr_corr_gcm.
+            v_priority = c_priok_b_mtr_corr_gcm.
+
+            v_msg_device = c_gas_corr.
+            PERFORM validate_corrector USING c_class_nvci
+                                             wa_caufvd
+                                             i_notif_item
+                                             v_logiknr
+                                             c_kombinat_m
+                                             v_actdate
+                                             c_action_01
+                                             v_priority
+                                             v_sparte
+                                    CHANGING i_char_val_nvci
+                                             wa_klah_nvci
+                                             wa_equi_corr
+                                             v_error
+                                             v_error_val
+                                             v_anlage.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM validate_meter USING wa_caufvd
+                                           c_class_ngmi
+                                           i_notif_item
+                                           v_actdate
+                                           c_action_01
+                                           v_priority
+                                           c_kombinat_z
+                                           v_sparte
+                                  CHANGING wa_equi_meter
+                                           v_error
+                                           i_char_val_ngmi
+                                           wa_klah_ngmi
+                                           v_error_val
+                                           v_anlage.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gcm.
+              PERFORM validate_gas_comm_module USING c_class_ngcm
+                                                     c_class_egmi
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_ngcm
+                                                     wa_klah_ngcm
+                                                     wa_equi_gcm
+                                                     lwa_related_device
+                                                     lv_related_device_category
+                                                     v_error
+                                                     v_error_val
+                                                     v_anlage
+                                                     lv_gcm_meter_read
+                                                     lv_related_meter_read.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM check_mat_compatibility_corr USING wa_caufvd
+                                                         wa_equi_gcm
+                                                CHANGING v_error
+                                                         wa_equi_meter
+                                                         lwa_related_device.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM align_gcm_register_group USING wa_caufvd
+                                                     wa_equi_gcm
+                                                     lwa_related_device-equnr
+                                                     v_actdate
+                                            CHANGING v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM install_device_corrector USING c_class_nvci
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nvci
+                                                     wa_klah_nvci
+                                                     wa_equi_corr
+                                                     v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              " Change the meter's register group
+              PERFORM change_register_2 USING v_actdate
+                                              abap_false
+                                              wa_equi_meter
+                                              c_category_meter
+                                              c_skip_reading
+                                     CHANGING v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM install_device_meter_gas USING wa_caufvd
+                                                     c_class_ngmi
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     c_kombinat_z
+                                                     v_sparte
+                                            CHANGING wa_equi_meter
+                                                     v_error
+                                                     i_char_val_ngmi
+                                                     wa_klah_ngmi.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+* Process remove device allocation when tvarv variable
+* maintained
+              PERFORM remove_unexpected_allocations USING wa_caufvd-tplnr
+                                                          v_actdate
+                                                          v_anlage
+                                                          wa_equi_gcm
+                                                          lwa_related_device
+                                                          lv_gcm_meter_read
+                                                 CHANGING v_error.
+              v_msg_device = c_gcm.
+              PERFORM install_gcm_device USING c_class_ngcm
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_anlage
+                                               v_logiknr
+                                               c_kombinat_m
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                               lv_gcm_meter_read
+                                               lwa_related_device
+                                      CHANGING i_char_val_ngcm
+                                               wa_klah_ngcm
+                                               wa_equi_gcm
+                                               v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              " Change the corrector's registers
+              PERFORM change_register_2 USING v_actdate
+                                              abap_false
+                                              lwa_related_device
+                                              lv_related_device_category
+                                              c_skip_reading
+                                     CHANGING v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM associate_giu USING wa_caufvd-tplnr
+                                          v_actdate
+                                          wa_equi_gcm
+                                          wa_equi_meter
+                                 CHANGING v_error.
+            ENDIF.
+
+            PERFORM update_devloc_amr_boosted_comm USING wa_equi_gcm-equnr
+                                                         wa_caufvd-tplnr
+                                                         v_actdate
+                                                         i_char_val_ngcm[]
+                                                CHANGING v_error
+                                                         v_error_title1
+                                                         v_error_txt1.
+            " End of c_priok_b
+          WHEN c_priok_e_mtr_corr_reg_gcm.
+            v_priority = c_priok_e_mtr_corr_reg_gcm.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM validate_regulator USING c_class_nffr
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_logiknr
+                                               c_kombinat_d
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                      CHANGING i_char_val_nffr
+                                               wa_klah_nffr
+                                               wa_equi_reg
+                                               v_error
+                                               v_error_val
+                                               v_anlage.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM validate_corrector USING c_class_nvci
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_logiknr
+                                               c_kombinat_m
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                      CHANGING i_char_val_nvci
+                                               wa_klah_nvci
+                                               wa_equi_corr
+                                               v_error
+                                               v_error_val
+                                               v_anlage.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gcm.
+              PERFORM validate_gas_comm_module USING c_class_ngcm
+                                                     c_class_egmi
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_ngcm
+                                                     wa_klah_ngcm
+                                                     wa_equi_gcm
+                                                     lwa_related_device
+                                                     lv_related_device_category
+                                                     v_error
+                                                     v_error_val
+                                                     v_anlage
+                                                     lv_gcm_meter_read
+                                                     lv_related_meter_read.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM check_mat_compatibility_corr USING wa_caufvd
+                                                         wa_equi_gcm
+                                                CHANGING v_error
+                                                         wa_equi_meter
+                                                         lwa_related_device.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM validate_meter USING wa_caufvd
+                                           c_class_ngmi
+                                           i_notif_item
+                                           v_actdate
+                                           c_action_01
+                                           v_priority
+                                           c_kombinat_z
+                                           v_sparte
+                                  CHANGING wa_equi_meter
+                                           v_error
+                                           i_char_val_ngmi
+                                           wa_klah_ngmi
+                                           v_error_val
+                                           v_anlage.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM align_gcm_register_group USING wa_caufvd
+                                                     wa_equi_gcm
+                                                     lwa_related_device-equnr
+                                                     v_actdate
+                                            CHANGING v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM install_device_regulator USING c_class_nffr
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_d
+                                                     v_actdate
+*                                                  c_action_06 "Changed
+                                                     c_action_01 "July 16
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nffr
+                                                     wa_klah_nffr
+                                                     wa_equi_reg
+                                                     v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM install_device_corrector USING c_class_nvci
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nvci
+                                                     wa_klah_nvci
+                                                     wa_equi_corr
+                                                     v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              " Change the meter's register group
+              PERFORM change_register_2 USING v_actdate
+                                              abap_false
+                                              wa_equi_meter
+                                              c_category_meter
+                                              c_skip_reading
+                                     CHANGING v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM install_device_meter_gas USING wa_caufvd
+                                                     c_class_ngmi
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     c_kombinat_z
+                                                     v_sparte
+                                            CHANGING wa_equi_meter
+                                                     v_error
+                                                     i_char_val_ngmi
+                                                     wa_klah_ngmi.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+* Process remove device allocation when tvarv variable
+* maintained
+              PERFORM remove_unexpected_allocations USING wa_caufvd-tplnr
+                                                          v_actdate
+                                                          v_anlage
+                                                          wa_equi_gcm
+                                                          lwa_related_device
+                                                          lv_gcm_meter_read
+                                                 CHANGING v_error.
+              v_msg_device = c_gcm.
+              PERFORM install_gcm_device USING c_class_ngcm
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_anlage
+                                               v_logiknr
+                                               c_kombinat_m
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                               lv_gcm_meter_read
+                                               lwa_related_device
+                                      CHANGING i_char_val_ngcm
+                                               wa_klah_ngcm
+                                               wa_equi_gcm
+                                               v_error.
+
+              IF v_error IS INITIAL.
+                " Change the corrector's registers
+                PERFORM change_register_2 USING v_actdate
+                                                abap_false
+                                                lwa_related_device
+                                                lv_related_device_category
+                                                c_skip_reading
+                                       CHANGING v_error.
+              ENDIF.
+
+              IF v_error IS INITIAL.
+                PERFORM create_device_allocation_gcm USING wa_caufvd
+                                                           v_anlage
+                                                           v_actdate
+                                                           wa_equi_gcm
+                                                           wa_equi_reg
+                                                           i_notif_item
+                                                  CHANGING v_error.
+              ENDIF.
+
+              IF v_error IS INITIAL.
+                PERFORM associate_giu USING wa_caufvd-tplnr
+                                            v_actdate
+                                            wa_equi_gcm
+                                            wa_equi_meter
+                                   CHANGING v_error.
+              ENDIF.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM validate_pressure_read USING i_char_val_nffr
+                                                   wa_equi_reg
+                                                   v_error.
+            ENDIF.
+
+            PERFORM update_devloc_amr_boosted_comm USING wa_equi_gcm-equnr
+                                                         wa_caufvd-tplnr
+                                                         v_actdate
+                                                         i_char_val_ngcm[]
+                                                CHANGING v_error
+                                                         v_error_title1
+                                                         v_error_txt1.
+            " End of c_priok_e
+          WHEN c_priok_f_corr_gcm.
+            v_priority = c_priok_f_corr_gcm.
+
+            v_msg_device = c_gas_corr.
+            PERFORM validate_corrector USING c_class_nvci
+                                             wa_caufvd
+                                             i_notif_item
+                                             v_logiknr
+                                             c_kombinat_m
+                                             v_actdate
+                                             c_action_01
+                                             v_priority
+                                             v_sparte
+                                    CHANGING i_char_val_nvci
+                                             wa_klah_nvci
+                                             wa_equi_corr
+                                             v_error
+                                             v_error_val
+                                             v_anlage.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gcm.
+              PERFORM validate_gas_comm_module USING c_class_ngcm
+                                                     c_class_egmi
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_ngcm
+                                                     wa_klah_ngcm
+                                                     wa_equi_gcm
+                                                     lwa_related_device
+                                                     lv_related_device_category
+                                                     v_error
+                                                     v_error_val
+                                                     v_anlage
+                                                     lv_gcm_meter_read
+                                                     lv_related_meter_read.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM check_mat_compatibility_corr USING wa_caufvd
+                                                         wa_equi_gcm
+                                                CHANGING v_error
+                                                         wa_equi_meter
+                                                         lwa_related_device.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM align_gcm_register_group USING wa_caufvd
+                                                     wa_equi_gcm
+                                                     lwa_related_device-equnr
+                                                     v_actdate
+                                            CHANGING v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM install_device_corrector USING c_class_nvci
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nvci
+                                                     wa_klah_nvci
+                                                     wa_equi_corr
+                                                     v_error.
+            ENDIF.
+
+
+            IF v_error IS INITIAL.
+* Process remove device allocation when tvarv variable
+* maintained
+              PERFORM remove_unexpected_allocations USING wa_caufvd-tplnr
+                                                          v_actdate
+                                                          v_anlage
+                                                          wa_equi_gcm
+                                                          lwa_related_device
+                                                          lv_gcm_meter_read
+                                                 CHANGING v_error.
+
+              v_msg_device = c_gcm.
+              PERFORM install_gcm_device USING c_class_ngcm
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_anlage
+                                               v_logiknr
+                                               c_kombinat_m
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                               lv_gcm_meter_read
+                                               lwa_related_device
+                                      CHANGING i_char_val_ngcm
+                                               wa_klah_ngcm
+                                               wa_equi_gcm
+                                               v_error.
+
+              IF v_error IS INITIAL.
+* Align Logical register numbers for gas billing history
+                PERFORM align_logical_registers USING wa_equi_gcm
+                                                      wa_caufvd
+                                                      v_anlage
+                                                      v_actdate
+                                                      v_sparte
+                                                      v_priority
+                                                      wa_equi_meter
+                                                      lv_related_meter_read
+                                             CHANGING v_error.
+              ENDIF.
+
+              IF v_error IS INITIAL.
+                " Change the meter's register group
+                PERFORM change_register_2 USING v_actdate
+                                                abap_false
+                                                wa_equi_meter
+                                                c_category_meter
+                                                lv_related_meter_read
+                                       CHANGING v_error.
+              ENDIF.
+
+              IF v_error IS INITIAL.
+                " Change the corrector's registers
+                PERFORM change_register_2 USING v_actdate
+                                                abap_false
+                                                lwa_related_device
+                                                lv_related_device_category
+                                                c_skip_reading
+                                       CHANGING v_error.
+              ENDIF.
+
+              IF v_error IS INITIAL.
+                PERFORM create_device_allocation_gcm USING wa_caufvd
+                                                           v_anlage
+                                                           v_actdate
+                                                           wa_equi_gcm
+                                                           wa_equi_reg
+                                                           i_notif_item
+                                                  CHANGING v_error.
+              ENDIF.
+
+              IF v_error IS INITIAL.
+                PERFORM associate_giu USING wa_caufvd-tplnr
+                                            v_actdate
+                                            wa_equi_gcm
+                                            wa_equi_meter
+                                   CHANGING v_error.
+              ENDIF.
+            ENDIF.
+
+            PERFORM update_devloc_amr_boosted_comm USING wa_equi_gcm-equnr
+                                                         wa_caufvd-tplnr
+                                                         v_actdate
+                                                         i_char_val_ngcm[]
+                                                CHANGING v_error
+                                                         v_error_title1
+                                                         v_error_txt1.
+            " End of c_priok_f
+*End of insert by VWILLIA2
+          WHEN c_priok_d.
+            v_priority = c_priok_d.
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM validate_regulator USING c_class_nffr
+                                               wa_caufvd
+                                               i_notif_item
+                                               v_logiknr
+                                               c_kombinat_d
+                                               v_actdate
+                                               c_action_01
+                                               v_priority
+                                               v_sparte
+                                      CHANGING i_char_val_nffr
+                                               wa_klah_nffr
+                                               wa_equi_reg
+                                               v_error
+                                               v_error_val
+                                               v_anlage.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_corr.
+              PERFORM validate_gas_comm_module USING c_class_ngcm
+                                                    c_class_ngmi
+                                                    wa_caufvd
+                                                    i_notif_item
+                                                    v_logiknr
+                                                    c_kombinat_m
+                                                    v_actdate
+                                                    c_action_01
+                                                    v_priority
+                                                    v_sparte
+                                           CHANGING i_char_val_ngcm
+                                                    wa_klah_ngcm
+                                                    wa_equi_corr
+                                                    lwa_equi_gas
+                                                    lv_related_device_category
+                                                    v_error
+                                                    v_error_val
+                                                    v_anlage
+                                                    lv_gcm_meter_read
+                                                    lv_related_meter_read.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              PERFORM check_materials_compatibility USING wa_caufvd
+                                                          v_sparte
+                                                          v_actdate
+                                                          wa_equi_corr
+                                                 CHANGING v_error
+                                                          lwa_equi_gas.
+            ENDIF.
+
+*       Modify register group to GDR
+            IF v_error NE 'X'.
+              SELECT COUNT(*) FROM egerh
+                 WHERE equnr = lwa_equi_gas-equnr
+                   AND bis   GE v_actdate
+                   AND ab    LE v_actdate
+                   AND zwgruppe EQ c_zwgruppe_gdr
+                   AND devloc EQ space.
+              IF sy-subrc <> 0.
+                wa_equi_meter = lwa_equi_gas.
+                PERFORM modify_device_using_eg42 USING wa_equi_meter
+                                                       v_actdate
+                                                       c_zwgruppe_gdr
+                                              CHANGING v_error.
+              ENDIF.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_mtr.
+              PERFORM validate_meter USING wa_caufvd
+                                           c_class_ngmi
+                                           i_notif_item
+                                           v_actdate
+                                           c_action_01
+                                           v_priority
+                                           c_kombinat_z
+                                           v_sparte
+                                  CHANGING wa_equi_meter
+                                           v_error
+                                           i_char_val_ngmi
+                                           wa_klah_ngmi
+                                           v_error_val
+                                           v_anlage.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              v_msg_device = c_gas_reg.
+              PERFORM install_device_regulator USING c_class_nffr
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_d
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_nffr
+                                                     wa_klah_nffr
+                                                     wa_equi_reg
+                                                     v_error.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+*       unlock the installation
+              PERFORM unlock_installation USING v_obj.
+              WAIT UP TO 60 SECONDS.
+              IF v_error IS INITIAL.
+                DO 1000 TIMES.
+                  CALL FUNCTION 'ENQUEUE_E_EANL'
+                    EXPORTING
+                      mode_eanl      = 'E'
+                      anlage         = v_anlage
+                    EXCEPTIONS
+                      foreign_lock   = 1
+                      system_failure = 2
+                      OTHERS         = 3.
+                  IF sy-subrc <> 0.
+* Implement suitable error handling here
+                  ELSE.
+                    CALL FUNCTION 'DEQUEUE_E_EANL'
+                      EXPORTING
+                        mode_eanl = 'E'
+                        mandt     = sy-mandt
+                        anlage    = v_anlage.
+                    EXIT.
+                  ENDIF.
+                ENDDO.
+              ENDIF.
+              v_msg_device = c_gas_corr.
+              PERFORM install_device_corrector USING c_class_ngcm
+                                                     wa_caufvd
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_logiknr
+                                                     c_kombinat_m
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     v_sparte
+                                            CHANGING i_char_val_ngcm
+                                                     wa_klah_nvci
+                                                     wa_equi_corr
+                                                     v_error.
+            ENDIF.
+
+*            IF v_intyp_gas = '04'.
+*              v_intyp_gas = '14'.
+*            ELSEIF v_intyp_gas = '05'.
+*              v_intyp_gas = '15'.
+*            ENDIF.
+            IF v_error IS INITIAL.
+              WAIT UP TO 60 SECONDS.
+*       unlock the installation
+              PERFORM unlock_installation USING v_obj.
+
+              DO 100 TIMES.
+                CALL FUNCTION 'ENQUEUE_E_EANL'
+                  EXPORTING
+                    mode_eanl      = 'E'
+                    anlage         = v_anlage
+                  EXCEPTIONS
+                    foreign_lock   = 1
+                    system_failure = 2
+                    OTHERS         = 3.
+                IF sy-subrc <> 0.
+* Implement suitable error handling here
+                ELSE.
+                  CALL FUNCTION 'DEQUEUE_E_EANL'
+                    EXPORTING
+                      mode_eanl = 'E'
+                      mandt     = sy-mandt
+                      anlage    = v_anlage.
+                  EXIT.
+                ENDIF.
+              ENDDO.
+            ENDIF.
+
+            IF v_error IS INITIAL.
+              wa_equi_meter = lwa_equi_gas.
+              v_msg_device = c_gas_mtr.
+              PERFORM install_device_meter_gas USING wa_caufvd
+                                                     c_class_ngmi
+                                                     i_notif_item
+                                                     v_anlage
+                                                     v_actdate
+                                                     c_action_01
+                                                     v_priority
+                                                     c_kombinat_z
+                                                     v_sparte
+                                            CHANGING wa_equi_meter
+                                                     v_error
+                                                     i_char_val_ngmi
+                                                     wa_klah_ngmi.
+            ENDIF.
+
+            IF v_error NE abap_true.
+              CALL FUNCTION 'ZSC_GASSUPPLY_GIU_DETAIL'
+                EXPORTING
+                  iv_matnr           = wa_equi_meter-matnr
+                  iv_sernr_start     = wa_equi_meter-sernr
+                  iv_asocmatnr       = wa_equi_corr-matnr
+                  iv_asocsernr       = wa_equi_corr-sernr
+                  iv_check_status    = 'GIU'
+                IMPORTING
+                  ev_error           = lv_error
+                  et_failed_rec      = li_failed_rec
+                  et_matched_rec     = li_matched_rec
+                EXCEPTIONS
+                  no_data_found      = 1
+                  no_assoc_gcm       = 2
+                  different_location = 3
+                  wrong_input        = 4
+                  not_giu            = 5
+                  OTHERS             = 6.
+              IF sy-subrc <> 0.
+                READ TABLE li_failed_rec  INTO lwa_failed_rec INDEX 1.
+                IF sy-subrc = 0.
+                  CALL FUNCTION 'ZSC_GAS_GIU_UPDATE'
+                    EXPORTING
+                      iv_mainmatno       = wa_equi_meter-matnr
+                      iv_mainserno       = wa_equi_meter-sernr
+                      iv_asocmatno       = wa_equi_corr-matnr
+                      iv_asocserno       = wa_equi_corr-sernr
+                      iv_relation        = 'A'
+                      iv_ustatus         = 'GIU'
+                    IMPORTING
+                      ex_error_msg       = lv_error_msg
+                    EXCEPTIONS
+                      invalid_assoc_mat  = 1
+                      invalid_main_mat   = 2
+                      record_not_match   = 3
+                      association_exists = 4
+                      OTHERS             = 5.
+                  IF sy-subrc <> 0.
+                    v_error = abap_true.
+                    v_error_txt1 = lv_error_msg.
+                  ELSE.
+                    v_error_dept   = c_dept_admn.
+                    v_error_sparte = c_sparte_02.
+                    v_error_title1 = |{ p_aufnr }:GIU association is not maintained|.
+                    v_error_txt1 = 'GIU association is not maintained on new gas mtr and new GCM prior to instln'.
+                  ENDIF.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+            IF v_error IS INITIAL.
+              PERFORM validate_pressure_read USING i_char_val_nffr
+                                                   wa_equi_reg
+                                                   v_error.
+            ENDIF.
+
+            PERFORM update_devloc_amr_boosted_comm USING wa_equi_corr-equnr
+                                                         wa_caufvd-tplnr
+                                                         v_actdate
+                                                         i_char_val_ngcm[]
+                                                CHANGING v_error
+                                                         v_error_title1
+                                                         v_error_txt1.
+            " End of c_proik_d
+        ENDCASE.
+    ENDCASE.
+  ENDIF.
+*----|START-OF-CHANGE|MMRobson|03/28/2008|QC 13397|----*
+  IF v_error <> 'X'.
+*----|START-OF-CHANGE|MMRobson|04/09/2008|QC 13502|----*
+*    CALL FUNCTION 'Z_UPDATE_DEVLOC_NOTE'
+*      EXPORTING
+*        p_aufnr    = p_aufnr
+*      IMPORTING
+*        v_err_txt  = v_error_title
+*        v_err      = v_error
+*        v_err_body = v_error_txt1
+*        v_dept     = v_error_dept
+*        v_sparte   = v_sparte.
+    PERFORM post_install_tasks USING p_refdata-old_auart
+                                     v_priok
+                                     v_anlage
+                                     wa_caufvd
+                            CHANGING v_error
+                                     v_error_title1
+                                     v_error_txt1
+                                     v_error_dept
+                                     v_sparte.
+*----|END-OF-CHANGE|MMRobson|04/09/2008|QC 13502|----*
+  ENDIF.
+
+* Begin of R4C changes by SKOTHURI
+  IF v_error_txt1 = 'GIU association is not maintained on new gas mtr and new GCM prior to instln'.
+    v_error = abap_true.
+  ENDIF.
+* End of R4C changes by SKOTHURI
+
+* Begin of R4B post cutover changes by SKOTHURI
+  IF v_multiplier_error = abap_true OR
+     v_error <> abap_true.
+* Do Profile creation, allocation and synchronization when
+* we install device with over the air read configuration
+* which includes interval billing register
+    IF v_ota_config = abap_true.
+      CLEAR:
+        i_return,
+        wa_return.
+      LOOP AT i_inst_data_elec INTO wa_inst_data_elec WHERE ( rate_fact_group = 'INTERVAL' OR rate_fact_group = 'INTERVAL60' ) AND int_billing = abap_true.
+        EXIT.
+      ENDLOOP.
+*      READ TABLE I_INST_DATA_ELEC WITH KEY RATE_FACT_GROUP = 'INTERVAL'
+*           TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        CALL FUNCTION 'Z_REG_AMCG_PROFILE_UPDATE'
+          EXPORTING
+            iv_sernr        = wa_equi_meter-sernr
+            iv_matnr        = wa_equi_meter-matnr
+            iv_installation = v_anlage
+            iv_devloc       = wa_caufvd-tplnr
+            iv_actvt_date   = v_actdate
+            iv_profcreate   = abap_true
+            iv_acttime      = v_acttime
+          IMPORTING
+            et_return       = i_return.
+
+        READ TABLE i_return INTO wa_return WITH KEY type = 'E'.
+        IF sy-subrc = 0.
+          CALL FUNCTION 'FORMAT_MESSAGE'
+            EXPORTING
+              id        = wa_return-id
+              lang      = syst-langu
+              no        = wa_return-number
+              v1        = wa_return-message_v1
+              v2        = wa_return-message_v2
+              v3        = wa_return-message_v3
+              v4        = wa_return-message_v4
+            IMPORTING
+              msg       = v_error_title1
+            EXCEPTIONS
+              not_found = 1
+              OTHERS    = 2.
+          v_error = abap_true.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+*End of R4B post cutover changes by SKOTHURI
+
+  v_error       = v_error.
+  v_error_txt   = v_error_txt1.
+  IF v_error_dept IS NOT INITIAL.
+    v_dept        = v_error_dept.
+    CLEAR v_sparte.
+  ENDIF.
+  v_error_title = v_error_title1.
+
+  DATA(lv_short_aufnr) = shift_left( val = v_aufnr sub = '0' ).
+  " SWWWIHEAD-WI_TEXT field is 120 characters, but only 100 characters are displayed
+  " in the SAP Business Workplace (SBWP) list view, 2 characters for the colon and space.
+  DATA(lv_max_title_length) = 100 - strlen( lv_short_aufnr ) - 2.
+
+  IF v_error = abap_true.
+    IF v_error_title IS INITIAL.
+      v_error_title = v_error_txt.
+    ENDIF.
+
+    IF find( val = v_error_title regex = lv_short_aufnr ) < 0.
+      IF strlen( v_error_title ) > lv_max_title_length.
+        v_error_title = |{ v_error_title(lv_max_title_length) }: { lv_short_aufnr }|.
+      ELSE.
+        v_error_title = |{ v_error_title }: { lv_short_aufnr }|.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  IF v_bpem_fg = 'X'.
+    CLEAR: v_sparte,
+           v_dept.
+  ENDIF.
+* Start of Defect 6307
+  v_equi_meter = wa_equi_meter-equnr.
+  v_equi_corr = wa_equi_corr-equnr.
+  v_equi_reg = wa_equi_reg-equnr.
+  v_notification = wa_caufvd-qmnum.
+* End of Defect 6307
+  v_anlage_out = v_anlage.  "20120423 Added
+
+ENDFUNCTION.
+

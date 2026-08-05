@@ -1,0 +1,16 @@
+METHOD build_reg_final.
+
+  CLEAR rt_reg_final.
+  IF NOT it_bilinst IS INITIAL.
+    SELECT *
+      FROM ezwg
+      INTO TABLE rt_reg_final
+      FOR ALL ENTRIES IN it_bilinst
+      WHERE zwgruppe = it_bilinst-register_group AND
+            zwnummer = it_bilinst-register.
+    IF NOT SY-SUBRC IS INITIAL.
+      populate_status_return space co_error co_value_25 my_gernr space space space.
+    ENDIF.
+  ENDIF.
+ENDMETHOD.
+

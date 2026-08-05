@@ -1,0 +1,625 @@
+class ZCL_ISU_SE_MAP_DPP definition
+  public
+  final
+  create public .
+
+public section.
+
+  interfaces ZIF_DPP_MAP_BASIC .
+
+  methods MAP_DPPENVREQUEST_IN
+    importing
+      !X_INPUT type ZCREATE_END_DEVICE_SERVICE_RE1
+    changing
+      value(XY_LOG) type APPLMSGTAB optional
+      !XY_APPLDATA type ZSDPP_INT_DATA .
+  class-methods MAP_DPPCRMREQUEST_OUT
+    importing
+      !IV_RETSTATUS type CHAR10
+      !IT_BAPIRET type BAPIRET2_T optional
+      value(X_INPUT) type ZSDPP_INT_DATA
+    changing
+      value(X_OUTPUT) type ANY .
+  class-methods MAP_DPPENVREQUEST_OUT
+    importing
+      !IV_RETSTATUS type CHAR10
+      !IT_BAPIRET type BAPIRET2_T optional
+      value(X_INPUT) type ZSDPP_INT_DATA
+    changing
+      value(X_OUTPUT) type ANY .
+  class-methods GUID_INBOUND
+    importing
+      !IM_VALUE type CSEQUENCE
+    returning
+      value(EX_GUID_C) type SYSUUID_C .
+  class-methods CREATE_GUID
+    returning
+      value(UUID) type SYSUUID_C32 .
+protected section.
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_ISU_SE_MAP_DPP IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_ISU_SE_MAP_DPP=>CREATE_GUID
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] UUID                           TYPE        SYSUUID_C32
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD create_guid.
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 10/13/2015
+*----------------------------------------------------------------*
+*  Description: This Method handles mapping for the Enrollment
+*               Request from Enrollment Vendor
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+    DATA: loref_excep   TYPE REF TO cx_root.
+
+    TRY.
+        CALL METHOD cl_system_uuid=>create_uuid_c32_static
+          RECEIVING
+            uuid = uuid.   " UUID
+      CATCH cx_uuid_error INTO loref_excep ##CATCH_ALL.
+        zcl_int_err_handler=>raise_proxy_exception( loref_excep ).
+    ENDTRY.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_ISU_SE_MAP_DPP=>GUID_INBOUND
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_VALUE                       TYPE        CSEQUENCE
+* | [<-()] EX_GUID_C                      TYPE        SYSUUID_C
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD guid_inbound.
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 10/13/2015
+*----------------------------------------------------------------*
+*  Description: This Method handles mapping for the Enrollment
+*               Request from Enrollment Vendor
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+    DATA: loref_err_obj TYPE REF TO cx_root.
+    TRY.
+        CALL METHOD cl_gdt_conversion=>guid_inbound
+          EXPORTING
+            im_value  = im_value    " GUID / UUID in XML Display
+          IMPORTING
+            ex_guid_c = ex_guid_c.
+      CATCH cx_root INTO loref_err_obj ##CATCH_ALL.
+        zcl_int_err_handler=>raise_proxy_exception( loref_err_obj ).
+
+    ENDTRY.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_ISU_SE_MAP_DPP=>MAP_DPPCRMREQUEST_OUT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_RETSTATUS                   TYPE        CHAR10
+* | [--->] IT_BAPIRET                     TYPE        BAPIRET2_T(optional)
+* | [--->] X_INPUT                        TYPE        ZSDPP_INT_DATA
+* | [<-->] X_OUTPUT                       TYPE        ANY
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD map_dppcrmrequest_out.
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 10/13/2015
+*----------------------------------------------------------------*
+*  Description: This Method handles mapping for the Enrollment
+*               Request from Enrollment Vendor
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+    CONSTANTS : lc_leg_pnd TYPE char24 VALUE 'Enrollment Initiated' ##NO_TEXT.
+
+    DATA: lv_datetime   TYPE xsddatetime_z,
+          lv_fieldname  TYPE rollname,
+          lv_uuid       TYPE sysuuid_c,
+          lv_uu         TYPE sysuuid_x,
+          ls_proxy_data TYPE zcreate_end_device_service_re2,
+          ls_property   TYPE zmessage_property27,
+          ls_error      TYPE zerror_type9,
+          ls_pan_work   TYPE zpan_service_works5,
+          ls_bapiret2   TYPE bapiret2,
+          ls_customer   TYPE zcustomer12,
+          ls_enrollment TYPE zenrollment5,
+          ls_contact    TYPE zcontact2,
+          ls_dd04t      TYPE dd04t,
+          lt_dd04t      TYPE STANDARD TABLE OF dd04t,
+          loref_excep   TYPE REF TO cx_root.
+
+    CLEAR: lv_datetime, lv_fieldname, lv_uuid, ls_proxy_data,
+          ls_property, ls_error, ls_pan_work, ls_bapiret2,
+          ls_customer, ls_enrollment, ls_contact, ls_dd04t,
+          lt_dd04t[].
+
+*   Popuate Header
+    ls_proxy_data-create_end_device_service_requ-header-verb = 'create'(109).
+    ls_proxy_data-create_end_device_service_requ-header-noun = 'EndDeviceServiceRequests'(113).
+    ls_proxy_data-create_end_device_service_requ-header-user-user_id = sy-uname.
+    lv_uuid = create_guid( ).
+
+    TRY.
+        CLEAR lv_uu.
+        lv_uu = x_input-pgm_int_data-zmsguuid.
+        CALL METHOD cl_gdt_conversion=>guid_outbound
+          EXPORTING
+            im_guid_x = lv_uu    " GUID in Character Display
+          IMPORTING
+            ex_value  = ls_proxy_data-create_end_device_service_requ-header-message_id.    " GUID / UUID in XML Display
+
+      CATCH cx_gdt_conversion INTO loref_excep ##CATCH_ALL.
+        zcl_int_err_handler=>raise_proxy_exception( loref_excep ).
+
+    ENDTRY.
+
+*    TRY.
+*        CLEAR lv_uu.
+*        lv_uu = x_input-pgm_int_data-zcorrelid.
+**        ls_proxy_data-created_end_device_service_req-header-correlation_id = lv_uuid. "Should be uncommented while integration testing..
+*        CALL METHOD cl_gdt_conversion=>guid_outbound
+*          EXPORTING
+*            im_guid_x = lv_uu    " GUID in Character Display
+*          IMPORTING
+*            ex_value  = ls_proxy_data-create_end_device_service_requ-header-correlation_id.    " GUID / UUID in XML Display
+*
+*      CATCH cx_gdt_conversion INTO loref_excep ##CATCH_ALL.
+*        zcl_int_err_handler=>raise_proxy_exception( loref_excep ).
+*
+*    ENDTRY.
+
+    ls_proxy_data-create_end_device_service_requ-header-correlation_id = x_input-pgm_int_data-zcorrelid.
+
+    ls_proxy_data-create_end_device_service_requ-header-source = 'SAP'(110).
+    GET TIME STAMP FIELD ls_proxy_data-create_end_device_service_requ-header-timestamp.
+    ls_proxy_data-create_end_device_service_requ-header-context = sy-sysid.
+    ls_property-name = 'Stereotype'(101).
+    ls_property-value = 'DPPEnrollmentUpdate'(102).
+    APPEND ls_property TO ls_proxy_data-create_end_device_service_requ-header-property ##ENH_OK.
+
+**   Populate Error or Success
+*    IF iv_retstatus = 'Success'(103).
+*      ls_proxy_data-create_end_device_service_requ-reply-result = 'OK'(104).
+*      ls_enrollment-process_flag = abap_true.
+*    ELSEIF iv_retstatus = 'Failure'(111).
+*      ls_proxy_data-created_end_device_service_req-reply-result = 'FAILED'(105).
+*      LOOP AT it_bapiret INTO ls_bapiret2.
+*        CLEAR : lv_fieldname,
+*                ls_error,
+*                lt_dd04t,
+*                ls_dd04t.
+*
+*        ls_error-details = ls_bapiret2-message.
+*        lv_fieldname = ls_bapiret2-field.
+*        CALL FUNCTION 'DD_DTEL_GET'
+*          EXPORTING
+*            roll_name     = lv_fieldname
+*          TABLES
+*            dd04t_tab_a   = lt_dd04t
+*          EXCEPTIONS
+*            illegal_value = 1
+*            OTHERS        = 2.
+*        IF sy-subrc = 0.
+*          READ TABLE lt_dd04t INTO ls_dd04t WITH KEY rollname = lv_fieldname.
+*          IF sy-subrc IS INITIAL.
+*            ls_error-reason = |Invalid| & | | & |{ ls_dd04t-scrtext_l }|.
+*          ENDIF.
+*        ENDIF.
+*        MOVE : 'DPPServiceRequest_Failure'(106) TO ls_error-code.
+*        APPEND ls_error TO ls_proxy_data-created_end_device_service_req-reply-error ##ENH_OK.
+*      ENDLOOP.
+*
+*    ENDIF.
+
+*   Populate customer data
+    ls_customer-m_rid = x_input-pgm_int_data-zenrlbp.
+    ls_customer-customer_accounts-m_rid = x_input-pgm_int_data-zenrlca.
+    ls_customer-customer_accounts-customer_agreements-usage_points-m_rid = x_input-pgm_int_data-zenrlsdp.
+    CLEAR lv_datetime.
+    IF NOT x_input-pgm_int_data-zenrl_date IS INITIAL.
+      TRY.
+          CALL METHOD cl_bs_soa_convert_xsddatetime=>map_xsddatetime_z_out
+            EXPORTING
+              iv_date         = x_input-pgm_int_data-zenrl_date
+              iv_time         = sy-uzeit
+            IMPORTING
+              ev_xsd_datetime = lv_datetime.
+        CATCH cx_root INTO loref_excep ##CATCH_ALL ##NO_HANDLER.
+          zcl_int_err_handler=>raise_proxy_exception( loref_excep ).
+      ENDTRY.
+    ENDIF.
+    ls_enrollment-enrollment_date = lv_datetime.
+    ls_enrollment-enrollment_status = lc_leg_pnd.
+    ls_enrollment-program-m_rid = x_input-pgm_int_data-zprgmid.
+    ls_enrollment-program-name = x_input-pgm_enroll-zpgm_type."'DPP Program'(108).
+    ls_customer-enrollments = ls_enrollment ##ENH_OK.
+
+**   Populate preference data
+*    ls_customer-customer_accounts-contact_preference-nick_name = 'DPP Preference'.
+*    IF x_input-pgm_int_data-phone_sma IS NOT INITIAL. "SMS
+*      ls_contact-contact_value = x_input-pgm_int_data-phone_sma.
+*      ls_contact-contact_type  = 'SMS'.
+*      APPEND ls_contact TO ls_customer-customer_accounts-contact_preference-contacts.
+*    ENDIF.
+*
+*    IF x_input-pgm_int_data-email IS NOT INITIAL. "EMAIL
+*      ls_contact-contact_value = x_input-pgm_int_data-email.
+*      ls_contact-contact_type  = 'E_MAIL'.
+*      APPEND ls_contact TO ls_customer-customer_accounts-contact_preference-contacts.
+*    ENDIF.
+*
+*    IF x_input-pgm_int_data-phone IS NOT INITIAL. "Voice
+*      ls_contact-contact_value = x_input-pgm_int_data-phone.
+*      ls_contact-contact_type  = 'IVR'.
+*      APPEND ls_contact TO ls_customer-customer_accounts-contact_preference-contacts.
+*    ENDIF.
+    ls_pan_work-customers = ls_customer ##ENH_OK.
+
+
+    APPEND ls_pan_work TO ls_proxy_data-create_end_device_service_requ-payload-end_device_service_requests-pan_service_works ##ENH_OK.
+
+    x_output = ls_proxy_data.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_ISU_SE_MAP_DPP->MAP_DPPENVREQUEST_IN
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] X_INPUT                        TYPE        ZCREATE_END_DEVICE_SERVICE_RE1
+* | [<-->] XY_LOG                         TYPE        APPLMSGTAB(optional)
+* | [<-->] XY_APPLDATA                    TYPE        ZSDPP_INT_DATA
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD map_dppenvrequest_in.
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 10/13/2015
+*----------------------------------------------------------------*
+*  Description: This Method handles mapping for the Enrollment
+*               Request from Enrollment Vendor
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+    FIELD-SYMBOLS: <fs_payload>           TYPE zend_device_service_requests_8 ##NEEDED,
+                   <fs_pan_service_works> TYPE zpan_service_works4,
+                   <fs_contact>           TYPE zcontact1.
+
+    DATA: loref_err_obj TYPE REF TO cx_root,
+          lt_contact    TYPE zcontact_tab.
+
+    CLEAR: lt_contact[],
+           xy_appldata.
+
+    READ TABLE x_input-create_end_device_service_requ-payload-end_device_service_requests-pan_service_works
+               ASSIGNING <fs_pan_service_works> INDEX 1.
+
+    IF <fs_pan_service_works> IS ASSIGNED.
+      xy_appldata-pgm_int_data-zmsguuid = guid_inbound( x_input-create_end_device_service_requ-header-message_id ).
+*      xy_appldata-pgm_int_data-zcorrelid = guid_inbound( x_input-create_end_device_service_requ-header-correlation_id ).
+      xy_appldata-pgm_int_data-zcorrelid = x_input-create_end_device_service_requ-header-correlation_id.
+*      xy_appldata-pgm_int_data-zmsguuid = x_input-create_end_device_service_requ-header-message_id.
+*      xy_appldata-pgm_int_data-zcorrelid = x_input-create_end_device_service_requ-header-correlation_id.
+
+      MOVE : <fs_pan_service_works>-customers-m_rid                         TO xy_appldata-pgm_int_data-zenrlbp,
+             <fs_pan_service_works>-customers-enrollments-caller_name       TO xy_appldata-pgm_int_data-zcallername,
+             <fs_pan_service_works>-customers-enrollments-notes             TO xy_appldata-pgm_int_data-zenrlnote,
+             <fs_pan_service_works>-customers-customer_accounts-m_rid       TO xy_appldata-pgm_int_data-zenrlca,
+             <fs_pan_service_works>-customers-enrollments-program-m_rid     TO xy_appldata-pgm_int_data-zprgmid,
+             <fs_pan_service_works>-customers-customer_accounts-customer_agreements-usage_points-m_rid
+                                                                            TO xy_appldata-pgm_int_data-zenrlsdp.
+
+      xy_appldata-pgm_int_data-zreq_type = 'ENRL'.
+      xy_appldata-pgm_int_data-zenrl_source = 'INT'.
+*** Enrollment Date & Time
+      IF NOT <fs_pan_service_works>-customers-enrollments-enrollment_date IS INITIAL.
+        TRY.
+            CALL METHOD cl_bs_soa_convert_xsddatetime=>map_xsddatetime_z_in
+              EXPORTING
+                iv_xsd_datetime = <fs_pan_service_works>-customers-enrollments-enrollment_date
+                iv_timezone     = sy-zonlo
+              IMPORTING
+                ev_date         = xy_appldata-pgm_int_data-zenrl_date.
+*                  ev_time         = lwa_dla_int_struc-zdla_cust_prof-zenrltim.
+          CATCH cx_root INTO loref_err_obj ##CATCH_ALL.
+            zcl_int_err_handler=>raise_proxy_exception( loref_err_obj ).
+        ENDTRY.
+      ENDIF.
+
+*     Get Preferences
+      lt_contact = <fs_pan_service_works>-customers-customer_accounts-contact_preference-contacts.
+
+      LOOP AT lt_contact ASSIGNING <fs_contact>.
+        TRANSLATE <fs_contact>-contact_type TO UPPER CASE.
+        CASE <fs_contact>-contact_type.
+
+          WHEN 'SMS'.
+            xy_appldata-pgm_int_data-phone_sma = <fs_contact>-contact_value.
+
+          WHEN 'E_MAIL'.
+            xy_appldata-pgm_int_data-email = <fs_contact>-contact_value.
+
+          WHEN 'IVR'.
+            xy_appldata-pgm_int_data-phone = <fs_contact>-contact_value.
+
+          WHEN 'IHD'.
+
+        ENDCASE.
+      ENDLOOP.
+
+      xy_appldata-pgm_enroll-zenrlbp = xy_appldata-pgm_int_data-zenrlbp.
+      xy_appldata-pgm_enroll-zenrlca = xy_appldata-pgm_int_data-zenrlca.
+
+*     Get the program type from the custom table
+      SELECT SINGLE program_type ##WARN_OK
+        INTO xy_appldata-pgm_enroll-zpgm_type
+        FROM ztpgm_progid
+      WHERE program_uuid = xy_appldata-pgm_int_data-zprgmid ##WARN_OK.
+
+      xy_appldata-pgm_int_data-zpgm_type = xy_appldata-pgm_enroll-zpgm_type.
+      xy_appldata-pgm_enroll-zenrl_reqdat = xy_appldata-pgm_int_data-zenrl_date.
+      xy_appldata-pgm_enroll-zenrlstatus = '001'.
+      xy_appldata-pgm_enroll-zenrlsdp = xy_appldata-pgm_int_data-zenrlsdp.
+
+      xy_appldata-pgm_enroll-zcrtdat =
+      xy_appldata-pgm_int_data-zcrtdat = sy-datum.
+      xy_appldata-pgm_enroll-zcrttm =
+      xy_appldata-pgm_int_data-zcrttm = sy-uzeit.
+      xy_appldata-pgm_enroll-zcrtby =
+      xy_appldata-pgm_int_data-zcrtby = sy-uname.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_ISU_SE_MAP_DPP=>MAP_DPPENVREQUEST_OUT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_RETSTATUS                   TYPE        CHAR10
+* | [--->] IT_BAPIRET                     TYPE        BAPIRET2_T(optional)
+* | [--->] X_INPUT                        TYPE        ZSDPP_INT_DATA
+* | [<-->] X_OUTPUT                       TYPE        ANY
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD map_dppenvrequest_out.
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 10/13/2015
+*----------------------------------------------------------------*
+*  Description: This Method handles mapping for the Enrollment
+*               Request from Enrollment Vendor
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+    CONSTANTS : lc_leg_pnd TYPE char24 VALUE 'Enrollment Initiated' ##NO_TEXT.
+
+    DATA: lv_datetime   TYPE xsddatetime_z,
+          lv_fieldname  TYPE rollname,
+          lv_uuid       TYPE sysuuid_c,
+          lv_uu         TYPE sysuuid_x,
+          ls_proxy_data TYPE zcreated_end_device_service_r1,
+          ls_property   TYPE zmessage_property27,
+          ls_error      TYPE zerror_type9,
+          ls_pan_work   TYPE zpan_service_works5,
+          ls_bapiret2   TYPE bapiret2,
+          ls_customer   TYPE zcustomer12,
+          ls_enrollment TYPE zenrollment5,
+          ls_contact    TYPE zcontact2,
+          ls_dd04t      TYPE dd04t,
+          lt_dd04t      TYPE STANDARD TABLE OF dd04t,
+          loref_excep   TYPE REF TO cx_root.
+
+    CLEAR: lv_datetime, lv_fieldname, lv_uuid, ls_proxy_data,
+          ls_property, ls_error, ls_pan_work, ls_bapiret2,
+          ls_customer, ls_enrollment, ls_contact, ls_dd04t,
+          lt_dd04t[].
+
+*   Popuate Header
+    ls_proxy_data-created_end_device_service_req-header-verb = 'created'(109).
+    ls_proxy_data-created_end_device_service_req-header-noun = 'EndDeviceServiceRequests'(113).
+    ls_proxy_data-created_end_device_service_req-header-user-user_id = sy-uname.
+    lv_uuid = create_guid( ).
+
+    TRY.
+        CALL METHOD cl_gdt_conversion=>guid_outbound
+          EXPORTING
+            im_guid_c = lv_uuid    " GUID in Character Display
+          IMPORTING
+            ex_value  = ls_proxy_data-created_end_device_service_req-header-message_id.    " GUID / UUID in XML Display
+
+      CATCH cx_gdt_conversion INTO loref_excep ##CATCH_ALL.
+        zcl_int_err_handler=>raise_proxy_exception( loref_excep ).
+
+    ENDTRY.
+
+*    TRY.
+*        CLEAR lv_uu.
+*        lv_uu = x_input-pgm_int_data-zcorrelid.
+*        ls_proxy_data-created_end_device_service_req-header-correlation_id = lv_uuid. "Should be uncommented while integration testing..
+**        CALL METHOD cl_gdt_conversion=>guid_outbound
+**          EXPORTING
+**            im_guid_x = lv_uu    " GUID in Character Display
+**          IMPORTING
+**            ex_value  = ls_proxy_data-created_end_device_service_req-header-correlation_id.    " GUID / UUID in XML Display
+*
+*      CATCH cx_gdt_conversion INTO loref_excep ##CATCH_ALL.
+*        zcl_int_err_handler=>raise_proxy_exception( loref_excep ).
+*
+*    ENDTRY.
+
+    ls_proxy_data-created_end_device_service_req-header-correlation_id = x_input-pgm_int_data-zcorrelid.
+    ls_proxy_data-created_end_device_service_req-header-source = 'SAP'(110).
+    GET TIME STAMP FIELD ls_proxy_data-created_end_device_service_req-header-timestamp.
+    ls_proxy_data-created_end_device_service_req-header-context = sy-sysid.
+    ls_property-name = 'Stereotype'(101).
+    ls_property-value = 'DPPEnrollment'(102).
+    APPEND ls_property TO ls_proxy_data-created_end_device_service_req-header-property ##ENH_OK.
+
+*   Populate Error or Success
+    IF iv_retstatus = 'Success'(103).
+      ls_proxy_data-created_end_device_service_req-reply-result = 'OK'(104).
+      ls_enrollment-process_flag = abap_true.
+    ELSEIF iv_retstatus = 'Failure'(111).
+      ls_proxy_data-created_end_device_service_req-reply-result = 'FAILED'(105).
+      LOOP AT it_bapiret INTO ls_bapiret2.
+        CLEAR : lv_fieldname,
+                ls_error,
+                lt_dd04t,
+                ls_dd04t.
+
+        ls_error-details = ls_bapiret2-message.
+        lv_fieldname = ls_bapiret2-field.
+        CALL FUNCTION 'DD_DTEL_GET'
+          EXPORTING
+            roll_name     = lv_fieldname
+          TABLES
+            dd04t_tab_a   = lt_dd04t
+          EXCEPTIONS
+            illegal_value = 1
+            OTHERS        = 2.
+        IF sy-subrc = 0.
+          DELETE lt_dd04t WHERE ddlanguage <> sy-langu.
+          READ TABLE lt_dd04t INTO ls_dd04t WITH KEY rollname = lv_fieldname.
+          IF sy-subrc IS INITIAL.
+            ls_error-reason = |Invalid| & | | & |{ ls_dd04t-scrtext_l }|.
+            CONCATENATE ls_error-reason '-' ls_error-details
+            INTO ls_error-reason SEPARATED BY space.
+          ENDIF.
+        ENDIF.
+        MOVE : 'DPPServiceRequest_Failure'(106) TO ls_error-code.
+        APPEND ls_error TO ls_proxy_data-created_end_device_service_req-reply-error ##ENH_OK.
+      ENDLOOP.
+
+    ENDIF.
+
+*   Populate customer data
+    ls_customer-m_rid = x_input-pgm_int_data-zenrlbp.
+    ls_customer-customer_accounts-m_rid = x_input-pgm_int_data-zenrlca.
+    ls_customer-customer_accounts-customer_agreements-usage_points-m_rid = x_input-pgm_int_data-zenrlsdp.
+    CLEAR lv_datetime.
+    IF NOT x_input-pgm_int_data-zenrl_date IS INITIAL.
+      TRY.
+          CALL METHOD cl_bs_soa_convert_xsddatetime=>map_xsddatetime_z_out
+            EXPORTING
+              iv_date         = x_input-pgm_int_data-zenrl_date
+              iv_time         = sy-uzeit
+            IMPORTING
+              ev_xsd_datetime = lv_datetime.
+        CATCH cx_root INTO loref_excep ##CATCH_ALL ##NO_HANDLER.
+          zcl_int_err_handler=>raise_proxy_exception( loref_excep ).
+      ENDTRY.
+    ENDIF.
+    ls_enrollment-enrollment_date = lv_datetime.
+    ls_enrollment-enrollment_status = lc_leg_pnd.
+    ls_enrollment-program-m_rid = x_input-pgm_int_data-zprgmid.
+    ls_enrollment-program-name = x_input-pgm_enroll-zpgm_type."'DPP Program'(108).
+    ls_customer-enrollments = ls_enrollment ##ENH_OK.
+
+*   Populate preference data
+    ls_customer-customer_accounts-contact_preference-nick_name = 'DPP Preference'.
+    IF x_input-pgm_int_data-phone_sma IS NOT INITIAL. "SMS
+      ls_contact-contact_value = x_input-pgm_int_data-phone_sma.
+      ls_contact-contact_type  = 'SMS'.
+      APPEND ls_contact TO ls_customer-customer_accounts-contact_preference-contacts.
+    ENDIF.
+
+    IF x_input-pgm_int_data-email IS NOT INITIAL. "EMAIL
+      ls_contact-contact_value = x_input-pgm_int_data-email.
+      ls_contact-contact_type  = 'E_MAIL'.
+      APPEND ls_contact TO ls_customer-customer_accounts-contact_preference-contacts.
+    ENDIF.
+
+    IF x_input-pgm_int_data-phone IS NOT INITIAL. "Voice
+      ls_contact-contact_value = x_input-pgm_int_data-phone.
+      ls_contact-contact_type  = 'IVR'.
+      APPEND ls_contact TO ls_customer-customer_accounts-contact_preference-contacts.
+    ENDIF.
+    ls_pan_work-customers = ls_customer ##ENH_OK.
+
+
+    APPEND ls_pan_work TO ls_proxy_data-created_end_device_service_req-payload-end_device_service_requests-pan_service_works ##ENH_OK.
+
+    x_output = ls_proxy_data.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_ISU_SE_MAP_DPP->ZIF_DPP_MAP_BASIC~MAP
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] X_INPUT                        TYPE        ANY
+* | [<-->] XY_OUTPUT                      TYPE        ANY(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD zif_dpp_map_basic~map.
+******************************************************************
+*  Author                    : Rajanidhi Rajasekeran
+*  Date                      : 10/13/2015
+*----------------------------------------------------------------*
+*  Description: This Method handles mapping for the Enrollment
+*               Request from Enrollment Vendor
+*----------------------------------------------------------------*
+* MODIFICATION HISTORY
+*
+*  SAP Transport Request #   :
+*  Author                    :
+*  Modification Date         :
+*  Description               :
+*  Defect #                  :
+*  Modification flag         :
+******************************************************************
+
+*   Map Interface Data
+    CALL METHOD map_dppenvrequest_in
+      EXPORTING
+        x_input     = x_input
+      CHANGING
+*       xy_log      =
+        xy_appldata = xy_output.
+
+  ENDMETHOD.
+ENDCLASS.

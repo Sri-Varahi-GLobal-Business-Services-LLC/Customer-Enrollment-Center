@@ -1,0 +1,131 @@
+*"----------------------------------------------------------------------
+* Name            : Method for Automation of Profile De-Allocation for
+*                   Post Cutover Interval Billing.
+* Author          : Har Mayank Shrivastava
+* Date            : 22nd December 2014
+* Type of Program : Method
+* Purpose         : Post Cutover Interval Billing
+* Development Class : ZDM_FM
+* ----------------------------------------------------------------------
+*** Author      Date        Change Req#     Task #     Change Driver
+*** Har Mayank 01/12/14      Initial      E2DK935654
+***----------------------------------------------------------------------
+*** Har Mayank 07/30/15      1.0          ECDK972711  Defect 791
+***----------------------------------------------------------------------
+
+METHOD process_profile_deallocate.
+
+  CONSTANTS : co_change_row  TYPE regen-okcode    VALUE 'CHNG_RW'.
+
+  DATA: lv_obj                   TYPE eprofass_object,
+        lwa_eprofass_screen_data TYPE eprofass_screen_data, " ECDK972711
+        lwa_screen_eprofass      TYPE eprofass_screen,      " ECDK972711
+        lv_profile               TYPE e_profile,
+        lv_tou_logikzw           TYPE t_register.
+*        lv_tou_logikzw           TYPE logikzw.
+
+  FIELD-SYMBOLS: <fs_eprofass>    TYPE eprofass.
+
+  DATA: lv_msgv1 TYPE sy-msgv1,
+        lv_msgv2 TYPE sy-msgv2,
+        lv_msgv3 TYPE sy-msgv3.
+
+  CLEAR : lv_obj,
+          lv_profile,
+          lv_msgv1,
+          lv_msgv2,
+          lv_tou_logikzw,
+          lv_msgv3.
+
+  lv_tou_logikzw = me->get_timeofuse_reg( ).
+  my_tou_logikzw = lv_tou_logikzw.
+
+  IF NOT lv_tou_logikzw IS INITIAL.
+    lv_profile =  me->get_allocated_profiles( lv_tou_logikzw-logikzw ).
+
+    IF NOT lv_profile IS INITIAL.
+
+      CALL FUNCTION 'ISU_O_PROFASS_OPEN'
+        EXPORTING
+          x_profile        = lv_profile
+          x_wmode          = '2'
+          x_upd_online     = 'X'
+          x_no_dialog      = abap_true
+        IMPORTING
+          y_obj            = lv_obj
+        EXCEPTIONS
+          invalid_key      = 1
+          invalid_register = 2
+          foreign_lock     = 3
+          OTHERS           = 4.
+
+      IF NOT sy-subrc IS INITIAL.
+        CLEAR lv_obj.
+      ENDIF.
+
+      SORT lv_obj-data-ieprofass BY dateto DESCENDING.
+      READ TABLE lv_obj-data-ieprofass ASSIGNING <fs_eprofass> INDEX 1.
+
+      <fs_eprofass>-dateto = my_date.
+      <fs_eprofass>-timeto = co_time_infinite.
+
+      lwa_screen_eprofass-profile = <fs_eprofass>-profile.
+      lwa_screen_eprofass-logikzw = <fs_eprofass>-logikzw.
+      lwa_screen_eprofass-profrole = <fs_eprofass>-profrole.
+      lwa_screen_eprofass-datefrom = <fs_eprofass>-datefrom.
+      lwa_screen_eprofass-dateto  = <fs_eprofass>-dateto.
+
+      APPEND lwa_screen_eprofass TO lv_obj-screen-ieprofass.
+
+      CALL FUNCTION 'ISU_O_PROFASS_ACTION'
+        EXPORTING
+          x_okcode      = co_change_row
+          x_wmode       = '2'
+          x_upd_online  = 'X'
+        CHANGING
+          xy_obj        = lv_obj
+        EXCEPTIONS
+          not_processed = 1
+          cancelled     = 2
+          user_error    = 3
+          open_error    = 4
+          system_error  = 5.
+      IF NOT sy-subrc IS INITIAL.
+        CLEAR lv_obj.
+      ENDIF.
+
+      CALL FUNCTION 'ISU_O_PROFASS_ACTION'
+        EXPORTING
+          x_okcode      = 'SAVE'
+          x_wmode       = '2'
+          x_upd_online  = 'X'
+        CHANGING
+          xy_obj        = lv_obj
+        EXCEPTIONS
+          not_processed = 1
+          cancelled     = 2
+          user_error    = 3
+          open_error    = 4
+          system_error  = 5.
+      IF NOT sy-subrc IS INITIAL.
+        CLEAR lv_obj.
+      ENDIF.
+
+      COMMIT WORK AND WAIT.
+
+      lv_msgv1 = lv_profile.
+      lv_msgv2 = my_anlage.
+      lv_msgv3 = my_gernr.
+
+      SHIFT lv_msgv1 LEFT DELETING LEADING co_value0.
+      SHIFT lv_msgv3 LEFT DELETING LEADING co_value0.
+
+      IF sy-subrc NE 0. "Deallocation failed
+        populate_status_return space co_error co_value_13 lv_msgv1 lv_msgv2 space space.
+      ELSE. "Deallocation success
+        populate_status_return space co_success co_value_14 lv_msgv1 lv_msgv2 lv_msgv3 space.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+ENDMETHOD.

@@ -1,0 +1,9 @@
+METHOD CONSTRUCTOR.
+
+* Don't need another case if called from EMMA Case
+  IF iv_called_from_case IS INITIAL.
+    SET HANDLER me->handle_error FOR me.
+  ENDIF.
+
+ENDMETHOD.
+

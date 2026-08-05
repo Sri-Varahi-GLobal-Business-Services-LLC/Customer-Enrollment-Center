@@ -1,0 +1,4086 @@
+
+*****           Implementation of object type ZINSTLN              *****
+INCLUDE <OBJECT>.
+BEGIN_DATA_CLASS OBJECTTYPE. " Do not change.. DATA is generated
+DATA:
+      ZMOVINOBJPRESHEADER TYPE EWOGEN-SHORTTEXT.
+END_DATA_CLASS OBJECTTYPE. " Do not change.. DATA is generated
+BEGIN_DATA OBJECT. " Do not change.. DATA is generated
+* only private members may be inserted into structure private
+DATA:
+  " begin of private,
+  "   to declare private attributes remove comments and
+  "   insert private attributes here ...
+  " end of private,
+  BEGIN OF KEY,
+    NUMBER LIKE EANL-ANLAGE,
+  END OF KEY,
+  ZCURRENTDEVICES        TYPE SWC_OBJECT OCCURS 0,
+  CURRENTPOD             TYPE SWC_OBJECT,
+  INITIALSUPPLYSCENARIO  TYPE SWC_OBJECT,
+  AGGREGATEINSTALLATIONS TYPE SWC_OBJECT OCCURS 0,
+  SHORTTEXT              TYPE EWOGEN-VALUE,
+  ZGOS                   TYPE EANL-NODISCONCT,
+  ZGOSDESC               TYPE TE759T-TEXT,
+  ZPROPERTY              TYPE EPROPH-PROPERTY,
+  ZDISCDOC               TYPE EDISCDOC-DISCNO,
+  TWELVEMONTHMAXDEMAND   TYPE ETTIFN-WERT1,
+  LATESTDEMANDVALUE      TYPE ETTIFN-WERT1,
+  HASINTDEVICEINSTALLED  TYPE REGEN-KENNZX,
+  GTBSCOMMITMENTENDDATE  TYPE ETTIFN-BIS,
+  UNMETEREDINDICATOR     TYPE REGEN-KENNZX,
+  ZDISCDOCDATE           TYPE SYST-DBSYS,
+  ZDISCDOCRSN            TYPE SYST-SLSET,
+  ZDISCDOCSTAT           TYPE SYST-CPROG,
+  ZRATECAT               TYPE EANLD-TARIFTYP,
+  ZPROPERTYACTIVE        TYPE SYST-UNAME,
+  ZMOVINOBJPRES          TYPE EWOGEN-LONGTEXT,
+  ZINSTLFACTMAINDESC     TYPE TE221T-TEXT30,
+  ZINSTLFACTMAIN         TYPE ETTIFN-OPERAND,
+  ZRRPFACTDESC           TYPE TE221T-TEXT30,
+  ZRRPFACT               TYPE TE221T-OPERAND,
+  ZINSTTYPEDESC          TYPE TE439T-TEXT30,
+  ZGTCUSTOMERS           TYPE SYST-GROUP,
+  DISCDOCSTATUS          TYPE EDISCDOC-STATUS,
+  NOREADHIST             TYPE REGEN-KENNZX,
+  PRICEKEYDESIGNATOR     TYPE REGEN-TITEL,
+  ZMAINTPLANT            TYPE IFLOT-IWERK,
+  DISCONNECTIONSTATUSNEW TYPE EDISCOBJ-DISCSTATE,
+  ZWASGTBEFORE           TYPE SYST-GROUP.
+END_DATA OBJECT. " Do not change.. DATA is generated
+
+* Constants
+CONSTANTS C_INSTLN       TYPE EDC_REFOBJ VALUE 'INSTLN'.
+CONSTANTS C_DISCONORDER  TYPE EDCDOCSTAT VALUE '20'.
+CONSTANTS C_DISCONNECTED TYPE EDCDOCSTAT VALUE '21'.
+CONSTANTS C_RECONORDER   TYPE EDCDOCSTAT VALUE '22'.
+CONSTANTS C_NEW          TYPE EDCDOCSTAT VALUE '1'.
+CONSTANTS C_RECONNECTED  TYPE EDCDOCSTAT VALUE '30'.
+CONSTANTS C_ACTDISCORD   TYPE DISCACTTYP VALUE '01'.
+CONSTANTS C_ACTDISCENT   TYPE DISCACTTYP VALUE '02'.
+CONSTANTS C_CUST         TYPE DISCPROCV  VALUE 'CUST'.
+CONSTANTS C_VACA         TYPE DISCPROCV  VALUE 'VACA'.
+CONSTANTS C_STATDOM      TYPE DOMNAME    VALUE 'EDCDOCSTAT'.
+CONSTANTS C_CUSTTXT(8)                   VALUE 'Customer'.
+CONSTANTS C_VACATXT(7)                   VALUE 'Vacancy'.
+CONSTANTS C_ACTIVE(6)                    VALUE 'Active'.
+CONSTANTS C_INACTIVE(8)                  VALUE 'Inactive'.
+CONSTANTS C_TRUE                         VALUE 'X'.
+CONSTANTS C_FOREVER      TYPE DATUM      VALUE '99991231'.
+TYPES : T_BDCDATA TYPE STANDARD TABLE OF BDCDATA.
+* 07/21/2009 PM841657 GCHONG BEGIN
+* Declaration for GT rate categories
+DATA IT_GTRATECAT TYPE RANGE OF TARIFTYP_ANL WITH HEADER LINE.
+
+*&---------------------------------------------------------------------*
+*&      Form  populate_gtratecat
+*&---------------------------------------------------------------------*
+*       Populate all known rate categories to identify GT
+*----------------------------------------------------------------------*
+FORM POPULATE_GTRATECAT.
+  IT_GTRATECAT-SIGN   = 'I'.          " include
+  IT_GTRATECAT-OPTION = 'CP'.         " contains pattern
+  IT_GTRATECAT-LOW    = 'ST*'.        APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'LT*'.        APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'XLT*'.       APPEND IT_GTRATECAT.
+  IT_GTRATECAT-OPTION = 'EQ'.         " equals
+  IT_GTRATECAT-LOW    = 'GM_STORAGE'. APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'GT_PRIMARY'. APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'A_043'.      APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'A_052'.      APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'GS_265'.     APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'GS_266'.     APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'GS_267'.     APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'GS_268'.     APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'GS_283'.     APPEND IT_GTRATECAT.
+  IT_GTRATECAT-LOW    = 'GS_284'.     APPEND IT_GTRATECAT.
+ENDFORM.                    "populate_gtratecat
+* 07/21/2009 PM841657 GCHONG END
+
+GET_PROPERTY ZGOS CHANGING CONTAINER.
+SWC_SET_ELEMENT CONTAINER 'ZGOS' OBJECT-ZGOS.
+DATA: W_GOS TYPE EANL-NODISCONCT. " To hold the value of Reason of GOS
+* Obtain the value of NODISCONT from TABLE EANL where Installation
+* number equals the object key.
+SELECT SINGLE NODISCONCT FROM EANL INTO W_GOS
+WHERE ANLAGE = OBJECT-KEY-NUMBER.
+* set the value obtained from EANL to the attr ZGOS
+SWC_SET_ELEMENT CONTAINER 'ZGOS' W_GOS.
+END_PROPERTY.
+
+GET_PROPERTY ZGOSDESC CHANGING CONTAINER.
+SWC_SET_ELEMENT CONTAINER 'ZGOSDESC' OBJECT-ZGOSDESC.
+DATA: W_GOSDESC TYPE TE759T-TEXT. "Text for reason for GOS
+DATA: W_GOS TYPE EANL-NODISCONCT. " To hold the value of Reason of GOS
+SWC_GET_PROPERTY SELF 'ZGOS' W_GOS."Obtain value of ZGOS attribute
+* Obtain value of TEXT from table TE759T based on the ZGOS attr value
+SELECT SINGLE TEXT FROM TE759T INTO W_GOSDESC
+WHERE NODISCONCT = W_GOS AND SPRAS = SY-LANGU.
+* set the value obtained from TE759T to the attr ZGOSDESC
+SWC_SET_ELEMENT CONTAINER 'ZGOSDESC' W_GOSDESC."set attribute zgosdesc
+END_PROPERTY.
+
+GET_PROPERTY ZPROPERTY CHANGING CONTAINER.
+DATA W_PROPERTY TYPE EPROPH-PROPERTY. "Property
+DATA W_PROPERTY_REV TYPE EPROPH-PROPERTY. "Property Rev
+SWC_SET_ELEMENT CONTAINER 'ZPROPERTY' OBJECT-ZPROPERTY.
+* Obtain value of property from table EPROPH where Fromdate <= system dt
+* and Todate > system date and the language is logon language.
+SELECT SINGLE PROPERTY FROM EPROPH INTO W_PROPERTY
+       WHERE FROMDATE <= SY-DATUM AND
+             TODATE   >  SY-DATUM AND
+             ANLAGE   = OBJECT-KEY-NUMBER.
+* check if deleted, reversed.
+SELECT SINGLE PROPERTY FROM EPROP INTO W_PROPERTY_REV
+         WHERE STORNOKZ = 'X' AND PROPERTY = W_PROPERTY.
+
+IF SY-SUBRC = 0.
+  CLEAR W_PROPERTY.
+ENDIF.
+* set the value os attr ZPROPERTY using W_PROPERTY
+SWC_SET_ELEMENT CONTAINER 'ZPROPERTY' W_PROPERTY.
+END_PROPERTY.
+
+GET_PROPERTY ZDISCDOC CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 02/05/2005
+* Description : Find installation based disconnection document
+* Tech Spec   : <MTEMC shared network drive - probably S:>\
+*                3_Realization\Development\Technical Specifications\
+*                Customer Overview (80% Screen) Technical Design.doc
+************************************************************************
+* Version     :
+* Date        :
+* Name        :
+* Ch. Req.    :
+* SAP corr.   :
+* Description :
+************************************************************************
+
+* Declaration
+DATA IT_EDISCDOC TYPE EDISCDOC OCCURS 0 WITH HEADER LINE.
+DATA L_STAT      TYPE DOMVALUE_L.
+DATA L_STXT      TYPE VAL_TEXT.
+DATA L_DISCORD   TYPE AUFNR.
+
+* Initialisation
+CLEAR   IT_EDISCDOC.
+REFRESH IT_EDISCDOC.
+CLEAR   L_STAT.
+CLEAR   L_STXT.
+CLEAR   L_DISCORD.
+
+* Look for installation typed disconnection
+SELECT * FROM EDISCDOC
+         INTO TABLE IT_EDISCDOC
+        WHERE REFOBJTYPE EQ C_INSTLN
+          AND REFOBJKEY  EQ OBJECT-KEY
+          AND STATUS     GT C_NEW
+          AND STATUS     LT C_RECONNECTED.
+
+* Proceed only if found
+CHECK SY-SUBRC EQ 0.
+
+* Sort the table and get the latest record
+SORT IT_EDISCDOC DESCENDING BY ERDAT DISCNO.
+READ TABLE IT_EDISCDOC INDEX 1.
+
+* Assign values
+OBJECT-ZDISCDOC = IT_EDISCDOC-DISCNO.
+L_STAT          = IT_EDISCDOC-STATUS.
+
+* Find either the disconnection order creation date or disconnection
+* date
+CASE IT_EDISCDOC-STATUS.
+  WHEN C_DISCONORDER.
+*   Get the discon order from the disconnection order
+    SELECT SINGLE ORDERNUM FROM EDISCACT
+                           INTO L_DISCORD
+                          WHERE DISCNO      EQ IT_EDISCDOC-DISCNO
+                            AND DISCACTTYP  EQ C_ACTDISCORD
+                            AND DISCCANCELD EQ SPACE.
+*   If successful
+    IF SY-SUBRC EQ 0.
+      SELECT SINGLE GSTRP FROM VIAUFKS
+                          INTO IT_EDISCDOC-ERDAT
+                         WHERE AUFNR EQ L_DISCORD.
+      WRITE IT_EDISCDOC-ERDAT TO OBJECT-ZDISCDOCDATE.
+    ENDIF.
+  WHEN C_DISCONNECTED OR C_RECONORDER.
+*   Get the activity date for the disconnection
+    SELECT SINGLE ACTDATE FROM EDISCACT
+                          INTO IT_EDISCDOC-ERDAT
+                         WHERE DISCNO      EQ IT_EDISCDOC-DISCNO
+                           AND DISCACTTYP  EQ C_ACTDISCENT
+                           AND DISCCANCELD EQ SPACE.
+    WRITE IT_EDISCDOC-ERDAT TO OBJECT-ZDISCDOCDATE.
+ENDCASE.
+
+* Reason
+CASE IT_EDISCDOC-DISCPROCV.
+  WHEN C_CUST.
+    OBJECT-ZDISCDOCRSN = C_CUSTTXT.
+  WHEN C_VACA.
+    OBJECT-ZDISCDOCRSN = C_VACATXT.
+ENDCASE.
+
+* Extract domain values
+CALL FUNCTION 'DOMAIN_VALUE_GET'
+  EXPORTING
+    I_DOMNAME  = C_STATDOM
+    I_DOMVALUE = L_STAT
+  IMPORTING
+    E_DDTEXT   = L_STXT
+  EXCEPTIONS
+    NOT_EXIST  = 1
+    OTHERS     = 2.
+
+* Get the status description
+CONCATENATE L_STAT '-' L_STXT INTO OBJECT-ZDISCDOCSTAT
+                              SEPARATED BY SPACE.
+
+* Set property
+SWC_SET_ELEMENT CONTAINER 'ZDiscDoc' OBJECT-ZDISCDOC.
+
+END_PROPERTY.
+
+GET_PROPERTY ZDISCDOCDATE CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 02/05/2005
+* Description : Get disconnection date
+* Tech Spec   : <MTEMC shared network drive - probably S:>\
+*                3_Realization\Development\Technical Specifications\
+*                Customer Overview (80% Screen) Technical Design.doc
+************************************************************************
+* Version     :
+* Date        :
+* Name        :
+* Ch. Req.    :
+* SAP corr.   :
+* Description :
+************************************************************************
+
+* Set property
+SWC_SET_ELEMENT CONTAINER 'ZDiscDocDate' OBJECT-ZDISCDOCDATE.
+
+END_PROPERTY.
+
+GET_PROPERTY ZDISCDOCRSN CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 02/05/2005
+* Description : Get disconnection reason
+* Tech Spec   : <MTEMC shared network drive - probably S:>\
+*                3_Realization\Development\Technical Specifications\
+*                Customer Overview (80% Screen) Technical Design.doc
+************************************************************************
+* Version     :
+* Date        :
+* Name        :
+* Ch. Req.    :
+* SAP corr.   :
+* Description :
+************************************************************************
+
+* Set property
+SWC_SET_ELEMENT CONTAINER 'ZDiscDocRsn' OBJECT-ZDISCDOCRSN.
+
+END_PROPERTY.
+
+GET_PROPERTY ZDISCDOCSTAT CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 02/05/2005
+* Description : Get disconnection status
+* Tech Spec   : <MTEMC shared network drive - probably S:>\
+*                3_Realization\Development\Technical Specifications\
+*                Customer Overview (80% Screen) Technical Design.doc
+************************************************************************
+* Version     :
+* Date        :
+* Name        :
+* Ch. Req.    :
+* SAP corr.   :
+* Description :
+************************************************************************
+
+* Set property
+SWC_SET_ELEMENT CONTAINER 'ZDiscDocStat' OBJECT-ZDISCDOCSTAT.
+
+END_PROPERTY.
+
+GET_PROPERTY ZRATECAT CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 02/09/2005
+* Description : Get rate category
+* Tech Spec   : <MTEMC shared network drive - probably S:>\
+*                3_Realization\Development\Technical Specifications\
+*                Customer Overview (80% Screen) Technical Design.doc
+************************************************************************
+* Version     :
+* Date        :
+* Name        :
+* Ch. Req.    :
+* SAP corr.   :
+* Description :
+************************************************************************
+
+* Declaration
+DATA O_RATECAT TYPE SWC_OBJECT.
+
+* Initialisation
+CLEAR O_RATECAT.
+
+* Get rate category object and rate category
+SWC_GET_PROPERTY SELF      'ActRateCat' O_RATECAT.
+SWC_GET_PROPERTY O_RATECAT 'RateCat'    OBJECT-ZRATECAT.
+
+* Set property
+SWC_SET_ELEMENT CONTAINER 'ZRateCat' OBJECT-ZRATECAT.
+
+END_PROPERTY.
+
+GET_PROPERTY ZPROPERTYACTIVE CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 02/09/2005
+* Description : Check whether owner allocation is currently active
+* Tech Spec   : <MTEMC shared network drive - probably S:>\
+*                3_Realization\Development\Technical Specifications\
+*                Customer Overview (80% Screen) Technical Design.doc
+************************************************************************
+* Version     :
+* Date        :
+* Name        :
+* Ch. Req.    :
+* SAP corr.   :
+* Description :
+************************************************************************
+
+* Declaration
+DATA L_PROPERTY TYPE E_PROPERTY.
+TABLES EPROP.
+
+* Initialisation
+CLEAR L_PROPERTY.
+CLEAR EPROP.
+CLEAR OBJECT-ZPROPERTYACTIVE.
+
+* Get property number
+SWC_GET_PROPERTY SELF 'ZProperty' L_PROPERTY.
+CHECK L_PROPERTY NE SPACE.
+
+* Check whether property is active
+SELECT SINGLE * FROM EPROP
+               WHERE PROPERTY EQ L_PROPERTY
+                 AND ACBACT   EQ C_TRUE.
+
+* Set the flag
+IF SY-SUBRC EQ 0.
+  OBJECT-ZPROPERTYACTIVE = C_ACTIVE.
+ELSE.
+  OBJECT-ZPROPERTYACTIVE = C_INACTIVE.
+ENDIF.
+
+* Set property
+SWC_SET_ELEMENT CONTAINER 'ZPropertyActive' OBJECT-ZPROPERTYACTIVE.
+
+END_PROPERTY.
+
+GET_PROPERTY ZINSTTYPEDESC CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 02/10/2005
+* Description : Get installation type description
+* Tech Spec   : <MTEMC shared network drive - probably S:>\
+*                3_Realization\Development\Technical Specifications\
+*                Customer Overview (80% Screen) Technical Design.doc
+************************************************************************
+* Version     :
+* Date        :
+* Name        :
+* Ch. Req.    :
+* SAP corr.   :
+* Description :
+************************************************************************
+
+* Declaration
+DATA L_INSTTYPE TYPE ANLART.
+
+* Initialisation
+CLEAR L_INSTTYPE.
+
+* Get installation type
+SWC_GET_PROPERTY SELF 'InstallationType' L_INSTTYPE.
+
+* Get the installation type description
+SELECT SINGLE TEXT30 FROM TE439T
+                     INTO OBJECT-ZINSTTYPEDESC
+                    WHERE ANLART EQ L_INSTTYPE
+                      AND SPRAS  EQ SY-LANGU.
+
+* Set property
+SWC_SET_ELEMENT CONTAINER 'ZInstTypeDesc' OBJECT-ZINSTTYPEDESC.
+
+END_PROPERTY.
+************************************************************************
+* Created by  : Srinivas Surath
+* Created on  : 03/30/2005
+* Description : Determine Operand Change for KEY ACCOUNTS WORKFLOW
+************************************************************************
+BEGIN_METHOD ZDETERMINEOPERANDCHANGE CHANGING CONTAINER.
+***Types for CDHDR table
+TYPES : BEGIN OF TY_CDHDR ,
+          OBJECTCLAS LIKE CDHDR-OBJECTCLAS ,
+          OBJECTID   LIKE CDHDR-OBJECTID ,
+          CHANGENR   LIKE CDHDR-CHANGENR ,
+          UDATE      LIKE CDHDR-UDATE ,
+          UTIME      LIKE CDHDR-UTIME ,
+        END OF TY_CDHDR .
+*** Types for CDPOS
+TYPES  : BEGIN OF TY_CDPOS ,
+           OBJECTCLAS LIKE CDPOS-OBJECTCLAS ,
+           OBJECTID   LIKE CDPOS-OBJECTID ,
+           CHANGENR   LIKE CDPOS-CHANGENR ,
+           TABKEY     LIKE CDPOS-TABKEY ,
+           FNAME      LIKE CDPOS-FNAME ,
+           CHNGIND    LIKE CDPOS-CHNGIND ,
+           VALUE_NEW  LIKE CDPOS-VALUE_NEW ,
+           VALUE_OLD  LIKE CDPOS-VALUE_OLD ,
+         END OF TY_CDPOS .
+
+***Internal table for CDHDR and CDPOS
+DATA: T_CDHDR TYPE STANDARD TABLE OF TY_CDHDR WITH HEADER LINE ,
+      T_CDPOS TYPE STANDARD TABLE OF TY_CDPOS WITH HEADER LINE .
+***Work variables
+DATA: W_WERT1            LIKE ETTIFN-WERT1 ,                 " Demand Value
+      W_CLASSIFICATION   LIKE EKUN-CLASSIFICATION , " Classification
+      W_WKFL_DATE        LIKE SYST-DATUM ,               " Workflow date
+      W_WKFL_INITIATOR   LIKE WFSYST-INITIATOR,     " Workflow initiator
+      W_LIMIT            LIKE ETTIFN-WERT1,                  " Demand limit
+      W_CURRENT_CONTRACT LIKE EVER-VERTRAG ,      " Contract no.
+      W_CONTRACT_OBJECT  TYPE SWC_OBJECT ,         " Ref Contract obj
+      W_PARTNER          LIKE BUT000-PARTNER ,             " Business partner no.
+      W_PARTNER_OBJECT   TYPE SWC_OBJECT,         " Ref Partner Obj
+      WA_CDHDR           TYPE TY_CDHDR ,                 " For cdhdr work area
+      W_INSTLN           LIKE EANL-ANLAGE ,      " Instalation key
+      W_TMP_WERT1        LIKE ETTIFN-WERT1 ,  " Demand value when moveout occur
+***R3DK904642: Begin Changes 41324 - youngja
+      W_EVENT            LIKE SWFREVTLOG-EVENT.          " Event name
+***R3DK904642: End Changes 41324 - youngja
+***Contants
+CONSTANTS : C_ISU_ETTIF        LIKE CDPOS-OBJECTCLAS VALUE 'ISU_ETTIF' ,
+            C_WERT1(5)         TYPE C VALUE 'WERT1' ,
+            C_OPERAND(10)      TYPE C VALUE 'C-KW_CNMIN',
+***R3DK904642: Begin Changes 41324 - youngja
+            C_MOVEIN_EVENT(14) TYPE C VALUE 'MOVEINOCCURRED'.
+***R3DK904642: End Changes 41324 - youngja
+***Working variables for import parameters
+DATA :NEWVALUE LIKE ETTIFN-WERT1,         " New demand value
+      OLDVALUE LIKE ETTIFN-WERT1.        " Old demand value
+
+***Get event data and Creator
+SWC_GET_ELEMENT CONTAINER 'EventDate' W_WKFL_DATE.
+SWC_GET_ELEMENT CONTAINER 'WorkFlowinitiator' W_WKFL_INITIATOR.
+***R3DK904642: Begin Changes 41324 - youngja
+CLEAR W_EVENT.
+SWC_GET_ELEMENT CONTAINER 'EventName' W_EVENT.
+
+IF W_EVENT EQ C_MOVEIN_EVENT.
+  CLEAR: W_PARTNER, NEWVALUE.
+  SWC_GET_ELEMENT CONTAINER 'BusinessPartner' W_PARTNER.
+  IF W_PARTNER IS NOT INITIAL.
+***Perform to update EKUN-CLASSIFICTION to 'KA'
+    PERFORM  UPDATE_EKUN USING  W_PARTNER.
+  ENDIF.
+***Get entry value from table ETTIFN
+  SELECT WERT1  INTO W_WERT1
+    UP TO 1 ROWS  FROM ETTIFN
+    WHERE OPERAND = C_OPERAND AND
+          AB      LE W_WKFL_DATE AND
+          BIS     GT W_WKFL_DATE AND
+          ANLAGE  EQ OBJECT-KEY .
+  ENDSELECT .
+***Export New Value
+  MOVE  W_WERT1 TO  NEWVALUE.
+  SWC_SET_ELEMENT CONTAINER 'NewValue'  NEWVALUE.
+***set Exception "New Move In"
+  SWC_SET_ELEMENT CONTAINER 'Returncode' '1005'.
+  EXIT.
+ENDIF.
+***R3DK904642: End Changes 41324 - youngja
+***Get demand vlaue limit from custom table .
+SELECT SINGLE VALUE_LIMIT INTO W_LIMIT FROM ZIS_DEMAND_VALUE .
+IF SY-SUBRC NE 0  .
+  CLEAR W_LIMIT .
+ENDIF .
+
+
+**Get CDHDR Table Values
+REFRESH T_CDHDR .
+SELECT OBJECTCLAS OBJECTID CHANGENR UDATE UTIME
+INTO TABLE T_CDHDR
+FROM CDHDR WHERE OBJECTCLAS = C_ISU_ETTIF AND
+                 OBJECTID   =  OBJECT-KEY  AND
+                 USERNAME   =  W_WKFL_INITIATOR+2(12)  AND
+                 UDATE      =  W_WKFL_DATE .
+IF T_CDHDR[] IS NOT INITIAL .
+**Get CDPOS values
+  SELECT OBJECTCLAS OBJECTID CHANGENR TABKEY FNAME CHNGIND
+          VALUE_NEW VALUE_OLD
+  INTO TABLE T_CDPOS
+  FROM CDPOS
+  FOR ALL ENTRIES IN T_CDHDR
+  WHERE    OBJECTCLAS =  T_CDHDR-OBJECTCLAS AND
+           OBJECTID   =  T_CDHDR-OBJECTID  AND
+           CHANGENR   =  T_CDHDR-CHANGENR AND
+           TABKEY     LIKE '%C-KW_CNMIN%' .
+
+ENDIF .
+
+SORT  T_CDPOS  BY CHANGENR DESCENDING.
+READ TABLE T_CDPOS INDEX 1 .
+IF SY-SUBRC EQ 0 .
+  CASE T_CDPOS-CHNGIND .
+***If Insert
+    WHEN 'I' .
+***Get entry value from table ETTIFN
+      SELECT WERT1  INTO W_WERT1
+      UP TO 1 ROWS  FROM ETTIFN
+      WHERE OPERAND = C_OPERAND AND
+            AB      LE W_WKFL_DATE AND
+            BIS     GT W_WKFL_DATE AND
+            ANLAGE  EQ OBJECT-KEY .
+      ENDSELECT .
+***If demand value is greater than limit
+      IF W_WERT1 GE  W_LIMIT  .
+**Set Classification field to KA
+        CLEAR : W_CURRENT_CONTRACT  , W_PARTNER_OBJECT  , W_PARTNER .
+***Get current contract
+        SWC_GET_PROPERTY SELF 'CurrentContract'  W_CONTRACT_OBJECT.
+        SWC_GET_PROPERTY  W_CONTRACT_OBJECT  'Partner' W_PARTNER_OBJECT  .
+        SWC_GET_PROPERTY W_PARTNER_OBJECT 'Partner' W_PARTNER .
+        IF  W_PARTNER IS NOT INITIAL .
+***Perform to update EKUN-CLASSIFICTION to 'KA'
+          PERFORM  UPDATE_EKUN USING  W_PARTNER .
+        ENDIF .
+***Export New Value
+        MOVE  W_WERT1 TO  NEWVALUE.
+        SWC_SET_ELEMENT CONTAINER 'NewValue'  NEWVALUE.
+***set Exception "New Contract >= Limit"
+        SWC_SET_ELEMENT CONTAINER 'Returncode' '1001' .
+      ELSE .
+***set Exception "No Processing Required"
+        SWC_SET_ELEMENT CONTAINER 'Returncode' '1000' .
+      ENDIF .
+***When Update
+    WHEN 'U' .
+      IF T_CDPOS-FNAME EQ C_WERT1 .
+        IF T_CDPOS-VALUE_OLD LT  W_LIMIT .
+          IF T_CDPOS-VALUE_NEW GE W_LIMIT .
+***Export old value / new value
+            SWC_SET_ELEMENT CONTAINER 'NewValue' T_CDPOS-VALUE_NEW.
+            SWC_SET_ELEMENT CONTAINER 'OldValue' T_CDPOS-VALUE_OLD.
+****Set exception Exstg Cntrct Chngd from < Limit to >= Limit
+            SWC_SET_ELEMENT CONTAINER 'Returncode' '1002' .
+***Get current contract
+            SWC_GET_PROPERTY SELF 'CurrentContract'  W_CONTRACT_OBJECT.
+            SWC_GET_PROPERTY  W_CONTRACT_OBJECT  'Partner' W_PARTNER_OBJECT .
+            SWC_GET_PROPERTY W_PARTNER_OBJECT 'Partner' W_PARTNER .
+            IF  W_PARTNER IS NOT INITIAL .
+***Perform to update EKUN-CLASSIFICTION to 'KA'
+              PERFORM  UPDATE_EKUN USING  W_PARTNER .
+            ENDIF.
+          ELSE .
+***set Exception "No Processing Required"
+            SWC_SET_ELEMENT CONTAINER 'Returncode' '1000' .
+          ENDIF.
+        ELSE .
+***Export old value / new value
+          SWC_SET_ELEMENT CONTAINER 'NewValue' T_CDPOS-VALUE_NEW.
+          SWC_SET_ELEMENT CONTAINER 'OldValue' T_CDPOS-VALUE_OLD.
+****Set exception Exstg Cntrct Chngd from > = Limit to x
+          SWC_SET_ELEMENT CONTAINER 'Returncode' '1003' .
+        ENDIF .
+      ELSE.
+***Set exception No processing required
+        SWC_SET_ELEMENT CONTAINER 'Returncode' '1000' .
+      ENDIF .
+***When deleted
+    WHEN 'D' .
+***Get current contract / contract no. / partner
+      CLEAR : W_CURRENT_CONTRACT  , W_PARTNER_OBJECT  , W_PARTNER .
+      SWC_GET_PROPERTY SELF 'CurrentContract'  W_CONTRACT_OBJECT.
+      SWC_GET_PROPERTY  W_CONTRACT_OBJECT  'Partner' W_PARTNER_OBJECT  .
+      SWC_GET_PROPERTY W_PARTNER_OBJECT 'Partner' W_PARTNER .
+      CLEAR W_CLASSIFICATION .
+      IF W_PARTNER IS NOT INITIAL.
+***Get classification
+        SELECT SINGLE CLASSIFICATION INTO W_CLASSIFICATION FROM EKUN
+        WHERE PARTNER = W_PARTNER .
+        IF W_CLASSIFICATION = 'KA' .
+***Set exception "Contract Deleted"
+          SWC_SET_ELEMENT CONTAINER 'Returncode' '1004' .
+        ELSE .
+****Set Exception "No Processing Required"
+          SWC_SET_ELEMENT CONTAINER 'Returncode' '1000' .
+        ENDIF .
+      ENDIF .
+    WHEN OTHERS.
+***Set Exception "No Processing Required"
+      SWC_SET_ELEMENT CONTAINER 'Returncode' '1000' .
+  ENDCASE .
+ENDIF .        " Read table sy-subrc
+
+END_METHOD.
+*&---------------------------------------------------------------------*
+*&      Form  UPDATE_EKUN
+*&---------------------------------------------------------------------*
+*     Update EKUN-CLASSIFICATION field
+*----------------------------------------------------------------------*
+*      -->P_W_PARTNER  Business Partner
+*----------------------------------------------------------------------*
+FORM UPDATE_EKUN  USING    P_W_PARTNER TYPE BUT000-PARTNER.
+  DATA : WA_EKUN    LIKE EKUN ,
+         WA_EKUNUPD LIKE EKUNUPD ,
+         T_EKUN     LIKE STANDARD TABLE OF EKUNUPD,  " EKUN strc for FM
+         T_EKUN_OLD LIKE STANDARD TABLE OF EKUN . " EKUN strc for FM
+  CONSTANTS : C_KA LIKE EKUN-CLASSIFICATION VALUE  'KA'.
+***Get current values
+  SELECT SINGLE * FROM EKUN INTO WA_EKUN WHERE PARTNER = P_W_PARTNER .
+  IF SY-SUBRC EQ 0  .
+    APPEND WA_EKUN TO T_EKUN_OLD .
+***Change classification to KA
+    MOVE-CORRESPONDING WA_EKUN TO WA_EKUNUPD.
+    WA_EKUNUPD-CLASSIFICATION = C_KA .
+    WA_EKUNUPD-UPD_MODE       = 'U' .
+    APPEND WA_EKUNUPD TO T_EKUN .
+***Update classification using FM
+    CALL FUNCTION 'ISU_EKUN_SAVE'
+* EXPORTING
+*   X_XCHDOC          = 'X'
+      TABLES
+        TX_EKUN     = T_EKUN
+        TX_EKUN_OLD = T_EKUN_OLD.
+
+  ENDIF .
+ENDFORM .                    "UPDATE_EKUN
+
+BEGIN_METHOD ZNOOPERATION CHANGING CONTAINER.
+DATA: W_MOVEOUTOBJ    TYPE SWC_OBJECT,
+      W_MOVEOUTDOC    TYPE EAUS-AUSZBELEG,
+*      t_container TYPE TABLE OF swcont,
+      BUSINESSPARTNER LIKE BAPIBCONTACT-PARTNER,
+      CONTRACTACCOUNT LIKE FKKVKP-VKONT,
+      PARTNER         TYPE SWC_OBJECT,
+      ISUACCOUNT      TYPE SWC_OBJECT.
+CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'.
+
+SWC_GET_ELEMENT CONTAINER 'MoveOutDocument' W_MOVEOUTDOC.
+SWC_CREATE_OBJECT W_MOVEOUTOBJ 'MOVEOUTDOC' W_MOVEOUTDOC.
+*swc_set_element container 'MoveOutObject' w_moveoutobj.
+*swc_create_container t_container.
+SWC_GET_PROPERTY W_MOVEOUTOBJ 'BusinessPartner' PARTNER.
+SWC_GET_OBJECT_KEY PARTNER BUSINESSPARTNER.
+SWC_GET_PROPERTY W_MOVEOUTOBJ 'ContractAccount' ISUACCOUNT.
+SWC_GET_OBJECT_KEY ISUACCOUNT CONTRACTACCOUNT.
+
+SWC_SET_ELEMENT CONTAINER 'BusinessPartner' BUSINESSPARTNER.
+SWC_SET_ELEMENT CONTAINER 'ContractAccount' CONTRACTACCOUNT.
+
+END_METHOD.
+
+GET_PROPERTY ZCURRENTDEVICES CHANGING CONTAINER.
+TYPE-POOLS: ISU07.
+DATA: I_INSTLN  LIKE EANL-ANLAGE,
+      I_KEYDATE LIKE SY-DATUM,
+      IT_T_GER  TYPE ISU07_TWD_GERTAB OCCURS 0,
+      I_T_GER   TYPE ISU07_TWD_GERTAB,
+      IEGER     LIKE EGERS OCCURS 10 WITH HEADER LINE,
+      OBJREF    LIKE LINE OF OBJECT-ZCURRENTDEVICES.
+* fill foreign key
+IF NOT OBJECT-KEY-NUMBER IS INITIAL.
+  REFRESH: OBJECT-ZCURRENTDEVICES[], OBJECT-ZCURRENTDEVICES.
+  I_INSTLN = OBJECT-KEY-NUMBER.
+  I_KEYDATE = SY-DATUM.
+  CALL FUNCTION 'ISU_DET_DEVICE_FROM_INST'
+    EXPORTING
+      X_ANLAGE       = I_INSTLN
+      X_KEYDATE      = I_KEYDATE
+    CHANGING
+      XY_T_GER       = IT_T_GER
+    EXCEPTIONS
+      NOT_FOUND      = 1
+      INTERNAL_ERROR = 2
+      SYSTEM_ERROR   = 3
+      OTHERS         = 4.
+  IF SY-SUBRC GE 1.
+    EXIT_PROPERTY_NOT_FOUND.
+  ENDIF.
+ENDIF.                                 "object-key-number initial
+* refresh attribute values
+LOOP AT IT_T_GER INTO I_T_GER WHERE KOMBINAT = 'Z'.
+  SWC_CREATE_OBJECT OBJREF 'DEVICE' I_T_GER-EQUNR.
+  IF SY-SUBRC NE 0.
+    EXIT_PROPERTY_NOT_FOUND.
+  ENDIF.
+  APPEND OBJREF TO OBJECT-ZCURRENTDEVICES.
+ENDLOOP.
+
+SWC_SET_TABLE CONTAINER 'zCurrentDevices' OBJECT-ZCURRENTDEVICES.
+END_PROPERTY.
+
+GET_PROPERTY ZMOVINOBJPRES CHANGING CONTAINER.
+************************************************************************
+* Created by  : James Young
+* Created on  : 11/18/2005
+* Description : Retrieve attributes for display in move-in process.
+*               Utilized in "Define Object Presentation node in SPRO.
+*               Inst Typ desc & rate added by commented out in case
+*               MTEMC would like to adjust pop-up.
+************************************************************************
+* Change History
+*----------------------------------------------------------------------*
+*     Date   |   Programmer   |   Corr. #   |   Description
+*----------------------------------------------------------------------*
+* 11/18/2005 | James Young    |  R3DK904615 | v.1 Incident 41287      |
+************************************************************************
+
+*Declaration
+DATA: W_INST_INFO    TYPE EWOGEN-OBJSTEXT50, "bp long name
+*        W_DESCRPT      TYPE TE439T-TEXT30,     "inst typ desc
+      W_TYPE         TYPE EANL-ANLART,       "inst typ
+      W_NEWTYPE(5)   TYPE C,
+      W_MO_DTE       TYPE EVER-AUSZDAT VALUE '19000101',
+      W_TMP_DTE      TYPE EVER-AUSZDAT,
+      W_DIS_DTE      TYPE TBO01-TXT10,       "MM/DD/YYYY
+      W_FLAG         TYPE C,
+      W_RATE         TYPE EANLD-TARIFTYP,
+      W_NEWRATE(10)  TYPE C,
+      W_CONTRACT_OBJ TYPE SWC_OBJECT,        "contract obj
+      OBJREF         TYPE TABLE OF SWC_OBJECT WITH HEADER LINE.
+
+CONSTANTS : C_M TYPE TE439T-TEXT30 VALUE 'Moved Out:',
+            C_E TYPE TE439T-TEXT30 VALUE 'No Previous Service'.
+
+*Initialization
+CLEAR W_INST_INFO.
+CLEAR W_TYPE.
+CLEAR W_NEWTYPE.
+CLEAR W_TMP_DTE.
+CLEAR W_FLAG.
+CLEAR W_CONTRACT_OBJ.
+CLEAR W_RATE.
+CLEAR W_NEWRATE.
+*  CLEAR W_DESCRPT.
+
+REFRESH: OBJREF.
+
+*Get Rate Category
+SWC_GET_PROPERTY SELF 'ZRATECAT' W_RATE.
+
+**Get Install Type Description
+*  SWC_GET_PROPERTY SELF 'ZInstTypeDesc' W_DESCRPT.
+
+*Get installation type description.
+SWC_GET_PROPERTY SELF 'InstallationType' W_TYPE.
+
+*Get business partner name from current contract.
+SWC_GET_PROPERTY SELF 'CurrentContract' W_CONTRACT_OBJ.
+SWC_GET_TABLE_PROPERTY SELF 'ISUCONTRACTS' OBJREF.
+
+*Check existence of current contract & bp.
+IF NOT W_CONTRACT_OBJ IS INITIAL.
+  W_FLAG = 'B'.  "Display BP name.
+ELSE.
+  IF NOT OBJREF IS INITIAL.
+    LOOP AT OBJREF.
+      SWC_GET_PROPERTY OBJREF 'MoveOutDate' W_TMP_DTE.
+      IF W_TMP_DTE > W_MO_DTE.
+        W_MO_DTE = W_TMP_DTE.
+        CLEAR W_TMP_DTE.
+      ENDIF.
+      CLEAR OBJREF.
+    ENDLOOP.
+    CONCATENATE W_MO_DTE+4(2) W_MO_DTE+6(2) W_MO_DTE(4) INTO
+    W_DIS_DTE SEPARATED BY '/'.
+    W_FLAG = 'M'.  "Display last m/o date.
+  ELSE.
+    W_FLAG = 'E'.  "No previous contracts.
+  ENDIF.
+ENDIF.
+
+IF NOT W_FLAG IS INITIAL.
+  CASE W_FLAG.
+    WHEN 'B'.
+      SWC_GET_PROPERTY W_CONTRACT_OBJ 'PartnerNamE' W_INST_INFO.
+    WHEN 'M'.
+      CONCATENATE C_M W_DIS_DTE INTO W_INST_INFO.
+    WHEN 'E'.
+      W_INST_INFO = C_E.
+  ENDCASE.
+ENDIF.
+
+*Case statement to derive correct pop-up display for inst type.
+CASE STRLEN( W_TYPE ).
+  WHEN '2'.
+    CONCATENATE W_TYPE '  |' INTO W_NEWTYPE.
+  WHEN '3'.
+    CONCATENATE W_TYPE ' |' INTO W_NEWTYPE.
+  WHEN OTHERS.
+    CONCATENATE W_TYPE '|' INTO W_NEWTYPE.
+ENDCASE.
+
+*Case statement to derive correct pop-up display for rate.
+CASE STRLEN( W_RATE ).
+  WHEN '4'.
+    CONCATENATE W_RATE '     |' INTO W_NEWRATE.
+  WHEN '5'.
+    CONCATENATE W_RATE '    |' INTO W_NEWRATE.
+  WHEN '6'.
+    CONCATENATE W_RATE '   |' INTO W_NEWRATE.
+  WHEN '7'.
+    CONCATENATE W_RATE '  |' INTO W_NEWRATE.
+  WHEN '8'.
+    CONCATENATE W_RATE ' |' INTO W_NEWRATE.
+  WHEN OTHERS.
+    CONCATENATE W_RATE '|' INTO W_NEWRATE.
+ENDCASE.
+
+*Build text line with installation info.
+CONCATENATE W_NEWTYPE W_NEWRATE INTO OBJECT-ZMOVINOBJPRES.
+
+*Build remaining text line including bp info.
+CONCATENATE OBJECT-ZMOVINOBJPRES W_INST_INFO
+      INTO OBJECT-ZMOVINOBJPRES.
+
+*Set container elememt.
+SWC_SET_ELEMENT CONTAINER 'ZMovInObjPres' OBJECT-ZMOVINOBJPRES.
+END_PROPERTY.
+
+GET_PROPERTY ZMOVINOBJPRESHEADER CHANGING CONTAINER.
+*Added under R3DK904615 with attribute ZMOVINOBJPRES.
+OBJECTTYPE-ZMOVINOBJPRESHEADER(4)    = TEXT-Z01.
+OBJECTTYPE-ZMOVINOBJPRESHEADER+4(1)  = SY-VLINE.
+OBJECTTYPE-ZMOVINOBJPRESHEADER+5     = TEXT-Z02.
+OBJECTTYPE-ZMOVINOBJPRESHEADER+14(1) = SY-VLINE.
+OBJECTTYPE-ZMOVINOBJPRESHEADER+15    = TEXT-Z03.
+SWC_SET_ELEMENT CONTAINER 'ZMovInObjPresHeader'
+     OBJECTTYPE-ZMOVINOBJPRESHEADER.
+END_PROPERTY.
+
+GET_PROPERTY UNMETEREDINDICATOR CHANGING CONTAINER.
+DATA : LV_RCAT     TYPE SWC_OBJECT,
+       LV_TARIFTYP TYPE TARIFTYP,
+       LV_ETTAF    TYPE ETTAF,
+       LV_COUNT    TYPE I.
+
+SWC_GET_PROPERTY SELF 'ActRateCat' LV_RCAT.
+SWC_GET_OBJECT_KEY LV_RCAT LV_TARIFTYP.
+
+SELECT SINGLE * FROM ETTAF INTO LV_ETTAF
+  WHERE TARIFTYP = LV_TARIFTYP
+    AND OPERAND = ZIF_SWITCH_CONST=>CO_OPERAND_UNMETERED
+    AND BIS GE SY-DATUM
+    AND AB LE SY-DATUM.
+
+IF SY-SUBRC EQ 0.
+  OBJECT-UNMETEREDINDICATOR = 'X'.
+ELSE.
+  OBJECT-UNMETEREDINDICATOR = SPACE.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'UnMeteredIndicator'
+     OBJECT-UNMETEREDINDICATOR.
+END_PROPERTY.
+
+GET_PROPERTY CURRENTPOD CHANGING CONTAINER.
+DATA LT_PODS TYPE SWC_OBJECT OCCURS 0.
+IF OBJECT-CURRENTPOD IS INITIAL.
+*   the SAP data model allows an installation to have multiple PoDs.
+*   However, here at CE, we do not use this. There will always be
+*   one PoD allocated to an installation
+  SWC_GET_TABLE_PROPERTY SELF 'PoD' LT_PODS.
+  READ TABLE LT_PODS INDEX 1 INTO OBJECT-CURRENTPOD.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'CurrentPoD' OBJECT-CURRENTPOD.
+END_PROPERTY.
+
+GET_PROPERTY INITIALSUPPLYSCENARIO CHANGING CONTAINER.
+DATA : LV_DIVISION TYPE SWC_OBJECT,
+       LV_SPARTE   TYPE SPARTE.
+
+IF OBJECT-INITIALSUPPLYSCENARIO IS INITIAL.
+  SWC_GET_PROPERTY SELF 'Division' LV_DIVISION.
+  SWC_GET_OBJECT_KEY LV_DIVISION LV_SPARTE.
+  CASE LV_SPARTE.
+    WHEN ZIF_SWITCH_CONST=>CO_SPARTE_EL.
+      SWC_CREATE_OBJECT OBJECT-INITIALSUPPLYSCENARIO 'ISUSUPSCEN'
+        ZIF_SWITCH_CONST=>CO_SUPPSCEN_EL_CONSUMERS.
+
+    WHEN ZIF_SWITCH_CONST=>CO_SPARTE_GS.
+      SWC_CREATE_OBJECT OBJECT-INITIALSUPPLYSCENARIO 'ISUSUPSCEN'
+        ZIF_SWITCH_CONST=>CO_SUPPSCEN_GS_CONSUMERS.
+    WHEN OTHERS.
+      EXIT_OBJECT_NOT_FOUND.
+  ENDCASE.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'InitialSupplyScenario'
+     OBJECT-INITIALSUPPLYSCENARIO.
+END_PROPERTY.
+
+BEGIN_METHOD GETDEMANDVALUE CHANGING CONTAINER.
+DATA:
+  EFFECTIVEDATE TYPE SYST-DATUM,
+  LV_ETTIFN     TYPE ETTIFN.
+
+SWC_GET_ELEMENT CONTAINER 'EffectiveDate' EFFECTIVEDATE.
+
+IF EFFECTIVEDATE IS INITIAL.
+  EFFECTIVEDATE = SY-DATUM.
+ENDIF.
+CALL FUNCTION 'ISU_DB_ETTIFN_SELECT'
+  EXPORTING
+    X_ANLAGE      = OBJECT-KEY-NUMBER
+    X_OPERAND     = ZCL_ISU_IDE_ENROLL_CHECK=>CO_OPERAND_DEMAND
+    X_AB          = EFFECTIVEDATE
+    X_BIS         = EFFECTIVEDATE
+  IMPORTING
+*   Y_COUNT       =
+    Y_ETTIFN      = LV_ETTIFN
+*   Y_IETTIFN     =
+  EXCEPTIONS
+    NOT_FOUND     = 1
+    NOT_QUALIFIED = 2
+    OTHERS        = 3.
+
+IF SY-SUBRC <> 0.
+  EXIT_RETURN 1000 SPACE SPACE SPACE SPACE.
+ENDIF.
+
+
+SWC_SET_ELEMENT CONTAINER 'Demand' LV_ETTIFN-WERT1.
+END_METHOD.
+
+BEGIN_METHOD GETDEVICESFORDATE CHANGING CONTAINER.
+DATA:
+  KEYDATE   TYPE SYST-DATUM,
+  LT_EGERS  TYPE ISU07_TWD_GERTAB_T,
+  LV_EGER   LIKE LINE OF LT_EGERS,
+  LV_DEVICE TYPE SWC_OBJECT,
+  DEVICES   TYPE SWC_OBJECT OCCURS 0,
+  LV_DEVNUM TYPE I.
+SWC_GET_ELEMENT CONTAINER 'KeyDate' KEYDATE.
+
+CALL FUNCTION 'ISU_DET_DEVICE_FROM_INST'
+  EXPORTING
+    X_ANLAGE       = OBJECT-KEY-NUMBER
+    X_KEYDATE      = KEYDATE
+  CHANGING
+    XY_T_GER       = LT_EGERS
+  EXCEPTIONS
+    NOT_FOUND      = 1
+    INTERNAL_ERROR = 2
+    SYSTEM_ERROR   = 3
+    OTHERS         = 4.
+.
+IF SY-SUBRC EQ  0.
+
+  LOOP AT LT_EGERS INTO LV_EGER.
+    SWC_CREATE_OBJECT LV_DEVICE 'DEVICE' LV_EGER-EQUNR.
+    APPEND LV_DEVICE TO DEVICES.
+  ENDLOOP.
+ENDIF.
+DESCRIBE TABLE DEVICES LINES LV_DEVNUM.
+SWC_SET_ELEMENT CONTAINER 'DeviceCount' LV_DEVNUM.
+SWC_SET_TABLE CONTAINER 'Devices' DEVICES.
+END_METHOD.
+
+BEGIN_METHOD ESTIMATEMTRREADS CHANGING CONTAINER.
+************************************************************************
+* Created by  : Judy Jarone
+* Created on  : 03/05/2007
+* Description : FO_ENH_670_4
+*               Estimate Installation Meter Reads
+************************************************************************
+* Programmer:  Michael Robson
+* Date:        08/06/2009
+* SC Problem:  PM864500
+* Transport:   ECDK960786
+* Description: Add a check to prevent estimation for an MV-90
+*              installation, where the installation's meter read unit
+*              starts with "MV".
+************************************************************************
+
+*----------------------------------------------------------------------*
+* Modification Log                Place latest at top :                *
+*----------------------------------------------------------------------*
+* Author       Date        Change Req#   Task #          Change Driver
+*----------------------------------------------------------------------*
+* Haritha D   10/22/2014         E2DK934877    Initial                 *
+*----------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+CONSTANTS: C_TRUE      TYPE C VALUE 'X',
+           C_OPEN_READ TYPE ABLESGRE VALUE '0'.
+DATA: READREASON    TYPE ABLESGRE,
+      METERREADDATE TYPE EABL-ADATSOLL,
+      LV_ANLAGE     TYPE ANLAGE,
+      LV_ABLBELNR   TYPE ABLBELNR,
+      WA_ERR_MSG    TYPE ZSFO_BAL_MSG,
+      I_ERR_MSG     TYPE STANDARD TABLE OF ZSFO_BAL_MSG.
+
+FIELD-SYMBOLS : <FS_ERR_MSG> TYPE ZSFO_BAL_MSG. "CS_WF_RTF_002: RDR block Meter estimation |22-10-2014 HDANNAMA
+
+CONSTANTS : CO_MSGID     TYPE SYMSGID VALUE 'ZFO_PMI', "CS_WF_RTF_002: RDR block Meter estimation |22-10-2014 HDANNAMA
+            CO_MSGNO     TYPE SYMSGNO VALUE '67',
+            CO_MSGTY     TYPE SYMSGTY VALUE 'I',
+            CO_PROBCLASS TYPE BALPROBCL VALUE '3',
+            CO_METER     TYPE STRING VALUE 'AdvancedMeter',
+            CO_VALUE     TYPE C VALUE 'X'.
+*
+*FIELD-SYMBOLS: <lfs_mara> LIKE LINE OF t_mara.
+*      lv_counter  TYPE syst-index,    "TE107 change
+*      lv_maxcount  TYPE syst-index.   "TE107 change
+*----|START-OF-CHANGE|MMRobson|08/06/2009|PM864500|----*
+DATA: L_EXCLUDE_MV90 TYPE REGEN-KENNZX.
+*----|END-OF-CHANGE|MMRobson|08/06/2009|PM864500|----*
+SWC_GET_ELEMENT CONTAINER 'ReadReason' READREASON.
+SWC_GET_ELEMENT CONTAINER 'MeterReadDate' METERREADDATE.
+SWC_GET_TABLE CONTAINER 'ErrMsg' I_ERR_MSG.
+*CLEAR: lv_counter,                                 "TE107 change
+*       lv_maxcount.                                "TE107 change
+*swc_get_element container 'Counter' lv_counter.    "TE107 change
+*swc_get_element container 'MaxCount' lv_maxcount.  "TE107 change
+
+LV_ANLAGE = OBJECT-KEY.
+** change for MR estimate process at MI/MO
+* based on discussion with Joe G regarding MI/MO and over estimation
+* Meter Reading.
+* Findings/Problem. Currently, when a MO/MI happens system does the
+* MR estimation and check the weather temp factor. This temp factor is
+* entered manually by users and they do it at the end of the day.
+* thus estimation occurs during the day time does not consider it and
+* and calculation goes off
+* Solution:2 steps
+* Step1: check the entry in table TE107 for temp factor, if no entry
+* then do not proceed.
+* Step2:If step 1 is OK, then check and compare the MO date. If Schd
+* bill date is withing next 5 days, then do not do estimate and wait
+* for automatic bill to get exeecuted otherwise execute
+DATA: LT_TE107 TYPE TABLE OF TE107,
+      NO_LINES TYPE N.
+
+*DO. DATA lv_debug TYPE char1 VALUE 'X'. IF NOT lv_debug IS INITIAL. EXIT. ENDIF. ENDDO.
+* get rate category
+CLEAR SY-SUBRC.
+SELECT * FROM TE107 INTO TABLE LT_TE107
+  WHERE GRADTDAT  = METERREADDATE. "sy-datum.
+IF SY-SUBRC <> '0'.
+
+  MOVE: 'ZBILL' TO WA_ERR_MSG-MSGID,
+        '187'     TO WA_ERR_MSG-MSGNO,
+        'E'      TO WA_ERR_MSG-MSGTY,
+*            'I'       TO wa_err_msg-msgty,
+        '3'       TO WA_ERR_MSG-PROBCLASS.
+  APPEND WA_ERR_MSG TO I_ERR_MSG.
+*  swc_set_element container 'SuccessFlgTE107' abap_false. "TE107 change
+*  swc_set_table container 'ErrMsg' i_err_msg.             "TE107 change
+*  IF lv_maxcount NE 0                                     "TE107 change
+*  AND lv_maxcount EQ lv_counter.                          "TE107 change
+*    "Do Nothing                                           "TE107 change
+*  ELSE.                                                   "TE107 change
+*    EXIT.                                                 "TE107 change
+*  ENDIF.                                                  "TE107 change
+*ELSE.                                                     "TE107 change
+*  swc_set_element container 'SuccessFlgTE107' abap_true.  "TE107 change
+ENDIF.
+
+*----|START-OF-CHANGE|MMRobson|08/06/2009|PM864500|----*
+SWC_GET_ELEMENT CONTAINER 'ExcludeMV90' L_EXCLUDE_MV90.
+IF L_EXCLUDE_MV90 IS NOT INITIAL.
+* Check whether the installation has an MV-90 meter reading unit
+  SELECT COUNT(*)
+    FROM EANLH
+    WHERE ANLAGE     = LV_ANLAGE
+      AND BIS       >= METERREADDATE
+      AND AB        <= METERREADDATE
+      AND ABLEINH LIKE 'MV%'.
+
+* Exit if an MV-90 meter reading unit is found
+  CHECK SY-SUBRC <> 0.
+ENDIF.
+*----|END-OF-CHANGE|MMRobson|08/06/2009|PM864500|----*
+
+*  First lets just make sure the move out read order has not been
+*  satisfied.
+SELECT ABLBELNR INTO LV_ABLBELNR
+  FROM V_EABL UP TO 1 ROWS
+    WHERE ANLAGE = LV_ANLAGE
+      AND ABLESGR = READREASON
+      AND ABLSTAT  = C_OPEN_READ.
+ENDSELECT.
+IF SY-SUBRC = 0.
+  CALL FUNCTION 'ZFO_METER_READ_ESTIMATE'
+    EXPORTING
+      X_ANLAGE           = LV_ANLAGE
+      X_DATE             = METERREADDATE
+      X_MRREASON         = READREASON
+      X_NODIALOG         = C_TRUE
+      X_COMMIT           = C_TRUE
+    EXCEPTIONS
+      GENERAL_ERROR      = 1
+      NO_MRREL_REGISTERS = 2
+      OTHERS             = 3.
+
+  IF SY-SUBRC <> 0.
+    "CS_WF_RTF_002: RDR block Meter estimation |22-10-2014 HDANNAMA
+    IF SY-SUBRC = 3."Installtion has Smart Meter
+      APPEND INITIAL LINE TO I_ERR_MSG ASSIGNING <FS_ERR_MSG>.
+      <FS_ERR_MSG>-MSGID = CO_MSGID.
+      <FS_ERR_MSG>-MSGNO = CO_MSGNO.
+      <FS_ERR_MSG>-MSGTY = CO_MSGTY.
+      <FS_ERR_MSG>-MSGV1 = LV_ANLAGE.
+      <FS_ERR_MSG>-PROBCLASS = CO_PROBCLASS.
+      UNASSIGN  <FS_ERR_MSG>.
+      SWC_SET_ELEMENT CONTAINER CO_METER CO_VALUE. "CS_WF_RTF_002: RDR block Meter estimation |22-10-2014 HDANNAMA
+
+    ELSEIF SY-MSGID = 'E9' AND SY-MSGNO = '029'.
+      EXIT_RETURN '9001' SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+    ELSE.
+      MOVE: 'ZFO_PMI' TO WA_ERR_MSG-MSGID,
+            '026'     TO WA_ERR_MSG-MSGNO,
+*            'E'       TO wa_err_msg-msgty,    "20081125 Change E to I
+            'I'       TO WA_ERR_MSG-MSGTY,
+            LV_ANLAGE TO WA_ERR_MSG-MSGV1,
+            '3'       TO WA_ERR_MSG-PROBCLASS.
+      APPEND WA_ERR_MSG TO I_ERR_MSG.
+    ENDIF.
+  ENDIF.
+ENDIF.
+SWC_SET_TABLE CONTAINER 'ErrMsg' I_ERR_MSG.
+END_METHOD.
+
+BEGIN_METHOD POSTMTRREADS CHANGING CONTAINER.
+************************************************************************
+* Created by  : Judy Jarone
+* Created on  : 03/05/2007
+* Description : FO_ENH_670_4
+*               Post Installation Meter Reads from Disconnect.
+************************************************************************
+CONSTANTS: C_REC_READ  TYPE ABLESGR VALUE '18',
+           C_DISC_READ TYPE ABLESGR VALUE '13',
+           C_MO_READ   TYPE ABLESGR VALUE '03',
+           C_MI_READ   TYPE ABLESGR VALUE '06',
+           C_OPEN_READ TYPE ABLSTAT VALUE '0'.
+
+DATA:
+      READREASON TYPE EABLG-ABLESGR.
+DATA: BEGIN OF I_MIMO_READS OCCURS 0,
+        ABLBELNR TYPE ABLBELNR,
+        ANLAGE   TYPE ANLAGE,
+        EQUNR    TYPE EQUNR,
+        ZWNUMMER TYPE E_ZWNUMMER,
+        ADATSOLL TYPE ADATSOLL,
+      END OF I_MIMO_READS,
+      BEGIN OF I_DISC_READS OCCURS 0,
+        EQUNR     TYPE EQUNR,
+        ZWNUMMER  TYPE E_ZWNUMMER,
+        V_ZWSTAND TYPE V_ZWSTAND,
+        N_ZWSTAND TYPE N_ZWSTAND,
+      END OF I_DISC_READS,
+      LV_POSTED_READ TYPE ABLESGR,
+      LV_OPEN_READ   TYPE ABLESGR.
+
+SWC_GET_ELEMENT CONTAINER 'ReadReason' READREASON.
+* Move the types of reads we are looking for.
+CASE READREASON.
+  WHEN C_MO_READ.
+*     Processing Move out reads then look for disconnected posted reads
+    MOVE: C_MO_READ   TO LV_OPEN_READ,
+          C_DISC_READ TO LV_POSTED_READ.
+  WHEN C_MI_READ.
+*     Processing Move in reads then look for disconnected posted reads
+    MOVE: C_MI_READ  TO LV_OPEN_READ,
+          C_REC_READ TO LV_POSTED_READ.
+ENDCASE.
+* Get all open reads for the installation
+SELECT ABLBELNR ANLAGE EQUNR ZWNUMMER ADATSOLL
+   INTO TABLE I_MIMO_READS
+ FROM V_EABL
+   WHERE ANLAGE = OBJECT-KEY
+     AND ABLESGR = LV_OPEN_READ
+     AND ABLSTAT = C_OPEN_READ.
+CHECK SY-SUBRC = 0.
+* Get all posted reads for the installation.
+*  SELECT EQUNR ZWNUMMER V_ZWSTAND N_ZWSTAND
+*     INTO TABLE I_DISC_READS
+*   FROM V_EABL
+*     WHERE ANLAGE = OBJECT-KEY
+*       AND ABLESGR = LV_POSTED_READ
+*       AND ABLSTAT NE C_OPEN_READ.
+
+
+END_METHOD.
+
+BEGIN_METHOD ZGETLASTMETERCHARS CHANGING CONTAINER.
+DATA:
+  XANLAGE TYPE EANL-ANLAGE,
+  YMATNR  TYPE EQUI-MATNR,
+*     JJarone 20080107 Defect 10333
+  YDEVLOC TYPE EGERH-DEVLOC,
+  DEVLOC  TYPE SWC_OBJECT.
+*     JJarone 20080107 Defect 10333
+SWC_GET_OBJECT_KEY SELF XANLAGE.
+CALL FUNCTION 'Z_METER_INSTALL_1220'
+  EXPORTING
+    X_ANLAGE = XANLAGE
+  IMPORTING
+    Y_MATNR  = YMATNR
+*     JJarone 20080107 Defect 10333
+    Y_DEVLOC = YDEVLOC
+*     JJarone 20080107 Defect 10333
+  EXCEPTIONS
+    OTHERS   = 01.
+CASE SY-SUBRC.
+  WHEN 0.            " OK
+  WHEN OTHERS.       " to be implemented
+ENDCASE.
+SWC_SET_ELEMENT CONTAINER 'YMatnr' YMATNR.
+*     JJarone 20080107 Defect 10333
+IF YDEVLOC IS NOT INITIAL.
+  SWC_CREATE_OBJECT DEVLOC 'DEVLOC' YDEVLOC.
+  SWC_SET_ELEMENT CONTAINER 'DevLoc' DEVLOC.
+ENDIF.
+*     JJarone 20080107 Defect 10333
+
+END_METHOD.
+
+GET_PROPERTY GTBSCOMMITMENTENDDATE CHANGING CONTAINER.
+DATA : LV_INSTLN TYPE SWC_OBJECT,
+       LV_ANLAGE TYPE ANLAGE,
+       LV_ETTIFN TYPE ETTIFN.
+
+IF OBJECT-GTBSCOMMITMENTENDDATE IS INITIAL.
+
+*   get the primary instllation
+  SWC_GET_PROPERTY SELF 'PrimaryInstallation' LV_INSTLN.
+  SWC_GET_OBJECT_KEY LV_INSTLN LV_ANLAGE.
+
+  IF LV_ANLAGE IS INITIAL.
+    SWC_GET_OBJECT_KEY SELF LV_ANLAGE.
+  ENDIF.
+
+  CALL FUNCTION 'ISU_DB_ETTIFN_SELECT'
+    EXPORTING
+      X_ANLAGE      = LV_ANLAGE
+      X_OPERAND     = 'GT_CNTR'
+    IMPORTING
+      Y_ETTIFN      = LV_ETTIFN
+    EXCEPTIONS
+      NOT_FOUND     = 1
+      NOT_QUALIFIED = 2
+      OTHERS        = 3.
+  IF SY-SUBRC EQ 0.
+    OBJECT-GTBSCOMMITMENTENDDATE = LV_ETTIFN-BIS.
+  ENDIF.
+
+
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'GTBSCommitmentEndDate'
+     OBJECT-GTBSCOMMITMENTENDDATE.
+END_PROPERTY.
+
+GET_PROPERTY DISCDOCSTATUS CHANGING CONTAINER.
+************************************************************************
+* Programmer:  Michael Robson
+* Date:        10/16/2008
+* SC Problem:  PM788304
+* Transport:   ECDK952761
+* Description: Added a check to make sure the installation number is
+*              populated. Otherwise, workflow definition changes will
+*              have run into a run-time error when this property is
+*              used.
+************************************************************************
+DATA: I_V_EDISCOBJ  TYPE STANDARD TABLE OF V_EDISCOBJ,
+      WA_V_EDISCOBJ TYPE V_EDISCOBJ.
+
+*----|START-OF-CHANGE|MMRobson|10/16/2008|PM788304|----*
+CHECK OBJECT-KEY-NUMBER IS NOT INITIAL.
+*----|END-OF-CHANGE|MMRobson|10/16/2008|PM788304|----*
+
+CALL FUNCTION 'ISU_DB_V_EDISCOBJ_SELECT_ANL'
+  EXPORTING
+    X_ANLAGE      = OBJECT-KEY
+    X_KEYDATE     = SY-DATUM
+    X_ACTUAL      = 'X'
+  TABLES
+    YT_V_EDISCOBJ = I_V_EDISCOBJ.
+
+IF I_V_EDISCOBJ[] IS NOT INITIAL.
+  READ TABLE I_V_EDISCOBJ INTO WA_V_EDISCOBJ INDEX 1.
+
+  SELECT SINGLE STATUS INTO OBJECT-DISCDOCSTATUS
+    FROM EDISCDOC
+      WHERE DISCNO =  WA_V_EDISCOBJ-DISCNO.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'DiscDocStatus' OBJECT-DISCDOCSTATUS.
+
+
+
+END_PROPERTY.
+
+GET_PROPERTY NOREADHIST CHANGING CONTAINER.
+************************************************************************
+* Created by  : Judy Jarone
+* Created on  : 03/05/2007
+* Description : FO_ENH_670_6
+*               Returns flag if no meter read if found where read by
+*               the utility, customer, or internet in the past 90 days.
+************************************************************************
+CONSTANTS: C_NO_OF_DAYS_PAST TYPE I VALUE '90'.
+
+DATA: LV_START_DATE TYPE I,
+      LV_COUNT      TYPE I,
+      O_DEVICES     TYPE SWC_OBJECT OCCURS 0.
+*  Check if a meter is installed to this installaiton
+SWC_GET_TABLE_PROPERTY SELF 'zCurrentDevices' O_DEVICES.
+IF O_DEVICES[] IS INITIAL.
+  CLEAR OBJECT-NOREADHIST.
+ELSE.
+  LV_START_DATE = SY-DATUM - C_NO_OF_DAYS_PAST.
+
+  SELECT COUNT( * )  INTO LV_COUNT
+    FROM EABLG AS G
+      JOIN EABL AS L
+        ON G~ABLBELNR = L~ABLBELNR
+    WHERE G~ANLAGE = OBJECT-KEY
+*      AND G~ABLESGR = '01'
+      AND L~ADAT >= LV_START_DATE
+      AND L~ISTABLART IN ('01', '02', '06')
+      AND L~ABLSTAT NE '0'.
+  IF SY-SUBRC = 0.
+    CLEAR OBJECT-NOREADHIST.
+  ELSE.
+    MOVE 'X' TO OBJECT-NOREADHIST.
+  ENDIF.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'NoReadHist'  OBJECT-NOREADHIST.
+
+END_PROPERTY.
+
+BEGIN_METHOD GETRECORDERCODE CHANGING CONTAINER.
+************************************************************************
+* Created by  : Judy Jarone
+* Created on  : 05/14/2007
+* Description : Determine reconnect order code.  Assumption is a meter
+************************************************************************
+* Changed by  : Gilbert Chong
+* Change date : 07/25/2007
+* Description : Collection of error messages
+************************************************************************
+CONSTANTS: C_DISCON_STATUS TYPE EDISCDOC-STATUS VALUE '21',
+           C_MARKED        TYPE C VALUE 'X'.
+DATA:
+  LV_HARDSHIPFLAG TYPE ZTFO_REC_ORD_CD-HARDSHIP_FLAG,
+  MOVEINONLY      TYPE REGEN-KENNZX,
+  HARDSHIPFLAG    TYPE EBAGEN-ACTSTAT,
+  ORDERCODEDTLS   TYPE ZTFO_REC_ORD_CD,
+*     lv_discdocstatus TYPE ediscdoc-status,
+  LV_INSTSTATUS   TYPE EDISCOBJ-DISCSTATE,
+*     o_discdoc        TYPE swc_object OCCURS 0,
+  LV_DISCNO       TYPE EDISCDOC-DISCNO,
+  O_DIVISION      TYPE SWC_OBJECT,
+  O_CONTRACT      TYPE SWC_OBJECT OCCURS 0,
+  WA_CONTRACT     TYPE SWC_OBJECT,
+  WA_DISCDOC      TYPE SWC_OBJECT,
+  I_CONTAINER     TYPE TABLE OF SWCONT,
+  LV_DISCTYPE     TYPE EDISCPOS-DISCTYPE,
+  LV_DIVISION     TYPE TSPA-SPART,
+  LV_DISCREASON   TYPE EDISCDOC-DISCREASON,
+  LV_DUNNING_FLAG TYPE KENNZX,
+  LV_MOVEIN_DATE  TYPE EVER-EINZDAT.
+DATA : WA_ERR_MSG TYPE ZSFO_BAL_MSG,
+       IT_ERR_MSG TYPE STANDARD TABLE OF ZSFO_BAL_MSG.
+DATA : L_V_ANLAGE TYPE ANLAGE.
+SWC_GET_OBJECT_KEY SELF L_V_ANLAGE.
+SWC_GET_TABLE CONTAINER 'ErrMsg' IT_ERR_MSG.
+
+SWC_GET_ELEMENT CONTAINER 'HardshipFlag' HARDSHIPFLAG.
+SWC_GET_ELEMENT CONTAINER 'MoveInOnly' MOVEINONLY.
+* swc_get_property self 'DiscDocStatus' lv_discdocstatus. "ADE
+
+* CHECK lv_discdocstatus = c_discon_status. "ADE
+
+SWC_GET_PROPERTY SELF 'Division' O_DIVISION.
+SWC_GET_PROPERTY O_DIVISION 'Division' LV_DIVISION.
+* swc_get_table_property self 'ActDisconnectionDocuments' o_discdoc."ADE
+SWC_GET_TABLE_PROPERTY SELF 'CurrentContract' O_CONTRACT.
+CASE HARDSHIPFLAG.
+  WHEN '2'.
+    MOVE C_MARKED TO LV_HARDSHIPFLAG.
+  WHEN OTHERS.
+    CLEAR LV_HARDSHIPFLAG.
+ENDCASE.
+* Start of commenting by ADE
+* Loop at each disc activity for the one we want.
+*LOOP AT o_discdoc INTO wa_discdoc.
+*  swc_get_property wa_discdoc 'State' lv_discdocstatus.
+** In the event that more than one disconnect doc exist perform the
+** following check to ensure the status of 21.
+*  CHECK lv_discdocstatus = c_discon_status.
+*  swc_set_element container 'CURRDISCDOC' wa_discdoc.
+** Get the reconnect reason
+*  swc_get_property wa_discdoc 'Reason' lv_discreason.
+*  CLEAR lv_dunning_flag.
+** check if the reconnect should be dunning related.
+*  IF lv_discreason = '01' AND moveinonly IS INITIAL.
+*    LOOP AT o_contract INTO wa_contract.
+*      swc_get_property wa_contract 'MoveInDate' lv_movein_date.
+*      IF lv_movein_date < sy-datum.
+*        MOVE 'X' TO lv_dunning_flag.
+*        EXIT.
+*      ENDIF.
+*    ENDLOOP.
+*  ENDIF.
+**   Get the reconnect order type.
+*  swc_set_element i_container 'Installation' object-key.
+*  swc_call_method wa_discdoc 'DetermineDiscType' i_container.
+*  swc_get_element i_container 'DiscType' lv_disctype.
+*  SELECT * INTO ordercodedtls
+*    FROM ztfo_rec_ord_cd UP TO 1 ROWS
+*      WHERE hardship_flag = lv_hardshipflag
+*        AND dunning_flag  = lv_dunning_flag
+*        AND sparte        = lv_division
+*        AND discreason    = lv_discreason
+*        AND disctype      = lv_disctype.
+*  ENDSELECT.
+*  IF sy-subrc = 0.
+*    EXIT.
+*  ENDIF.
+*ENDLOOP.
+* End of commenting by ADE
+CALL FUNCTION 'Z_GET_INSTLN_DISCON_STATUS'
+  EXPORTING
+    X_ANLAGE       = L_V_ANLAGE
+  IMPORTING
+    Y_STATUS       = LV_INSTSTATUS
+    Y_DISCNO       = LV_DISCNO
+  EXCEPTIONS
+    INTERNAL_ERROR = 1
+    OTHERS         = 2.
+IF SY-SUBRC <> 0.
+  MOVE :  SY-MSGID TO WA_ERR_MSG-MSGID,
+          SY-MSGNO TO WA_ERR_MSG-MSGNO,
+          SY-MSGTY TO WA_ERR_MSG-MSGTY,
+          SY-MSGV1 TO WA_ERR_MSG-MSGV1,
+          SY-MSGV2 TO WA_ERR_MSG-MSGV2,
+          SY-MSGV3 TO WA_ERR_MSG-MSGV3,
+          SY-MSGV4 TO WA_ERR_MSG-MSGV4.
+  APPEND WA_ERR_MSG TO IT_ERR_MSG.
+  SWC_SET_TABLE CONTAINER 'ErrMsg' IT_ERR_MSG.
+  EXIT_RETURN 9002 SPACE SPACE SPACE SPACE.
+ENDIF.
+
+CHECK LV_INSTSTATUS = '03'. "Disconnection order generated
+
+SWC_CREATE_OBJECT WA_DISCDOC 'DISCONNECT' LV_DISCNO.
+SWC_SET_ELEMENT CONTAINER 'CURRDISCDOC' WA_DISCDOC.
+
+* Get the reconnect reason
+SWC_GET_PROPERTY WA_DISCDOC 'Reason' LV_DISCREASON.
+CLEAR LV_DUNNING_FLAG.
+* check if the reconnect should be dunning related.
+IF LV_DISCREASON = '01' AND MOVEINONLY IS INITIAL.
+  LOOP AT O_CONTRACT INTO WA_CONTRACT.
+    SWC_GET_PROPERTY WA_CONTRACT 'MoveInDate' LV_MOVEIN_DATE.
+    IF LV_MOVEIN_DATE <= SY-DATUM.
+      MOVE 'X' TO LV_DUNNING_FLAG.
+      EXIT.
+    ENDIF.
+  ENDLOOP.
+ENDIF.
+
+*   Get the reconnect order type.
+SWC_SET_ELEMENT I_CONTAINER 'Installation' OBJECT-KEY.
+SWC_CALL_METHOD WA_DISCDOC 'DetermineDiscType' I_CONTAINER.
+SWC_GET_ELEMENT I_CONTAINER 'DiscType' LV_DISCTYPE.
+SELECT * INTO ORDERCODEDTLS
+  FROM ZTFO_REC_ORD_CD UP TO 1 ROWS
+   WHERE HARDSHIP_FLAG = LV_HARDSHIPFLAG
+      AND DUNNING_FLAG  = LV_DUNNING_FLAG
+      AND SPARTE        = LV_DIVISION
+      AND DISCREASON    = LV_DISCREASON
+      AND DISCTYPE      = LV_DISCTYPE.
+ENDSELECT.
+
+IF ORDERCODEDTLS IS INITIAL.
+  MOVE : 'ZFO_PMI'   TO WA_ERR_MSG-MSGID,
+         '013'       TO WA_ERR_MSG-MSGNO,
+         'E'         TO WA_ERR_MSG-MSGTY,
+         LV_DIVISION TO WA_ERR_MSG-MSGV1,
+         LV_DISCTYPE TO WA_ERR_MSG-MSGV2,
+         ' '         TO WA_ERR_MSG-PROBCLASS.
+  APPEND WA_ERR_MSG TO IT_ERR_MSG.
+  SWC_SET_TABLE CONTAINER 'ErrMsg' IT_ERR_MSG.
+  EXIT_RETURN 9001 LV_DIVISION LV_DISCTYPE HARDSHIPFLAG SPACE.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'OrderCodeDtls' ORDERCODEDTLS.
+END_METHOD.
+
+BEGIN_METHOD PROCESSRECONNECT CHANGING CONTAINER.
+************************************************************************
+* Created by  : Judy Jarone
+* Created on  : 05/16/2007
+* Description : FO_ENH_670_5
+*               Cancels reconnect service order and enter reconnect
+*               confirmation called from ZMOVINDOC.ReverseMoveInInstln
+************************************************************************
+* Programmer:  Michael Robson
+* Date:        02/18/2009
+* SC Problem:  PM841485
+* Transport:   ECDK956709
+* Description: Added the Partner parameter. This will be passed to the
+*              Disconnect.EnterRecActivity method.
+************************************************************************
+CONSTANTS: C_RECON_STARTED TYPE EDISCDOC-STATUS VALUE '22',
+           C_INSTLN_DISCD  TYPE ES31GEN-EANLDISCST VALUE '10'.
+DATA:
+  DISCACTTYP       TYPE EDISCACT-DISCACTTYP,
+  ORDSTATE         TYPE EDISCACT-ORDSTATE,
+  NEWORDSTATE      TYPE EDISCACT-ORDSTATE,
+  IO_DISCDOC       TYPE TABLE OF SWC_OBJECT,
+  WA_DISCDOC       TYPE SWC_OBJECT,
+  O_CONTAINER      TYPE TABLE OF SWCONT,
+  LV_DISCDOCSTATUS TYPE EDISCDOC-STATUS,
+  LV_INSTLN_STATUS TYPE ES31GEN-EANLDISCST.
+DATA: WA_ERR_MSG TYPE ZSFO_BAL_MSG,
+      I_ERR_MSG  TYPE STANDARD TABLE OF ZSFO_BAL_MSG.
+
+*----|START-OF-CHANGE|MMRobson|02/18/2009|PM841485|----*
+DATA: LO_PARTNER TYPE SWC_OBJECT.
+*----|END-OF-CHANGE|MMRobson|02/18/2009|PM841485|----*
+
+SWC_GET_ELEMENT CONTAINER 'DiscActTyp'  DISCACTTYP.
+SWC_GET_ELEMENT CONTAINER 'OrdState'    ORDSTATE.
+SWC_GET_ELEMENT CONTAINER 'NewOrdState' NEWORDSTATE.
+SWC_GET_TABLE CONTAINER 'ErrMsg' I_ERR_MSG.
+*----|START-OF-CHANGE|MMRobson|02/18/2009|PM841485|----*
+SWC_GET_ELEMENT CONTAINER 'Partner' LO_PARTNER.
+IF LO_PARTNER IS NOT INITIAL.
+  SWC_SET_ELEMENT O_CONTAINER 'Partner' LO_PARTNER.
+ENDIF.
+
+SWC_SET_ELEMENT O_CONTAINER 'DiscActTyp' DISCACTTYP.
+SWC_SET_ELEMENT O_CONTAINER 'OrdState' DISCACTTYP.
+SWC_SET_ELEMENT O_CONTAINER 'NewOrdState' NEWORDSTATE.
+*----|END-OF-CHANGE|MMRobson|02/18/2009|PM841485|----*
+* Get all the active disconnect documents.
+SWC_GET_TABLE_PROPERTY SELF 'ActDisconnectionDocuments' IO_DISCDOC.
+LOOP AT IO_DISCDOC INTO WA_DISCDOC.
+  SWC_GET_PROPERTY WA_DISCDOC 'State' LV_DISCDOCSTATUS.
+* Check if disc doc has status of reconnect started.
+  CHECK LV_DISCDOCSTATUS = C_RECON_STARTED.
+*----|START-OF-CHANGE|MMRobson|02/18/2009|PM841485|----*
+*  swc_set_element o_container 'DiscActTyp' discacttyp.
+*  swc_set_element o_container 'OrdState' discacttyp.
+*  swc_set_element o_container 'NewOrdState' newordstate.
+*----|END-OF-CHANGE|MMRobson|02/18/2009|PM841485|----*
+*   Call method to enter the confirmation for the disc doc activity.
+  SWC_CALL_METHOD WA_DISCDOC 'EnterRecActivity' O_CONTAINER.
+ENDLOOP.
+SWC_SET_TABLE CONTAINER 'ErrMsg' I_ERR_MSG.
+END_METHOD.
+
+GET_PROPERTY HASINTDEVICEINSTALLED CHANGING CONTAINER.
+DATA : LT_DEVICES    TYPE TABLE OF SWC_OBJECT,
+       LV_DEVICE     TYPE SWC_OBJECT,
+       LV_ISINTERVAL TYPE KENNZX.
+
+IF OBJECT-HASINTDEVICEINSTALLED EQ SPACE.
+  SWC_GET_TABLE_PROPERTY SELF 'CurrentDevices' LT_DEVICES.
+  LOOP AT LT_DEVICES INTO LV_DEVICE.
+    SWC_GET_PROPERTY LV_DEVICE 'IsIntervalDevice' LV_ISINTERVAL.
+    IF LV_ISINTERVAL NE SPACE.
+*        only need to find one interval device to return TRUE
+      OBJECT-HASINTDEVICEINSTALLED = LV_ISINTERVAL.
+      EXIT.
+    ENDIF.
+  ENDLOOP.
+ENDIF.
+
+SWC_SET_ELEMENT CONTAINER 'HASINTDEVICEINSTALLED'
+     OBJECT-HASINTDEVICEINSTALLED.
+END_PROPERTY.
+
+BEGIN_METHOD GETBILLMONTH CHANGING CONTAINER.
+DATA:
+  BILLMONTH           TYPE TE417-ZUORDDAT,
+  EFFECTIVEDATE       TYPE SYST-DATUM,
+  LV_BILLINGALLOCDATE TYPE DATUM,
+  LV_MONAT            TYPE MONAT,
+  LV_JAHR             TYPE JAHR.
+
+SWC_GET_ELEMENT CONTAINER 'effectivedate' EFFECTIVEDATE.
+
+CALL FUNCTION 'ZISU_DATE_GETBILLMONTH'
+  EXPORTING
+    X_ANLAGE    = OBJECT-KEY-NUMBER
+    X_DATE      = EFFECTIVEDATE
+  IMPORTING
+    Y_BILLMONTH = LV_MONAT
+    Y_BILLYEAR  = LV_JAHR
+    Y_ENDDATE   = LV_BILLINGALLOCDATE.
+.
+CONCATENATE LV_JAHR LV_MONAT '01' INTO BILLMONTH.
+
+SWC_SET_ELEMENT CONTAINER 'BillMonth' BILLMONTH.
+SWC_SET_ELEMENT CONTAINER 'AllocDateFBillg' LV_BILLINGALLOCDATE.
+END_METHOD.
+
+BEGIN_METHOD GETCURRENTMETERFORDATE CHANGING CONTAINER.
+*&---------------------------------------------------------------------*
+* Changed by  : Gilbert Chong
+* Change date : 07/25/2007
+* Description : Collection of error messages
+*----------------------------------------------------------------------*
+CONSTANTS:
+      C_TYPE_METER VALUE 'Z'.
+
+DATA: D_CONTAINER TYPE TABLE OF SWCONT,
+      L_KEYDATE   TYPE SY-DATUM,
+      LT_DEVICES  TYPE SWC_OBJECT OCCURS 0,
+      L_MATERIAL  TYPE SWC_OBJECT,
+      L_KOMBINAT  TYPE KOMBINAT,
+      L_DEVICE    TYPE SWC_OBJECT.
+DATA : WA_ERR_MSG TYPE ZSFO_BAL_MSG,
+       IT_ERR_MSG TYPE STANDARD TABLE OF ZSFO_BAL_MSG.
+SWC_GET_TABLE   CONTAINER 'ErrMsg'    IT_ERR_MSG.
+
+* swc_get_property self 'MoveInDate' l_midate.
+SWC_GET_ELEMENT  CONTAINER 'KeyDate' L_KEYDATE.
+SWC_SET_ELEMENT  D_CONTAINER 'KeyDate' L_KEYDATE.
+SWC_CALL_METHOD SELF 'GetDevicesForDate' D_CONTAINER.
+SWC_GET_TABLE D_CONTAINER 'Devices' LT_DEVICES.
+
+LOOP AT LT_DEVICES INTO L_DEVICE.
+  SWC_GET_PROPERTY L_DEVICE 'Material' L_MATERIAL.
+  SWC_GET_PROPERTY L_MATERIAL 'DevCatCombination' L_KOMBINAT.
+  IF L_KOMBINAT EQ C_TYPE_METER.
+    SWC_SET_ELEMENT CONTAINER 'Device' L_DEVICE.
+    EXIT.
+  ENDIF.
+ENDLOOP.
+* If no devices found
+IF SY-SUBRC NE 0.
+  MOVE : 'ZFO_PMI'         TO WA_ERR_MSG-MSGID,
+         '040'             TO WA_ERR_MSG-MSGNO,
+         'I'               TO WA_ERR_MSG-MSGTY,
+         OBJECT-KEY-NUMBER TO WA_ERR_MSG-MSGV1,
+         ' '               TO WA_ERR_MSG-PROBCLASS.
+  APPEND WA_ERR_MSG TO IT_ERR_MSG.
+ENDIF.
+* Set error message table
+SWC_GET_TABLE   CONTAINER 'ErrMsg'    IT_ERR_MSG.
+
+END_METHOD.
+
+GET_PROPERTY PRICEKEYDESIGNATOR CHANGING CONTAINER.
+DATA :   LV_BILLINGCLASS TYPE SWC_OBJECT,
+         LV_AKLASSE      TYPE AKLASSE,
+         LV_DIVISION     TYPE SWC_OBJECT,                       "KA001+
+         LV_SPARTE       TYPE SPARTE.                             "KA001+
+IF OBJECT-PRICEKEYDESIGNATOR IS INITIAL.
+  SWC_GET_PROPERTY SELF 'Division' LV_DIVISION.             "KA001+
+  SWC_GET_PROPERTY LV_DIVISION 'Division' LV_SPARTE.        "KA001+
+  SWC_GET_PROPERTY SELF 'ActBillingCls' LV_BILLINGCLASS.
+  SWC_GET_OBJECT_KEY LV_BILLINGCLASS LV_AKLASSE.
+* Start of insert KA001+
+  IF LV_SPARTE = ZIF_SWITCH_CONST=>CO_SPARTE_EL.
+    CASE LV_AKLASSE.
+      WHEN ZIF_SWITCH_CONST=>CO_AKLASSE_RESIDENTIAL.
+        OBJECT-PRICEKEYDESIGNATOR = '_R_'.
+      WHEN ZIF_SWITCH_CONST=>CO_AKLASSE_COMM_INDUS.
+        OBJECT-PRICEKEYDESIGNATOR = '_C_'.
+    ENDCASE.
+  ELSE.
+* End of insert KA001+
+    CASE LV_AKLASSE.
+      WHEN ZIF_SWITCH_CONST=>CO_AKLASSE_COMM_INDUS.
+        OBJECT-PRICEKEYDESIGNATOR = '_GC_'.
+      WHEN ZIF_SWITCH_CONST=>CO_AKLASSE_RESIDENTIAL.
+        OBJECT-PRICEKEYDESIGNATOR = '_GS_'.
+    ENDCASE.
+  ENDIF.
+ENDIF.                                                      "KA001+
+
+SWC_SET_ELEMENT CONTAINER 'PriceKeyDesignator'
+     OBJECT-PRICEKEYDESIGNATOR.
+END_PROPERTY.
+
+BEGIN_METHOD GETRATECATBYDATE CHANGING CONTAINER.
+************************************************************************
+* Changed by  : Gilbert Chong
+* Change date : 07/25/2007
+* Description : Collection of error messages
+************************************************************************
+DATA:
+  KEYDATE    TYPE SYST-DATUM,
+  L_TARIFTYP TYPE TARIFTYP,
+  VEANL      LIKE V_EANL.
+DATA : WA_ERR_MSG TYPE ZSFO_BAL_MSG,
+       IT_ERR_MSG TYPE STANDARD TABLE OF ZSFO_BAL_MSG.
+SWC_GET_TABLE CONTAINER 'ErrMsg' IT_ERR_MSG.
+
+SWC_GET_ELEMENT CONTAINER 'KeyDate' KEYDATE.
+
+CALL FUNCTION 'ISU_DB_EANL_SELECT'
+  EXPORTING
+    X_ANLAGE     = OBJECT-KEY-NUMBER
+    X_KEYDATE    = KEYDATE
+*   X_ACTUAL     =
+  IMPORTING
+    Y_V_EANL     = VEANL
+  EXCEPTIONS
+    NOT_FOUND    = 1
+    SYSTEM_ERROR = 2
+    INVALID_DATE = 3
+    OTHERS       = 4.
+IF SY-SUBRC <> 0.
+  MOVE : 'ZFO' TO WA_ERR_MSG-MSGID,
+         '083'     TO WA_ERR_MSG-MSGNO,
+         'E'       TO WA_ERR_MSG-MSGTY,
+         KEYDATE   TO WA_ERR_MSG-MSGV1,
+         ' '       TO WA_ERR_MSG-PROBCLASS.
+  APPEND WA_ERR_MSG TO IT_ERR_MSG.
+  SWC_SET_TABLE CONTAINER 'ErrMsg' IT_ERR_MSG.
+  EXIT_RETURN 9001 KEYDATE SPACE SPACE SPACE.
+ELSE.
+  L_TARIFTYP = VEANL-TARIFTYP.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'RateCategory' L_TARIFTYP.
+CLEAR L_TARIFTYP.
+END_METHOD.
+
+BEGIN_METHOD DISPLAYSERVICENOTIFICATIONS CHANGING CONTAINER.
+SET PARAMETER ID 'ANL' FIELD OBJECT-KEY-NUMBER.
+CALL TRANSACTION 'IW59'.
+
+END_METHOD.
+
+BEGIN_METHOD GETDISCONNECTOBJECT CHANGING CONTAINER.
+
+************************************************************************
+* Created by  : Judy Jarone
+* Created on  : 7/3/2007
+* Description : FOP
+*              There should only be one active disconnect document so
+*              loop at internal table and returna a singe disc doc
+************************************************************************
+DATA:
+  DISCDOC    TYPE SWC_OBJECT,
+  IO_DISCDOC TYPE TABLE OF SWC_OBJECT.
+
+SWC_GET_TABLE_PROPERTY SELF 'ActDisconnectionDocuments' IO_DISCDOC.
+IF IO_DISCDOC[] IS NOT INITIAL.
+  READ TABLE IO_DISCDOC INTO DISCDOC INDEX 1.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'DiscDoc' DISCDOC.
+END_METHOD.
+
+GET_PROPERTY ZRRPFACT CHANGING CONTAINER.
+****************************************************************
+*Developer: Chad Essenmacher
+*Date:      July 2007
+*Desc:      This will load up the RRP installation fact if present.
+****************************************************************
+DATA: R_ERR_OBJ        TYPE REF TO CX_ROOT.
+DATA: L_ANLAGE         TYPE ANLAGE.
+
+TRY.
+    L_ANLAGE = OBJECT-KEY.
+    CALL FUNCTION 'Z_80PCT_GET_INSTALL_FACTS'
+      EXPORTING
+        PI_ANLAGE        = L_ANLAGE
+      IMPORTING
+        PE_RRP_OPERAND   = OBJECT-ZRRPFACT
+      EXCEPTIONS
+        UNEXPECTED_ERROR = 1
+        OTHERS           = 2.
+    IF SY-SUBRC <> 0.
+      CLEAR OBJECT-ZRRPFACT.
+    ENDIF.
+
+  CATCH CX_ROOT INTO R_ERR_OBJ.
+    CLEAR OBJECT-ZRRPFACT.
+ENDTRY.
+
+SWC_SET_ELEMENT CONTAINER 'ZRRPFact' OBJECT-ZRRPFACT.
+END_PROPERTY.
+
+GET_PROPERTY ZRRPFACTDESC CHANGING CONTAINER.
+****************************************************************
+*Developer: Chad Essenmacher
+*Date:      July 2007
+*Desc:      This will load up the RRP installation fact desc if present.
+****************************************************************
+DATA: R_ERR_OBJ        TYPE REF TO CX_ROOT.
+DATA: L_ANLAGE         TYPE ANLAGE.
+
+TRY.
+    L_ANLAGE = OBJECT-KEY.
+    CALL FUNCTION 'Z_80PCT_GET_INSTALL_FACTS'
+      EXPORTING
+        PI_ANLAGE        = L_ANLAGE
+      IMPORTING
+        PE_RRP_TXT       = OBJECT-ZRRPFACTDESC
+      EXCEPTIONS
+        UNEXPECTED_ERROR = 1
+        OTHERS           = 2.
+    IF SY-SUBRC <> 0.
+      CLEAR OBJECT-ZRRPFACTDESC.
+    ENDIF.
+
+  CATCH CX_ROOT INTO R_ERR_OBJ.
+    CLEAR OBJECT-ZRRPFACTDESC.
+ENDTRY.
+
+SWC_SET_ELEMENT CONTAINER 'ZRRPFactDesc' OBJECT-ZRRPFACTDESC.
+END_PROPERTY.
+
+GET_PROPERTY ZINSTLFACTMAIN CHANGING CONTAINER.
+****************************************************************
+*Developer: Chad Essenmacher
+*Date:      July 2007
+*Desc:      This will load up the installation fact if present.
+****************************************************************
+DATA: R_ERR_OBJ        TYPE REF TO CX_ROOT.
+DATA: L_ANLAGE         TYPE ANLAGE.
+
+TRY.
+    L_ANLAGE = OBJECT-KEY.
+    CALL FUNCTION 'Z_80PCT_GET_INSTALL_FACTS'
+      EXPORTING
+        PI_ANLAGE        = L_ANLAGE
+      IMPORTING
+        PE_MAIN_FACT     = OBJECT-ZINSTLFACTMAIN
+      EXCEPTIONS
+        UNEXPECTED_ERROR = 1
+        OTHERS           = 2.
+    IF SY-SUBRC <> 0.
+      CLEAR OBJECT-ZINSTLFACTMAIN.
+    ENDIF.
+
+  CATCH CX_ROOT INTO R_ERR_OBJ.
+    CLEAR OBJECT-ZINSTLFACTMAIN.
+ENDTRY.
+
+SWC_SET_ELEMENT CONTAINER 'ZInstlFactMain' OBJECT-ZINSTLFACTMAIN.
+END_PROPERTY.
+
+GET_PROPERTY ZINSTLFACTMAINDESC CHANGING CONTAINER.
+****************************************************************
+*Developer: Chad Essenmacher
+*Date:      July 2007
+*Desc:      This will load up the installation fact desc if present.
+****************************************************************
+DATA: R_ERR_OBJ        TYPE REF TO CX_ROOT.
+DATA: L_ANLAGE         TYPE ANLAGE.
+
+TRY.
+    L_ANLAGE = OBJECT-KEY.
+    CALL FUNCTION 'Z_80PCT_GET_INSTALL_FACTS'
+      EXPORTING
+        PI_ANLAGE        = L_ANLAGE
+      IMPORTING
+        PE_MAIN_FACT_TXT = OBJECT-ZINSTLFACTMAINDESC
+      EXCEPTIONS
+        UNEXPECTED_ERROR = 1
+        OTHERS           = 2.
+    IF SY-SUBRC <> 0.
+      CLEAR OBJECT-ZINSTLFACTMAINDESC.
+    ENDIF.
+
+  CATCH CX_ROOT INTO R_ERR_OBJ.
+    CLEAR OBJECT-ZINSTLFACTMAINDESC.
+ENDTRY.
+
+SWC_SET_ELEMENT CONTAINER 'ZInstlFactMainDesc'
+     OBJECT-ZINSTLFACTMAINDESC.
+END_PROPERTY.
+
+BEGIN_METHOD SORTMOVEININSTLN CHANGING CONTAINER.
+****************************************************************
+*Developer: Judy Jarone
+*Date:      July 18, 2007
+*Desc:      Sort move in installations gas first.
+****************************************************************
+
+DATA:  INSTLNS     TYPE SWC_OBJECT OCCURS 0,
+       WA_INSTLNS  TYPE SWC_OBJECT,
+       WA_DIVISION TYPE SWC_OBJECT,
+       IO_INSTLNS  TYPE SWC_OBJECT,
+       LV_SPARTE   TYPE TSPA-SPART,
+       BEGIN OF I_INSTLNS OCCURS 0,
+         INSTLN TYPE SWC_OBJECT,
+         SPARTE TYPE TSPA-SPART,
+       END OF I_INSTLNS.
+
+SWC_GET_TABLE CONTAINER 'Instlns' INSTLNS.
+LOOP AT INSTLNS INTO I_INSTLNS-INSTLN.
+  SWC_GET_PROPERTY I_INSTLNS-INSTLN 'Division' WA_DIVISION.
+  SWC_GET_OBJECT_KEY WA_DIVISION I_INSTLNS-SPARTE.
+  APPEND I_INSTLNS.
+ENDLOOP.
+SORT I_INSTLNS BY SPARTE DESCENDING.
+REFRESH INSTLNS.
+LOOP AT I_INSTLNS.
+  MOVE I_INSTLNS-INSTLN TO WA_INSTLNS.
+  APPEND WA_INSTLNS TO INSTLNS.
+ENDLOOP.
+SWC_SET_TABLE CONTAINER 'Instlns' INSTLNS.
+END_METHOD.
+
+BEGIN_METHOD SETMOVEINSERVICEORDER CHANGING CONTAINER.
+****************************************************************
+*Developer: Judy Jarone
+*Date:      July 18, 2007
+*Desc:      Create service order installation relationship
+****************************************************************
+
+DATA: SERVICEORDER   TYPE SWC_OBJECT,
+      INSTALLOPTIONS LIKE ZFOCS_INSTALL_OPTION OCCURS 0.
+
+FIELD-SYMBOLS: <INSTLOPT> TYPE ZFOCS_INSTALL_OPTION.
+SWC_GET_ELEMENT CONTAINER 'ServiceOrder' SERVICEORDER.
+IF SERVICEORDER IS NOT INITIAL.
+  SWC_GET_TABLE CONTAINER 'InstallOptions' INSTALLOPTIONS.
+  READ TABLE INSTALLOPTIONS ASSIGNING <INSTLOPT>
+     WITH KEY ANLAGE = OBJECT-KEY.
+  IF SY-SUBRC = 0.
+    SWC_GET_OBJECT_KEY SERVICEORDER  <INSTLOPT>-AUFNR.
+  ENDIF.
+ENDIF.
+SWC_SET_TABLE CONTAINER 'InstallOptions' INSTALLOPTIONS.
+END_METHOD.
+
+BEGIN_METHOD ZQUALIFYCONNECTFEE CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 07/26/2007
+* Description : Using the PMI screen parameters, determine whether
+*               current installation qualifies for a connect fee
+************************************************************************
+
+* Declaration
+DATA: L_CONNFEE            TYPE DFKKOP-BETRW,
+      IT_LISTOFMIINSTLNOPT LIKE ZFOCS_INSTALL_OPTION OCCURS 0
+                                                     WITH HEADER LINE.
+
+* Initialisation
+CLEAR : L_CONNFEE, IT_LISTOFMIINSTLNOPT, IT_LISTOFMIINSTLNOPT[].
+
+* Obtain container
+SWC_GET_TABLE CONTAINER 'ListOfMIInstlnOpt' IT_LISTOFMIINSTLNOPT.
+
+* Check table for connection fee
+READ TABLE IT_LISTOFMIINSTLNOPT WITH KEY ANLAGE = OBJECT-KEY.
+L_CONNFEE = IT_LISTOFMIINSTLNOPT-CONN_FEE.
+
+* Set container
+SWC_SET_ELEMENT CONTAINER 'ConnFee' L_CONNFEE.
+END_METHOD.
+
+GET_PROPERTY AGGREGATEINSTALLATIONS CHANGING CONTAINER.
+DATA : LT_ANLAGE     TYPE TABLE OF ANLAGE,
+       LV_ANLAGE     LIKE LINE OF LT_ANLAGE,
+       LV_AGG_INSTLN TYPE SWC_OBJECT.
+
+IF OBJECT-AGGREGATEINSTALLATIONS[] IS INITIAL.
+  SELECT ANLAGE FROM ETTIFN
+    INTO TABLE LT_ANLAGE
+    WHERE OPERAND = 'PRIME_INST'
+    AND   STRING1 = OBJECT-KEY-NUMBER.
+
+  LOOP AT LT_ANLAGE INTO LV_ANLAGE.
+    SWC_CREATE_OBJECT LV_AGG_INSTLN 'INSTLN' LV_ANLAGE.
+    APPEND LV_AGG_INSTLN TO OBJECT-AGGREGATEINSTALLATIONS.
+  ENDLOOP.
+ENDIF.
+
+SWC_SET_TABLE CONTAINER 'AggregateInstallations'
+     OBJECT-AGGREGATEINSTALLATIONS.
+
+END_PROPERTY.
+
+BEGIN_METHOD DISPLAYAGGREGATEOVERVIEW CHANGING CONTAINER.
+
+CALL FUNCTION 'ZBI_AGGREGATE_INSTLN_DISPLAY'
+  EXPORTING
+    X_PRIMARY  = SELF
+  EXCEPTIONS
+    NONE_FOUND = 1
+    OTHERS     = 2.
+.
+IF SY-SUBRC <> 0.
+  MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+          WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+ENDIF.
+
+END_METHOD.
+
+GET_PROPERTY SHORTTEXT CHANGING CONTAINER.
+
+IF OBJECT-SHORTTEXT IS INITIAL.
+  DATA:
+    RC         LIKE SY-SUBRC,
+    ADRLINES   LIKE EADRLN,
+    DIVTEXT    LIKE TSPAT-VTEXT,
+    LV_EANL    TYPE EANL,
+    LV_STRING2 TYPE STRING2.
+
+  CALL FUNCTION 'ISU_DB_EANLS_SINGLE'
+    EXPORTING
+      X_ANLAGE     = OBJECT-KEY-NUMBER
+    IMPORTING
+      Y_EANL       = LV_EANL
+    EXCEPTIONS
+      NOT_FOUND    = 1
+      SYSTEM_ERROR = 2
+      OTHERS       = 3.
+
+  IF RC <> 0.
+    EXIT_OBJECT_NOT_FOUND.
+  ENDIF.
+
+* get division-text
+  SWC_GET_PROPERTY SELF 'DivisionText' DIVTEXT.
+
+* get address
+  CALL FUNCTION 'ISU_ADDRESS_PROVIDE'
+    EXPORTING
+      X_ADDRESS_TYPE   = 'I'
+      X_LENGTH         = 39
+      X_EANL           = LV_EANL
+    IMPORTING
+      Y_ADDR_LINES     = ADRLINES
+    EXCEPTIONS
+      NOT_FOUND        = 1
+      PARAMETER_ERROR  = 2
+      OBJECT_NOT_GIVEN = 3
+      OTHERS           = 99.
+  IF SY-SUBRC <> 0.
+    CLEAR ADRLINES.
+    ADRLINES-LINE1 = TEXT-001.
+  ENDIF.
+  OBJECT-SHORTTEXT(10)   = DIVTEXT.
+  OBJECT-SHORTTEXT+10(1) = SY-VLINE.
+  OBJECT-SHORTTEXT+11    = ADRLINES-LINE1.
+
+*   if the installation is a child of an aggregate display the type
+  SELECT SINGLE STRING2 FROM ETTIFN
+    INTO LV_STRING2
+    WHERE ANLAGE = OBJECT-KEY-NUMBER
+      AND OPERAND = 'PRIME_INST'.
+  IF SY-SUBRC EQ 0.
+*   we also want the current rate category
+
+    DATA : LV_RCAT     TYPE SWC_OBJECT,
+           LV_TARIFTYP TYPE TARIFTYP.
+    SWC_GET_PROPERTY SELF 'ActRateCat' LV_RCAT.
+    SWC_GET_OBJECT_KEY LV_RCAT LV_TARIFTYP.
+    CONCATENATE OBJECT-SHORTTEXT SY-VLINE LV_STRING2 SY-VLINE
+              LV_TARIFTYP INTO OBJECT-SHORTTEXT.
+
+  ENDIF.
+ENDIF.
+
+SWC_SET_ELEMENT CONTAINER 'ShortText' OBJECT-SHORTTEXT.
+END_PROPERTY.
+
+BEGIN_METHOD ZDETERMINEOARATECAT CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 08/16/2007
+* Description : Look for historical A_250 or A_260 rate category.
+*               Otherwise default to A_250.
+************************************************************************
+* Changed by  : Ashwin Sonkusare
+* Changed on  : 04/05/2011
+* Object ID   : CM_WFL_230
+* Transport   : E2DK911040
+* Description : Changes done to update Rate Category of installation
+*              with last Non-ROA rate category
+************************************************************************
+* Changed by  : Atul Kumar
+* Changed on  : 16th Dec, 2015
+* Transport   : E2DK943747
+* Description : Changes done to update the Rate Category.
+************************************************************************
+
+
+* Constants
+*CONSTANTS : c_a250 TYPE tariftyp_anl VALUE 'A_250',
+*            c_a260 TYPE tariftyp_anl VALUE 'A_260'.
+*  Begin of changes by ANSONKUS for CM_WFL_230
+TYPES: BEGIN OF T_ETTAF,
+         TARIFTYP TYPE TARIFTYP,
+       END OF T_ETTAF .
+*  End of changes by ANSONKUS for CM_WFL_230
+*Declaration
+TYPES : BEGIN OF T_INSTRATECAT,
+          BIS      TYPE BISZEITSCH,
+          TARIFTYP TYPE TARIFTYP_ANL,
+        END OF T_INSTRATECAT.
+TYPES: BEGIN OF TYPE_RESULT,
+         ANLAGE TYPE ANLAGE,
+       END OF TYPE_RESULT.
+
+DATA : L_UPDRATECAT        TYPE EANLH-TARIFTYP,
+       IT_INSTRATECAT      TYPE T_INSTRATECAT OCCURS 0 WITH HEADER LINE,
+       LV_CURRENT_RATE_CAT TYPE EANLD-TARIFTYP.
+
+* Begin of changes by MMRobson for CM_WFL_230
+*DATA: it_results TYPE TABLE OF type_result,
+*      lv_results LIKE LINE OF it_results.
+* End of changes by MMRobson for CM_WFL_230
+
+* Begin of changes by ANSONKUS for CM_WFL_230
+DATA: I_ETTAF TYPE STANDARD TABLE OF T_ETTAF INITIAL SIZE 0.
+* End of changes by ANSONKUS for CM_WFL_230
+
+CLEAR : IT_INSTRATECAT, IT_INSTRATECAT[].
+
+* Get the current rate category
+SWC_GET_PROPERTY SELF 'ZRateCat' LV_CURRENT_RATE_CAT.
+* Begin of changes by MMROBSON for CM_WFL_230
+*SELECT start_tariftyp INTO TABLE it_results
+*  FROM zide_rcat_sw
+*    WHERE end_tariftyp = lv_current_rate_cat.
+* End of changes by MMROBSON for CM_WFL_230
+
+
+*{ Start of change for RM00157175 by Akumar9 on 16th Dec, 2015
+DATA: LO_DIVISION    TYPE SWC_OBJECT,
+      LV_DIVISION    TYPE EANL-SPARTE,
+      LO_CONTRACT    TYPE SWC_OBJECT,
+      LV_CONTRACT    TYPE VERTRAG,
+      IT_O_CONTRACTS TYPE TABLE OF SWC_OBJECT WITH HEADER LINE,
+      LV_ACNT_CLASS  TYPE FKKVKP-KTOKL,
+      LV_CNTRCT_ACNT TYPE EVER-VKONTO,
+      IT_RATE_CAT    TYPE TABLE OF ZTFO_DFLT_RATE,
+      WA_RATE_CAT    TYPE ZTFO_DFLT_RATE.
+
+
+CLEAR : LV_DIVISION, LV_CONTRACT, LV_CNTRCT_ACNT, LV_ACNT_CLASS.
+
+* Getting the Divison here.
+SWC_GET_PROPERTY SELF 'Division' LO_DIVISION.
+SWC_GET_OBJECT_KEY LO_DIVISION LV_DIVISION.
+
+* Getting the Contract here.
+SWC_GET_TABLE_PROPERTY SELF 'IsuContracts' IT_O_CONTRACTS.
+
+LOOP AT IT_O_CONTRACTS.
+*  swc_get_object_key it_o_contracts lv_contract.
+  SWC_GET_PROPERTY IT_O_CONTRACTS 'Number' LV_CONTRACT.
+ENDLOOP.
+
+IF LV_CONTRACT IS NOT INITIAL.
+* Fetching the Contract Account number based on Contract
+  SELECT SINGLE VKONTO
+    FROM EVER
+    INTO LV_CNTRCT_ACNT
+    WHERE VERTRAG = LV_CONTRACT.
+
+  IF SY-SUBRC = 0.
+* Fetching the Account class based on Contract Account
+    SELECT SINGLE KTOKL
+      FROM FKKVKP
+      INTO LV_ACNT_CLASS
+      WHERE VKONT = LV_CNTRCT_ACNT.
+  ENDIF.
+ENDIF.
+
+*{ Ins : Tapas Pradhan : RM00157175 : 22nd Feb, 2016
+* For Account class 'IND', the FM to get the rate category was not working.
+* So added the below code.
+IF LV_ACNT_CLASS = 'IND'.
+  CLEAR : IT_RATE_CAT[], WA_RATE_CAT.
+
+  SELECT *
+    FROM ZTFO_DFLT_RATE INTO TABLE IT_RATE_CAT
+    WHERE CLASS  = LV_ACNT_CLASS
+      AND SPARTE = LV_DIVISION.
+
+  IF SY-SUBRC = 0.
+    SORT IT_RATE_CAT BY CLASS SPARTE SP_TARIFTYP.
+    DELETE ADJACENT DUPLICATES FROM IT_RATE_CAT COMPARING CLASS SPARTE SP_TARIFTYP.
+
+    READ TABLE IT_RATE_CAT INTO WA_RATE_CAT WITH KEY CLASS       = LV_ACNT_CLASS
+                                                     SPARTE      = LV_DIVISION
+                                                     SP_TARIFTYP = LV_CURRENT_RATE_CAT BINARY SEARCH.
+    IF SY-SUBRC = 0.
+      L_UPDRATECAT = WA_RATE_CAT-NEW_TARIFTYP.
+
+    ELSE.
+      READ TABLE IT_RATE_CAT INTO WA_RATE_CAT WITH KEY CLASS       = LV_ACNT_CLASS
+                                                       SPARTE      = LV_DIVISION
+                                                       SP_TARIFTYP = SPACE BINARY SEARCH.
+      IF SY-SUBRC = 0.
+        L_UPDRATECAT = WA_RATE_CAT-NEW_TARIFTYP.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+ELSE.
+*} Ins : Tapas Pradhan : RM00157175 : 25th Feb, 2016
+*   Getting the new Rate Category here.
+  CALL FUNCTION 'Z_GET_NEW_MI_RATE_CAT'
+    EXPORTING
+      IM_CLASS            = LV_ACNT_CLASS           " Account Class
+      IM_DIVISION         = LV_DIVISION             " Divison
+      IM_CURRENT_RATE_CAT = LV_CURRENT_RATE_CAT     " Current Rate Category
+    IMPORTING
+      EX_NEW_RATE_CAT     = L_UPDRATECAT.           " New Rate Category
+ENDIF.                                " Ins : Tapas Pradhan : RM00157175 : 25th Feb, 2016
+
+CLEAR : LV_DIVISION, LV_CONTRACT, LV_CNTRCT_ACNT, LV_ACNT_CLASS.
+
+
+* Current rate category will be equal to Update rate category, when there is no entry in the table ZTFO_DFLT_RATE.
+* In that case, the New rate category will be updated as per old logic.
+IF LV_CURRENT_RATE_CAT = L_UPDRATECAT.
+
+  CLEAR : L_UPDRATECAT.
+*} End of change for RM00157175 by Akumar9 on 16th Dec, 2015
+
+* The current rate category needs to change to full service
+  IF SY-SUBRC = 0.
+  ENDIF.
+*   Get all rate category history
+  SELECT BIS TARIFTYP FROM EANLH
+     INTO TABLE IT_INSTRATECAT
+    WHERE ANLAGE EQ OBJECT-KEY
+      AND BIS NE '99991231'.
+
+*   Sort and check the results
+  SORT IT_INSTRATECAT DESCENDING BY BIS.
+* Begin of changes by ANSONKUS for CM_WFL_230
+  IF IT_INSTRATECAT[] IS NOT INITIAL.
+    SELECT TARIFTYP
+      FROM ETTAF
+      INTO TABLE I_ETTAF
+      FOR ALL ENTRIES IN IT_INSTRATECAT
+      WHERE ( TARIFTYP = IT_INSTRATECAT-TARIFTYP OR
+      TARIFTYP = LV_CURRENT_RATE_CAT ) AND
+       ( OPERAND = 'FLG_ROA' OR OPERAND = 'FLGG_ROA' ) .
+    IF SY-SUBRC = 0 .
+      SORT I_ETTAF BY  TARIFTYP .
+    ENDIF .
+*endif .
+
+    READ TABLE I_ETTAF WITH KEY TARIFTYP = LV_CURRENT_RATE_CAT
+    BINARY SEARCH TRANSPORTING NO FIELDS .
+    IF SY-SUBRC = 0 .
+* End of changes by ANSONKUS for CM_WFL_230
+      LOOP AT IT_INSTRATECAT.
+*      read table it_results into lv_results with key
+*                                      anlage = it_instratecat-tariftyp.
+*       if sy-subrc = 0.
+*
+* Begin of changes by ANSONKUS for CM_WFL_230
+        READ TABLE I_ETTAF WITH KEY TARIFTYP = IT_INSTRATECAT-TARIFTYP
+        BINARY SEARCH TRANSPORTING NO FIELDS .
+        IF SY-SUBRC NE 0 .
+* End of changes by ANSONKUS for CM_WFL_230
+
+          L_UPDRATECAT = IT_INSTRATECAT-TARIFTYP.
+          EXIT.
+* Begin of changes by ANSONKUS for CM_WFL_230
+        ENDIF .
+* End of changes by ANSONKUS for CM_WFL_230
+*       endif.
+      ENDLOOP.
+    ENDIF.
+* Begin of changes by ANSONKUS for CM_WFL_230
+  ENDIF.
+* End of changes by ANSONKUS for CM_WFL_230
+ENDIF.          " Inserted by Akumar9 for RM00157175 : SAP Owner AllocationMove In change request
+
+
+* Set value for return
+SWC_SET_ELEMENT CONTAINER 'UpdRateCat' L_UPDRATECAT.
+
+END_METHOD.
+
+BEGIN_METHOD EXECUTEBILLINGSIMULATION CHANGING CONTAINER.
+SET PARAMETER ID 'ANL' FIELD OBJECT-KEY-NUMBER.
+
+CALL TRANSACTION 'EA00'.
+
+SET PARAMETER ID 'ANL' FIELD SPACE.
+END_METHOD.
+
+GET_PROPERTY LATESTDEMANDVALUE CHANGING CONTAINER.
+DATA : LT_ETTIFN TYPE TABLE OF ETTIFN,
+       LV_ETTIFN LIKE LINE OF LT_ETTIFN.
+
+IF OBJECT-LATESTDEMANDVALUE IS INITIAL.
+
+  CALL FUNCTION 'ISU_DB_ETTIFN_SELECT'
+    EXPORTING
+      X_ANLAGE      = OBJECT-KEY-NUMBER
+      X_OPERAND     = ZCL_ISU_IDE_ENROLL_CHECK=>CO_OPERAND_DEMAND
+    IMPORTING
+      Y_IETTIFN     = LT_ETTIFN
+    EXCEPTIONS
+      NOT_FOUND     = 1
+      NOT_QUALIFIED = 2
+      OTHERS        = 3.
+
+  IF SY-SUBRC <> 0.
+
+  ENDIF.
+
+  SORT LT_ETTIFN BY BIS DESCENDING.
+  READ TABLE LT_ETTIFN INTO LV_ETTIFN INDEX 1.
+  MOVE LV_ETTIFN-WERT1 TO OBJECT-LATESTDEMANDVALUE.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'LatestDemandValue'
+     OBJECT-LATESTDEMANDVALUE.
+END_PROPERTY.
+
+GET_PROPERTY TWELVEMONTHMAXDEMAND CHANGING CONTAINER.
+
+IF OBJECT-TWELVEMONTHMAXDEMAND IS INITIAL.
+*   JJarone 11/14/2007 Commented for transport
+*    CALL FUNCTION 'ZBO_GET_ANNUAL_MAX_DEMAND'
+*      EXPORTING
+*        x_anlage          = object-key-number
+*      IMPORTING
+*        Y_MAXDEMAND       = object-twelvemonthmaxdemand.
+ENDIF.
+
+
+SWC_SET_ELEMENT CONTAINER 'TwelveMonthMaxDemand'
+     OBJECT-TWELVEMONTHMAXDEMAND.
+
+END_PROPERTY.
+
+BEGIN_METHOD ZOBTAININSTLNSTATUS CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 10/03/2007
+* Description : Obtain installation information
+* Reason      : Defect 6712
+************************************************************************
+
+* Declaration
+DATA : O_MARKEDINSTLN TYPE SWC_OBJECT,
+       L_MOVEDOUTDATE TYPE EVER-AUSZDAT,
+       IT_ODEV        TYPE SWC_OBJECT OCCURS 0 WITH HEADER LINE,
+       L_CONTRACT     TYPE VERTRAG,
+       L_EQUNR        TYPE EQUNR,
+       L_LOGIKNR      TYPE LOGIKNR,
+       L_INSTLN       TYPE ANLAGE,
+       L_INSTALLDATE  TYPE ABZEITSCH,
+       O_MARKEDDEVICE TYPE SWC_OBJECT,
+       O_MOVEIN       TYPE SWC_OBJECT,
+       L_MOVEIN       TYPE EINZBELEG.
+
+* Initialisation
+CLEAR : O_MARKEDINSTLN, L_MOVEDOUTDATE, IT_ODEV, L_CONTRACT,
+        IT_ODEV[], L_EQUNR, L_LOGIKNR, L_INSTLN,
+        L_INSTALLDATE, O_MARKEDDEVICE, O_MOVEIN, L_MOVEIN.
+
+* Get the initial values.
+SWC_GET_ELEMENT CONTAINER 'MoveInObj'    O_MOVEIN.
+SWC_GET_ELEMENT CONTAINER 'MarkedInstln' O_MARKEDINSTLN.
+SWC_GET_OBJECT_KEY O_MARKEDINSTLN L_INSTLN.
+SWC_GET_OBJECT_KEY O_MOVEIN       L_MOVEIN.
+
+* Check for the device installation installation
+SWC_GET_TABLE_PROPERTY O_MARKEDINSTLN 'CurrentDevices' IT_ODEV.
+* Set values if devices found
+IF NOT IT_ODEV IS INITIAL.
+* Find the contract
+  SELECT SINGLE VERTRAG FROM EEINV
+                        INTO L_CONTRACT
+                       WHERE EINZBELEG EQ L_MOVEIN
+                         AND ANLAGE    EQ L_INSTLN.
+* Find a move-out date if contract found
+  IF SY-SUBRC EQ 0.
+    SELECT SINGLE AUSZDAT FROM EVER
+                          INTO L_MOVEDOUTDATE
+                         WHERE VERTRAG EQ L_CONTRACT
+                           AND LOEVM   EQ SPACE.
+  ENDIF.
+ENDIF.
+
+* Get the install date
+LOOP AT IT_ODEV.
+  CLEAR : L_EQUNR, L_LOGIKNR.
+* Get the equipment number
+  O_MARKEDDEVICE = IT_ODEV.
+  SWC_GET_OBJECT_KEY IT_ODEV L_EQUNR.
+* Obtain the logical device number
+  SELECT SINGLE LOGIKNR FROM EGERH
+                        INTO L_LOGIKNR
+                       WHERE EQUNR EQ L_EQUNR
+                         AND BIS   EQ C_FOREVER.
+* Find the install date if successful
+  IF SY-SUBRC EQ 0.
+    SELECT SINGLE AB FROM EASTL
+                     INTO L_INSTALLDATE
+                    WHERE LOGIKNR EQ L_LOGIKNR
+                      AND ANLAGE  EQ L_INSTLN.
+    EXIT.
+  ENDIF.
+ENDLOOP.
+
+* Pass the values out
+SWC_SET_ELEMENT CONTAINER 'MovedOutDate' L_MOVEDOUTDATE.
+SWC_SET_ELEMENT CONTAINER 'InstallDate'  L_INSTALLDATE.
+SWC_SET_ELEMENT CONTAINER 'MarkedDevice' O_MARKEDDEVICE.
+END_METHOD.
+
+BEGIN_METHOD ZDISPLAYEDMPROFILE CHANGING CONTAINER.
+************************************************************************
+* Created by  : Judy Jarone , Gilbert Chong
+* Created on  : 10/03/2007
+* Description : Use in FOP to view EDM profile header or values
+************************************************************************
+
+* Declaration
+DATA : L_INSTLNNO    TYPE EANL-ANLAGE,
+       L_TRANSACTION TYPE SYST-DBNAM.
+
+* Initialisation
+CLEAR : L_INSTLNNO, L_TRANSACTION.
+
+* Get values
+SWC_GET_ELEMENT CONTAINER 'InstlnNo'    L_INSTLNNO.
+SWC_GET_ELEMENT CONTAINER 'Transaction' L_TRANSACTION.
+
+* Check defaults
+IF L_INSTLNNO IS INITIAL.
+  L_INSTLNNO = OBJECT-KEY.
+ENDIF.
+
+* Call BDC
+CALL FUNCTION 'Z_DISPLAYEDMPROFILE'
+  EXPORTING
+    L_ANLAGE = L_INSTLNNO
+    L_TRAN   = L_TRANSACTION.
+
+END_METHOD.
+
+BEGIN_METHOD DISPLAYCONSUMPTIONHISTORY CHANGING CONTAINER.
+
+SET PARAMETER ID 'ANL' FIELD OBJECT-KEY-NUMBER.
+CALL TRANSACTION 'ZBOE660'.
+
+END_METHOD.
+
+BEGIN_METHOD REVERSEBILLINGDOCUMENT CHANGING CONTAINER.
+************************************************************************
+* Created by  : Robert Morris
+* Created on  : 11/06/2007
+* Description : Call EA20 transaction to reverse bills for Gas Trans
+*               customers.
+************************************************************************
+* Author      Date        Transport Request#    Change Driver          *
+************************************************************************
+*DATA: billdocaut   TYPE swc_object,
+*      l_billdoc    TYPE erch-belnr.
+
+*swc_get_element container 'BillingDocuments' billdocaut.
+*swc_get_object_key billdocaut l_billdoc.
+*  There is no Get Parameter ID in transaction EA20.  Will have to
+*  Perform a BDC or submit program
+*SET PARAMETER ID 'BEL' FIELD l_billdoc.
+
+CALL TRANSACTION 'EA20'.
+
+END_METHOD.
+
+BEGIN_METHOD ZGETORDERSBASEDONTYPES CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 01/09/2008
+* Description : Obtain orders by installation, with equipment ref,
+*               BP and maintenance activity
+* Reason      : Defect 10256
+************************************************************************
+* Programmer  : Michael Robson
+* Date        : 11/10/2008
+* SC Problem  : PM788290,PM800753
+* Transport   : ECDK954239
+* Description : Updated to support searches where the business partner
+*               is not given. Improve performance of the query. Added
+*               support for an order types table parameter. If the
+*               parameter is not given, then the order types will
+*               default to EMTR and GMTR for backwards compatability.
+*               Changed the activity type parameter from a scalar to
+*               a table parameter. This should not cause problems with
+*               backwards compatability.
+************************************************************************
+
+* Types
+TYPES : BEGIN OF T_EQNO,
+          EQUNR TYPE EQUNR,
+        END OF T_EQNO.
+
+*----|START-OF-CHANGE|MMRobson|11/10/2008|PM788290,PM800753|----*
+TYPES: BEGIN OF TWA_SO_ORDER_TYPE,
+         SIGN(1)   TYPE C,
+         OPTION(2) TYPE C,
+         LOW       TYPE AUFK-AUART,
+         HIGH      TYPE AUFK-AUART,
+       END OF TWA_SO_ORDER_TYPE,
+
+       BEGIN OF TWA_SO_ACTIVITY_TYPE,
+         SIGN(1)   TYPE C,
+         OPTION(2) TYPE C,
+         LOW       TYPE AFIH-ILART,
+         HIGH      TYPE AFIH-ILART,
+       END OF TWA_SO_ACTIVITY_TYPE.
+*----|END-OF-CHANGE|MMRobson|11/10/2008|PM788290,PM800753|----*
+
+CONSTANTS: C_TECH_COMP TYPE VIAUFKS-IPHAS VALUE '3'.
+* Declaration
+DATA : L_PMMAINTACT TYPE VIAUFKS-ILART,
+       L_STATUS     TYPE CHAR80,
+       L_PARTNER    TYPE PARTNER,
+       IT_ORDERS    TYPE SWC_OBJECT OCCURS 0 WITH HEADER LINE,
+       IT_EQUIPMENT TYPE SWC_OBJECT OCCURS 0 WITH HEADER LINE,
+       IT_EQNO      TYPE T_EQNO OCCURS 0 WITH HEADER LINE,
+       IT_AUFNR     TYPE AUFNR OCCURS 0 WITH HEADER LINE.
+
+*----|START-OF-CHANGE|MMRobson|11/10/2008|PM788290,PM800753|----*
+DATA: LI_ORDER_TYPES       TYPE TABLE OF AUFK-AUART,
+      LI_SO_ORDER_TYPES    TYPE TABLE OF TWA_SO_ORDER_TYPE,
+      LI_ACTIVITY_TYPES    TYPE TABLE OF AFIH-ILART,
+      LI_SO_ACTIVITY_TYPES TYPE TABLE OF TWA_SO_ACTIVITY_TYPE.
+
+DATA: LWA_SO_ORDER_TYPE    LIKE LINE OF LI_SO_ORDER_TYPES,
+      LWA_SO_ACTIVITY_TYPE LIKE LINE OF LI_SO_ACTIVITY_TYPES.
+*----|END-OF-CHANGE|MMRobson|11/10/2008|PM788290,PM800753|----*
+
+* Initialisation
+CLEAR : L_PMMAINTACT, IT_ORDERS, IT_ORDERS[], L_PARTNER,
+        IT_EQUIPMENT, IT_EQUIPMENT[], IT_AUFNR, IT_AUFNR[],
+         IT_EQNO, IT_EQNO[].
+
+* Get container elements
+*----|START-OF-CHANGE|MMRobson|11/10/2008|PM788290,PM800753|----*
+*swc_get_element container 'PMMaintAct' l_pmmaintact.
+SWC_GET_TABLE CONTAINER 'PMMaintAct' LI_ACTIVITY_TYPES.
+SWC_GET_TABLE CONTAINER 'OrderTypes' LI_ORDER_TYPES.
+*----|END-OF-CHANGE|MMRobson|11/10/2008|PM788290,PM800753|----*
+SWC_GET_ELEMENT CONTAINER 'Partner'    L_PARTNER.
+
+*----|START-OF-CHANGE|MMRobson|11/10/2008|PM788290,PM800753|----*
+CHECK LI_ACTIVITY_TYPES[] IS NOT INITIAL.
+
+* Build activity type select option
+LWA_SO_ACTIVITY_TYPE-SIGN   = 'I'.  " inclusive
+LWA_SO_ACTIVITY_TYPE-OPTION = 'EQ'. " equal to
+LOOP AT LI_ACTIVITY_TYPES INTO LWA_SO_ACTIVITY_TYPE-LOW.
+  APPEND LWA_SO_ACTIVITY_TYPE TO LI_SO_ACTIVITY_TYPES.
+ENDLOOP.
+
+* Build order type select option
+LWA_SO_ORDER_TYPE-SIGN   = 'I'.  " inclusive
+LWA_SO_ORDER_TYPE-OPTION = 'EQ'. " equal to
+IF LI_ORDER_TYPES[] IS INITIAL.
+* Use EMTR and GMTR as defaults
+  LWA_SO_ORDER_TYPE-LOW = 'EMTR'.
+  APPEND LWA_SO_ORDER_TYPE TO LI_SO_ORDER_TYPES.
+  LWA_SO_ORDER_TYPE-LOW = 'GMTR'.
+  APPEND LWA_SO_ORDER_TYPE TO LI_SO_ORDER_TYPES.
+ELSE.
+  LOOP AT LI_ORDER_TYPES INTO LWA_SO_ORDER_TYPE-LOW.
+    APPEND LWA_SO_ORDER_TYPE TO LI_SO_ORDER_TYPES.
+  ENDLOOP.
+ENDIF.
+*----|END-OF-CHANGE|MMRobson|11/10/2008|PM788290,PM800753|----*
+
+* Obtain all equipment from installation
+SWC_GET_TABLE_PROPERTY SELF 'zCurrentDevices' IT_EQUIPMENT.
+
+*  Check for installed meters
+CHECK IT_EQUIPMENT[] IS NOT INITIAL.
+* Obtain equipment numbers
+LOOP AT IT_EQUIPMENT.
+  SWC_GET_OBJECT_KEY IT_EQUIPMENT IT_EQNO-EQUNR.
+  APPEND IT_EQNO.
+ENDLOOP.
+
+* Find orders using the equipment reference. Only interested in EMTR
+* and GMTR
+*----|START-OF-CHANGE|MMRobson|11/10/2008|PM800753|----*
+*SELECT aufnr FROM viaufks INTO TABLE it_aufnr
+*             FOR ALL ENTRIES IN it_eqno
+*           WHERE equnr EQ it_eqno-equnr
+*             AND ilart EQ l_pmmaintact
+*             AND kunum EQ l_partner
+*             AND ( auart EQ 'EMTR' OR
+*                   auart EQ 'GMTR' )
+**   JJARONE ADDED CHECK FOR IPHAS NOT EQUAL TO TECH COMPLETE.
+*             AND iphas NE c_tech_comp.
+**   JJARONE ADDED CHECK FOR IPHAS NOT EQUAL TO TECH COMPLETE.
+IF L_PARTNER IS INITIAL.
+  SELECT AFIH~AUFNR
+    INTO TABLE IT_AUFNR
+    FROM AFIH
+    JOIN AUFK ON
+      AUFK~AUFNR = AFIH~AUFNR
+    FOR ALL ENTRIES IN IT_EQNO
+    WHERE AFIH~IPHAS <  C_TECH_COMP
+      AND AFIH~EQUNR =  IT_EQNO-EQUNR
+      AND AFIH~ILART IN LI_SO_ACTIVITY_TYPES
+      AND AUFK~AUART IN LI_SO_ORDER_TYPES
+      AND AUFK~LOEKZ =  SPACE.
+ELSE.
+  SELECT AFIH~AUFNR
+    INTO TABLE IT_AUFNR
+    FROM AFIH
+    JOIN AUFK ON
+      AUFK~AUFNR = AFIH~AUFNR
+    FOR ALL ENTRIES IN IT_EQNO
+    WHERE AFIH~IPHAS < C_TECH_COMP
+      AND AFIH~EQUNR =  IT_EQNO-EQUNR
+      AND AFIH~ILART IN LI_SO_ACTIVITY_TYPES
+      AND AFIH~KUNUM =  L_PARTNER
+      AND AUFK~AUART IN LI_SO_ORDER_TYPES
+      AND AUFK~LOEKZ =  SPACE.
+ENDIF.
+*----|END-OF-CHANGE|MMRobson|11/10/2008|PM800753|----*
+* Create order objects
+LOOP AT IT_AUFNR.
+  CLEAR : IT_ORDERS, L_STATUS.
+  SWC_CREATE_OBJECT IT_ORDERS 'ISUSMORDER' IT_AUFNR.
+  SWC_GET_PROPERTY  IT_ORDERS 'ZStatus' L_STATUS.
+* Only add orders that have not been TECO-ed
+  IF L_STATUS NS 'TECO'.
+    APPEND IT_ORDERS.
+  ENDIF.
+ENDLOOP.
+
+* Set container elements
+SWC_SET_TABLE CONTAINER 'IT_Orders' IT_ORDERS.
+
+END_METHOD.
+
+GET_PROPERTY ZMAINTPLANT CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 01/28/2008
+* Description : Based on Z current devices, obtain the device location's
+*               maintenance plant
+* Reason      : Defect 9675
+************************************************************************
+
+* Declaration
+DATA IT_ODEVICE TYPE SWC_OBJECT OCCURS 0 WITH HEADER LINE.
+DATA O_DEVLOC   TYPE SWC_OBJECT.
+
+* Initialisation
+CLEAR : IT_ODEVICE, IT_ODEVICE[], O_DEVLOC.
+
+* Obtain Z devices
+SWC_GET_TABLE_PROPERTY SELF 'ZCurrentDevices' IT_ODEVICE.
+READ TABLE IT_ODEVICE INDEX 1.
+
+* Proceed if found
+IF SY-SUBRC EQ 0.
+  SWC_GET_PROPERTY IT_ODEVICE 'DeviceLocation' O_DEVLOC.
+  SWC_GET_PROPERTY O_DEVLOC   'MainPlant'      OBJECT-ZMAINTPLANT.
+ENDIF.
+
+* Set property
+SWC_SET_ELEMENT CONTAINER 'ZMaintPlant' OBJECT-ZMAINTPLANT.
+
+END_PROPERTY.
+
+GET_PROPERTY ZGTCUSTOMERS CHANGING CONTAINER.
+************************************************************************
+* Changed by  : Gilbert Chong
+* Changed on  : 04/20/2009
+* Request     : ECDK958325
+* Description : PM856465. Additional rate categories identified.
+************************************************************************
+* Changed by  : Gilbert Chong
+* Changed on  : 07/21/2009
+* Request     : ECDK960366
+* Description : PM841657. Created a subroutine to populate all GT
+* rate categories so that it can be used in different places
+************************************************************************
+* Changed by  : Gilbert Chong
+* Changed on  : 09/10/2009
+* Request     : ECDK960926
+* Description : PM896753. GT Customer check should only be applicable
+* for current date and not past 12 months.
+************************************************************************
+DATA : L_YEAR(4)  TYPE C,
+       L_EFFDATE  TYPE SY-DATUM,
+       L_TARIFTYP TYPE EANLH-TARIFTYP.
+IF OBJECT-ZGTCUSTOMERS IS INITIAL.
+* Get effective date(current date - 1yr)
+  L_YEAR = SY-DATUM+0(4).
+  L_YEAR = L_YEAR - 1.
+  L_EFFDATE+4(4) = SY-DATUM+4(4).
+  L_EFFDATE+0(4) = L_YEAR.
+  L_EFFDATE+6(2) = '01'.
+* 07/21/2009 PM841657 GCHONG BEGIN
+* Fill up GT ranges
+  IF IT_GTRATECAT[] IS INITIAL.
+    PERFORM POPULATE_GTRATECAT.
+  ENDIF.
+* Does the rate category correspond to GT?
+  SELECT TARIFTYP UP TO 1 ROWS
+                  FROM EANLH
+                  INTO L_TARIFTYP
+                  WHERE ANLAGE = OBJECT-KEY-NUMBER
+* 09/10/2009 PM896753 GCHONG BEGIN
+* Current date should be used for the comparison
+                    AND AB  LE SY-DATUM
+                    AND BIS GE SY-DATUM
+*                    AND bis >= l_effdate
+* 09/10/2009 PM896753 GCHONG END
+* Replace this section with a range
+*                    AND ( tariftyp LIKE 'ST%'
+*                          OR tariftyp LIKE 'LT%'
+*                          OR tariftyp LIKE 'XLT%'
+**                 04/20/2009 PM856465 GCHONG BEGIN
+**                 More rate categories to consider
+*                  OR tariftyp EQ 'A_043'  OR tariftyp EQ 'A_052'
+*                  OR tariftyp EQ 'GS_265' OR tariftyp EQ 'GS_266'
+*                  OR tariftyp EQ 'GS_267' OR tariftyp EQ 'GS_268'
+*                  OR tariftyp EQ 'GS_283' OR tariftyp EQ 'GS_284'
+**                 04/20/2009 PM856465 GCHONG END
+*                          OR tariftyp = 'GM_STORAGE'
+*                          OR tariftyp = 'GT_PRIMARY' ).
+                    AND TARIFTYP IN IT_GTRATECAT.
+* 07/21/2009 PM841657 GCHONG END
+  ENDSELECT.
+  IF SY-SUBRC = 0.
+    OBJECT-ZGTCUSTOMERS  = 'X'.
+  ELSE.
+* Need not process
+  ENDIF.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'ZGTCustomers' OBJECT-ZGTCUSTOMERS.
+END_PROPERTY.
+
+GET_PROPERTY DISCONNECTIONSTATUSNEW CHANGING CONTAINER.
+************************************************************************
+* Programmer:  Michael Robson
+* Date:        02/11/2009
+* SC Problem:  PM797408
+* Transport:   ECDK956709
+* Description: Changed to check that there is an installation number,
+*              forcing the property to be instance dependant.
+************************************************************************
+DATA : L_V_ANLAGE TYPE ANLAGE.
+SWC_GET_OBJECT_KEY SELF L_V_ANLAGE.
+*----|START-OF-CHANGE|MMRobson|02/10/2009|PM797408|----*
+CHECK L_V_ANLAGE IS NOT INITIAL.
+*----|END-OF-CHANGE|MMRobson|02/10/2009|PM797408|----*
+CALL FUNCTION 'Z_GET_INSTLN_DISCON_STATUS'
+  EXPORTING
+    X_ANLAGE       = L_V_ANLAGE
+  IMPORTING
+    Y_STATUS       = OBJECT-DISCONNECTIONSTATUSNEW
+  EXCEPTIONS
+    INTERNAL_ERROR = 1
+    OTHERS         = 2.
+IF SY-SUBRC <> 0.
+  CLEAR OBJECT-DISCONNECTIONSTATUSNEW.
+ENDIF.
+
+SWC_SET_ELEMENT CONTAINER 'DisconnectionStatusNew'
+     OBJECT-DISCONNECTIONSTATUSNEW.
+END_PROPERTY.
+
+BEGIN_METHOD GETTIMESLICES CHANGING CONTAINER.
+************************************************************************
+* Programmer:  Michael Robson
+* Date:        02/24/2009
+* SC Problem:  PM797408
+* Transport:   ECDK956709
+* Description: Created to return installation time slice records. If
+*              no offsets are given, then only the currently active
+*              time slice record will be returned. If offsets are
+*              given, then the resulting time slice table will contain
+*              one record per offset record. The record positions will
+*              corresond. Offsets start from zero and increment by 1.
+*              Offset 0 represents the time slice record with the
+*              greatest end date. Offset 1 represents the time slice
+*              with the next greatest end date and so on. If a time
+*              slice record does not exist for a given offset, then
+*              the time slice table will contain an empty record for
+*              the corresponding position.
+************************************************************************
+* Programmer:  Ashwin Sonkusare
+* Date:        05/05/2011
+* Transport :  E2DK911786
+* Description: If the MRU has been changed after move-in date.
+*              Rate category reversal is not happening in installation.
+*              changes are done in this method to fix this issue.
+************************************************************************
+
+DATA: LI_OFFSETS     TYPE TABLE OF SYST-INDEX,
+      LI_TIME_SLICES LIKE EANLH OCCURS 0,
+      LI_EANLH       TYPE TABLE OF EANLH.
+DATA: LWA_EANLH TYPE EANLH.
+DATA: L_OFFSET TYPE SYST-INDEX.
+
+* Begin of changes by ANSONKUS for CM_WFL_240
+DATA: L_KEYDATE    TYPE EINZDAT,  "Move-in date
+      L_RE_KEYDATE TYPE EINZDAT.
+* End of changes by ANSONKUS for CM_WFL_240
+
+SWC_GET_TABLE CONTAINER 'Offsets' LI_OFFSETS.
+
+* Begin of changes by ANSONKUS for CM_WFL_240
+* Get the move-in date from container
+CLEAR: L_KEYDATE .
+SWC_GET_ELEMENT CONTAINER 'KEYDATE' L_KEYDATE .
+
+* End of changes by ANSONKUS for CM_WFL_240
+
+
+
+CLEAR: LI_TIME_SLICES, LI_TIME_SLICES[].
+
+IF OBJECT-KEY IS INITIAL.
+  EXIT_OBJECT_NOT_FOUND.
+ELSEIF LI_OFFSETS[] IS INITIAL.
+* Get the current active time slice record
+  SELECT *
+    INTO TABLE LI_TIME_SLICES
+    FROM EANLH
+    WHERE ANLAGE  = OBJECT-KEY-NUMBER
+      AND BIS    >= SY-DATUM
+      AND AB     <= SY-DATUM.
+ELSE.
+* Get all time slice records for this installation
+  SELECT *
+    INTO TABLE LI_EANLH
+    FROM EANLH
+    WHERE ANLAGE = OBJECT-KEY-NUMBER.
+
+* Begin of changes by ANSONKUS for CM_WFL_240
+  IF SY-SUBRC = 0 .
+    SORT LI_EANLH BY BIS DESCENDING.
+*  Fetch only those records for which start date is less
+*  than move-in date
+    CLEAR LWA_EANLH.
+    READ TABLE LI_EANLH INTO LWA_EANLH INDEX 1.
+    IF SY-SUBRC = 0 .
+      L_RE_KEYDATE =  LWA_EANLH-AB .
+      SWC_SET_ELEMENT CONTAINER 'RE_KEYDATE'  L_RE_KEYDATE .
+    ENDIF.
+    DELETE LI_EANLH WHERE AB >  L_KEYDATE .
+  ENDIF.
+* End of changes by ANSONKUS for CM_WFL_240
+
+  LOOP AT LI_OFFSETS INTO L_OFFSET.
+    CLEAR LWA_EANLH.
+*   Offsets are one less than the corresponding table index
+    ADD 1 TO L_OFFSET.
+
+    IF L_OFFSET > 0.
+      READ TABLE LI_EANLH INTO LWA_EANLH INDEX L_OFFSET.
+    ENDIF.
+
+    APPEND LWA_EANLH TO LI_TIME_SLICES.
+  ENDLOOP.
+ENDIF.
+
+SWC_SET_TABLE CONTAINER 'TimeSlices' LI_TIME_SLICES.
+END_METHOD.
+
+BEGIN_METHOD GETOPENPERIODICREAD CHANGING CONTAINER.
+***********************************************************************
+* Programmer:  Michael Robson
+* Date:        04/01/2009
+* SC Problem:  PM800192
+* Transport:   ECDK957944
+* Description: Created to return the billing period date for this
+*              installation instance. The billing period date is
+*              adjusted by the given period offset parameter.
+*
+*              05/07/2009 - Added a key date. If the schedule date is
+*              greater than the key date, then the periodic date should
+*              not be found.
+***********************************************************************
+* Programmer:  Michael Robson  Date:      10/20/2009
+* SC Ticket:   PM873361        Transport: ECDK962037
+* Description: Updated to look ahead in the schedule if an open
+* periodic read cannot be found.
+***********************************************************************
+
+CHECK OBJECT-KEY-NUMBER IS NOT INITIAL.
+
+*----|START-OF-CHANGE|MMRobson|10/20/2009|PM873361|----*
+*DATA: l_read_unit          TYPE v_eabl-ableinh,
+*      l_sched_date         TYPE v_eabl-adatsoll,
+*      l_period_date_offset TYPE syst-index,
+DATA: L_PERIOD_DATE_OFFSET TYPE SYST-INDEX,
+*----|END-OF-CHANGE|MMRobson|10/19/2009|PM873361|----*
+      L_PERIOD_DATE        TYPE TE418-TERMTDAT,
+      L_KEY_DATE           TYPE SYST-DATUM.
+
+*----|START-OF-CHANGE|MMRobson|10/19/2009|PM873361|----*
+DATA: BEGIN OF L_I_MRDOCS OCCURS 0,
+        READ_UNIT  TYPE V_EABL-ABLEINH,
+        SCHED_DATE TYPE V_EABL-ADATSOLL,
+      END OF L_I_MRDOCS,
+      L_I_BILLING_PERIOD_DATES TYPE TABLE OF TE418-TERMTDAT.
+DATA: L_WA_MRDOC LIKE LINE OF L_I_MRDOCS.
+DATA: L_LOOK_AHEAD_DAYS TYPE SYST-INDEX,
+      L_LOOK_AHEAD_DATE TYPE SYST-DATUM.
+*----|END-OF-CHANGE|MMRobson|10/19/2009|PM873361|----*
+
+SWC_GET_ELEMENT CONTAINER 'KeyDate'          L_KEY_DATE.
+SWC_GET_ELEMENT CONTAINER 'PeriodDateOffset' L_PERIOD_DATE_OFFSET.
+
+*----|START-OF-CHANGE|MMRobson|10/19/2009|PM873361|----*
+SWC_GET_ELEMENT CONTAINER 'LookAheadDays' L_LOOK_AHEAD_DAYS.
+*----|END-OF-CHANGE|MMRobson|10/19/2009|PM873361|----*
+
+* Find an open, periodic meter read record for this installation object
+*----|START-OF-CHANGE|MMRobson|10/19/2009|PM873361|----*
+*SELECT ABLEINH         " Meter read unit
+*       ADATSOLL        " Scheduled meter reading date
+*  FROM V_EABL UP TO 1 ROWS
+*  INTO (L_READ_UNIT, L_SCHED_DATE)
+*  WHERE ANLAGE  = OBJECT-KEY-NUMBER
+*    AND ABLESGR = '01' " Meter read reason = periodic meter reading
+*    AND ABLSTAT = '0'. " Meter read status = created.
+*ENDSELECT.
+*
+*IF sy-subrc = 0 AND l_sched_date <= l_key_date.
+** Get the billing period date for the retrieved meter read record
+*  SELECT termtdat                 " Date of schedule record, A.K.A
+*    FROM te418 UP TO 1 ROWS       " billing period date
+*    INTO l_period_date
+*    WHERE adatsoll = l_sched_date " Scheduled meter reading date
+*      AND termschl = l_read_unit. " Schedule record for meter read unit
+*  ENDSELECT.
+*
+*  IF sy-subrc = 0.
+**   Modify the period date by the offset
+*    ADD l_period_date_offset TO l_period_date.
+*  ENDIF.
+*ENDIF.
+
+* Find an open periodic read document
+SELECT ABLEINH                         " Meter read unit
+       ADATSOLL                        " Scheduled meter reading date
+  FROM V_EABL
+  INTO TABLE L_I_MRDOCS
+  WHERE ANLAGE    = OBJECT-KEY-NUMBER  " Installation number
+    AND ABLESGR   = '01'               " Periodic meter reading reason
+    AND ABLSTAT   = '0'                " Created status
+    AND ADATSOLL <= L_KEY_DATE.        " Scheduled meter reading date
+
+IF SY-SUBRC = 0.
+* At least one is found, get the latest record
+  SORT L_I_MRDOCS DESCENDING BY SCHED_DATE.
+  READ TABLE L_I_MRDOCS INTO L_WA_MRDOC INDEX 1.
+
+* Find the billing period date
+  SELECT TERMTDAT
+    FROM TE418
+    INTO TABLE L_I_BILLING_PERIOD_DATES
+    WHERE TERMSCHL = L_WA_MRDOC-READ_UNIT
+      AND ADATSOLL = L_WA_MRDOC-SCHED_DATE.
+ELSEIF L_LOOK_AHEAD_DAYS IS NOT INITIAL.
+* An open periodic read could not be found. Look for a future scheduled
+* read within the look-ahead days threshold.
+  L_LOOK_AHEAD_DATE = L_KEY_DATE + L_LOOK_AHEAD_DAYS.
+  IF L_LOOK_AHEAD_DATE >= SY-DATUM.
+*   The look-ahead date, the upper bound, must be equal to or greater
+*   than the current date, the lower bound.
+    SWC_GET_PROPERTY SELF 'ActReadUnitKey' L_WA_MRDOC-READ_UNIT.
+    IF L_WA_MRDOC-READ_UNIT IS NOT INITIAL.
+      SELECT TERMTDAT
+        FROM TE418
+        INTO TABLE L_I_BILLING_PERIOD_DATES
+        WHERE TERMSCHL  = L_WA_MRDOC-READ_UNIT
+          AND ADATSOLL >= SY-DATUM
+          AND ADATSOLL <= L_LOOK_AHEAD_DATE.
+    ENDIF.
+  ENDIF.
+ENDIF.
+
+IF L_I_BILLING_PERIOD_DATES[] IS NOT INITIAL.
+* Billing period dates found, get the earliest one
+  SORT L_I_BILLING_PERIOD_DATES ASCENDING.
+  READ TABLE L_I_BILLING_PERIOD_DATES INTO L_PERIOD_DATE INDEX 1.
+
+* Add the offset to the date
+  ADD L_PERIOD_DATE_OFFSET TO L_PERIOD_DATE.
+ENDIF.
+*----|END-OF-CHANGE|MMRobson|10/19/2009|PM873361|----*
+
+SWC_SET_ELEMENT CONTAINER 'PeriodDate' L_PERIOD_DATE.
+END_METHOD.
+
+BEGIN_METHOD GETFACTS CHANGING CONTAINER.
+***********************************************************************
+* Programmer:  Michael Robson
+* Date:        05/19/2009
+* SC Problem:  PM844409
+* Transport:   ECDK954607
+* Description: Created to return the installation facts.
+***********************************************************************
+CHECK OBJECT-KEY IS NOT INITIAL.
+
+DATA: L_I_NORMAL_FACTS      TYPE TABLE OF ETTIFN,
+      L_I_REFERENCE_FACTS   TYPE TABLE OF ETTIFB,
+      L_I_SPECIFIC_OPERANDS TYPE TABLE OF E_OPERAND.
+DATA: L_WA_NORMAL_FACT    TYPE ETTIFN,
+      L_WA_REFERENCE_FACT TYPE ETTIFB.
+DATA: L_KEY_DATE    TYPE SYST-DATUM,
+      L_ONLY_ACTIVE TYPE SYST-BATCH,
+      L_FROM_DATE   TYPE SYST-DATUM,
+      L_TO_DATE     TYPE SYST-DATUM,
+      L_OPERAND     TYPE E_OPERAND,
+      L_INDEX       TYPE SYST-TABIX.
+
+SWC_GET_ELEMENT CONTAINER 'KeyDate'       L_KEY_DATE.
+SWC_GET_ELEMENT CONTAINER 'OnlyActive'    L_ONLY_ACTIVE.
+SWC_GET_ELEMENT CONTAINER 'SpecificOperands' L_I_SPECIFIC_OPERANDS.
+
+IF L_KEY_DATE IS INITIAL.
+  L_FROM_DATE = '19000101'.
+  L_TO_DATE   = '99991231'.
+ELSE.
+  L_FROM_DATE = L_KEY_DATE.
+  L_TO_DATE   = L_KEY_DATE.
+ENDIF.
+
+IF L_I_SPECIFIC_OPERANDS[] IS NOT INITIAL.
+  SORT L_I_SPECIFIC_OPERANDS.
+  DELETE ADJACENT DUPLICATES FROM L_I_SPECIFIC_OPERANDS.
+ENDIF.
+
+CALL FUNCTION 'ISU_DB_ETTIFN_SELECT'
+  EXPORTING
+    X_ANLAGE      = OBJECT-KEY-NUMBER
+    X_AB          = L_FROM_DATE
+    X_BIS         = L_TO_DATE
+  IMPORTING
+    Y_IETTIFN     = L_I_NORMAL_FACTS
+  EXCEPTIONS
+    NOT_FOUND     = 1
+    NOT_QUALIFIED = 2
+    OTHERS        = 3.
+
+IF SY-SUBRC = 0 AND
+   ( L_I_SPECIFIC_OPERANDS[] IS NOT INITIAL OR
+     L_ONLY_ACTIVE           IS NOT INITIAL ).
+* Remove unwanted fact operands
+  LOOP AT L_I_NORMAL_FACTS INTO L_WA_NORMAL_FACT.
+    L_INDEX = SY-TABIX.
+    IF L_ONLY_ACTIVE = 'X' AND L_WA_NORMAL_FACT-INAKTIV = 'X'.
+*     Inactive, remove the fact
+      DELETE L_I_NORMAL_FACTS INDEX L_INDEX.
+    ELSEIF L_I_SPECIFIC_OPERANDS[] IS NOT INITIAL.
+      READ TABLE L_I_SPECIFIC_OPERANDS TRANSPORTING NO FIELDS
+        WITH KEY TABLE_LINE = L_WA_NORMAL_FACT-OPERAND BINARY SEARCH.
+
+      IF SY-SUBRC <> 0.
+*       Not in the list, remove the fact
+        DELETE L_I_NORMAL_FACTS INDEX L_INDEX.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+ENDIF.
+
+* Select all the reference facts
+CALL FUNCTION 'ISU_DB_ETTIFB_SELECT'
+  EXPORTING
+    X_ANLAGE      = OBJECT-KEY-NUMBER
+    X_AB          = L_FROM_DATE
+    X_BIS         = L_TO_DATE
+  IMPORTING
+    Y_IETTIFB     = L_I_REFERENCE_FACTS
+  EXCEPTIONS
+    NOT_FOUND     = 1
+    NOT_QUALIFIED = 2
+    OTHERS        = 3.
+
+IF L_I_SPECIFIC_OPERANDS[] IS NOT INITIAL AND
+   L_I_REFERENCE_FACTS[] IS NOT INITIAL.
+* Remove unspecified fact operands
+  LOOP AT L_I_REFERENCE_FACTS INTO L_WA_REFERENCE_FACT.
+    L_INDEX = SY-TABIX.
+    READ TABLE L_I_SPECIFIC_OPERANDS TRANSPORTING NO FIELDS
+      WITH KEY TABLE_LINE = L_WA_REFERENCE_FACT-OPERAND BINARY SEARCH.
+
+    IF SY-SUBRC <> 0.
+*     Remoev this fact, since the operand isn't in the specified list
+      DELETE L_I_REFERENCE_FACTS INDEX L_INDEX.
+    ENDIF.
+  ENDLOOP.
+ENDIF.
+
+SWC_SET_TABLE CONTAINER 'NormalFacts'    L_I_NORMAL_FACTS.
+SWC_SET_TABLE CONTAINER 'ReferenceFacts' L_I_REFERENCE_FACTS.
+END_METHOD.
+
+BEGIN_METHOD EXPIREFACTS CHANGING CONTAINER.
+***********************************************************************
+* Programmer:  Michael Robson
+* Date:        05/29/2009
+* SC Problem:  PM873559
+* Transport:   ECDK954607
+* Description: Created to change the end date for installation facts
+*              that are active during the given date range for the
+*              given operands. The ChangeFacts method does not behave
+*              quite as expected.
+***********************************************************************
+CHECK OBJECT-KEY IS NOT INITIAL.
+DATA: L_I_OPERANDS  TYPE TABLE OF ETTIFN-OPERAND,
+      L_I_NEW_FACTS TYPE ISU_IETTIFN,
+      L_I_OLD_FACTS TYPE ISU_IETTIFN.
+DATA: L_WA_FACT LIKE LINE OF L_I_NEW_FACTS.
+DATA: L_START_DATE   TYPE SYST-DATUM,
+      L_END_DATE     TYPE SYST-DATUM,
+      L_NEW_END_DATE TYPE SYST-DATUM,
+      L_COMMIT       TYPE REGEN-KENNZX,
+      L_WAIT         TYPE REGEN-KENNZX.
+
+SWC_GET_TABLE   CONTAINER 'Operands'   L_I_OPERANDS.
+SWC_GET_ELEMENT CONTAINER 'StartDate'  L_START_DATE.
+SWC_GET_ELEMENT CONTAINER 'EndDate'    L_END_DATE.
+SWC_GET_ELEMENT CONTAINER 'NewEndDate' L_NEW_END_DATE.
+SWC_GET_ELEMENT CONTAINER 'Commit'     L_COMMIT.
+SWC_GET_ELEMENT CONTAINER 'Wait'       L_WAIT.
+
+CHECK L_I_OPERANDS[] IS NOT INITIAL.
+
+IF L_START_DATE IS INITIAL.
+  L_START_DATE = SY-DATUM.
+ENDIF.
+
+IF L_END_DATE IS INITIAL.
+  L_END_DATE = SY-DATUM.
+ENDIF.
+
+SELECT *
+  FROM ETTIFN
+  INTO TABLE L_I_OLD_FACTS
+  FOR ALL ENTRIES IN L_I_OPERANDS
+  WHERE ANLAGE   = OBJECT-KEY-NUMBER
+    AND OPERAND  = L_I_OPERANDS-TABLE_LINE
+    AND AB      <= L_END_DATE
+    AND BIS     >= L_START_DATE.
+
+IF SY-SUBRC = 0.
+  LOOP AT L_I_OLD_FACTS INTO L_WA_FACT.
+    L_WA_FACT-BIS = L_NEW_END_DATE.
+    IF L_WA_FACT-BIS < L_WA_FACT-AB.
+      L_WA_FACT-AB = L_WA_FACT-BIS - 1.
+    ENDIF.
+    APPEND L_WA_FACT TO L_I_NEW_FACTS.
+  ENDLOOP.
+
+  CALL FUNCTION 'ISU_INST_FACTS_UPDATE'
+    EXPORTING
+      X_IETTIFN_NEW = L_I_NEW_FACTS
+      X_IETTIFN_OLD = L_I_OLD_FACTS.
+
+  IF L_COMMIT = 'X' AND L_WAIT = 'X'.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING
+        WAIT = 'X'.
+*    COMMIT WORK AND WAIT.
+  ELSEIF L_COMMIT = 'X'.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'.
+*    COMMIT WORK.
+  ENDIF.
+ENDIF.
+END_METHOD.
+
+GET_PROPERTY ZWASGTBEFORE CHANGING CONTAINER.
+************************************************************************
+* Created by  : Gilbert Chong
+* Created on  : 07/21/2009
+* Request     : ECDK960366
+* Description : PM841657. This attribute should return true if the
+* installation's last rate category before current timeslice was GT.
+* It is similar to ZGTCustomer.
+************************************************************************
+
+* Declaration
+DATA IT_EANLH TYPE EANLH OCCURS 0 WITH HEADER LINE.
+
+* Initialisation
+CLEAR : IT_EANLH, IT_EANLH[], OBJECT-ZWASGTBEFORE.
+
+* Obtain GT ranges
+IF IT_GTRATECAT[] IS INITIAL.
+  PERFORM POPULATE_GTRATECAT.
+ENDIF.
+
+* Obtain all installation timeslices
+SELECT * FROM EANLH
+         INTO TABLE IT_EANLH
+        WHERE ANLAGE = OBJECT-KEY-NUMBER.
+* We are looking for the timeslice before the current one
+SORT IT_EANLH BY AB DESCENDING.
+READ TABLE IT_EANLH INDEX 2.
+CHECK SY-SUBRC EQ 0.
+
+* Compare the rate category
+IF IT_EANLH-TARIFTYP IN IT_GTRATECAT.
+  OBJECT-ZWASGTBEFORE = 'X'.
+ENDIF.
+
+* Set the attribute value
+SWC_SET_ELEMENT CONTAINER 'ZWasGTBefore' OBJECT-ZWASGTBEFORE.
+
+END_PROPERTY.
+
+BEGIN_METHOD ADJUSTMENTREVERSAL CHANGING CONTAINER.
+
+CALL TRANSACTION 'EA21'.
+
+END_METHOD.
+
+BEGIN_METHOD CALLMISSCONSREPORT CHANGING CONTAINER.
+DATA:
+      INSTALLATION TYPE EANL-ANLAGE.
+SWC_GET_ELEMENT CONTAINER 'Installation' INSTALLATION.
+
+SUBMIT ZCCS_DR_MISS_CONS_STATUS_REP
+WITH P_ANLAGE = INSTALLATION
+AND RETURN.
+
+END_METHOD.
+
+BEGIN_METHOD RATECATCHANGEFOLLOWUP CHANGING CONTAINER.
+***********************************************************************
+* Programmer:  Michael Robson  Date:       07/14/2011
+* Object:      CM_WFL_370      Transport:  E2DK911786
+* Add handling for the commit and wait parameters.
+***********************************************************************
+* Programmer:  Michael Robson  Date:       04/29/2010
+* Ticket:      CM159974        Transport:  E2DK905598
+* Created to handle follow-up updates to the contracts, contract
+* accounts, and registers that are affected by an installation's rate
+* category change. This should already be called in the installation
+* customer enhancement EMDI0001. The intent of this method is to let
+* a work item handle delayed updates on contract accounts with more
+* than one contract.
+***********************************************************************
+CHECK OBJECT-KEY-NUMBER IS NOT INITIAL.
+
+TYPE-POOLS: ZCC01.
+
+DATA: L_O_DIVISION TYPE SWC_OBJECT.
+DATA: L_WA_OBJ TYPE ZCC01_WA_OBJ.
+DATA: L_KEY_DATE   TYPE REGEN-STICHTAG,
+      L_PRORATE    TYPE REGEN-KENNZX,
+      L_COMMIT     TYPE REGEN-KENNZX,
+      L_WAIT       TYPE REGEN-KENNZX,
+      L_UPD_ONLINE TYPE REGEN-UPD_ONLINE,
+      L_SUBRC      TYPE SYST-SUBRC,
+      L_SPARTE     TYPE EANL-SPARTE.
+
+SWC_GET_ELEMENT CONTAINER 'KeyDate' L_KEY_DATE.
+SWC_GET_ELEMENT CONTAINER 'Prorate' L_PRORATE.
+SWC_GET_ELEMENT CONTAINER 'Commit'  L_COMMIT.
+SWC_GET_ELEMENT CONTAINER 'Wait'    L_WAIT.
+
+IF L_PRORATE IS NOT INITIAL.
+  L_PRORATE = 'X'.
+ENDIF.
+
+SWC_GET_PROPERTY SELF 'Division' L_O_DIVISION.
+SWC_GET_OBJECT_KEY L_O_DIVISION L_SPARTE.
+
+CALL FUNCTION 'ZINSTLN_RCAT_PROVIDE'
+  EXPORTING
+    IM_ANLAGE    = OBJECT-KEY-NUMBER
+    IM_SPARTE    = L_SPARTE
+    IM_KEYDATE   = L_KEY_DATE
+    IM_PRORATE   = L_PRORATE
+    IM_WMODE     = '2' " change mode
+  IMPORTING
+    EX_OBJ       = L_WA_OBJ
+  EXCEPTIONS
+    FOREIGN_LOCK = 1
+    OTHERS       = 99.
+
+L_SUBRC = SY-SUBRC.
+
+IF L_SUBRC <> 0.
+  SWC_SET_TABLE CONTAINER 'Messages' L_WA_OBJ-ERRORS.
+
+  CALL FUNCTION 'ZINSTLN_RCAT_CLOSE'
+    CHANGING
+      EX_OBJ = L_WA_OBJ.
+
+  CASE L_SUBRC.
+    WHEN 0. " do nothing
+    WHEN 1. " foreign_lock
+      EXIT_RETURN 9001 SPACE SPACE SPACE SPACE.
+    WHEN OTHERS.
+      EXIT_RETURN 9002 SPACE SPACE SPACE SPACE.
+  ENDCASE.
+ENDIF.
+
+CALL FUNCTION 'ZINSTLN_RCAT_CHECK'
+  CHANGING
+    EX_OBJ = L_WA_OBJ.
+
+IF L_WA_OBJ-CONTROL-CHANGE IS NOT INITIAL.
+  CALL FUNCTION 'ZINSTLN_RCAT_CHANGE'
+    CHANGING
+      EX_OBJ       = L_WA_OBJ
+    EXCEPTIONS
+      FOREIGN_LOCK = 1
+      OTHERS       = 99.
+
+  L_SUBRC = SY-SUBRC.
+ENDIF.
+
+SWC_SET_TABLE CONTAINER 'Messages' L_WA_OBJ-ERRORS.
+
+CALL FUNCTION 'ZINSTLN_RCAT_CLOSE'
+  CHANGING
+    EX_OBJ = L_WA_OBJ.
+
+CASE L_SUBRC.
+  WHEN 0. " do nothing after commit
+*----|START-OF-CHANGE|MMRobson|07/14/2011|CM_WFL_370|----*
+    IF L_COMMIT = 'X'.
+      IF L_WAIT = 'X'.
+        COMMIT WORK AND WAIT.
+      ELSE.
+        COMMIT WORK.
+      ENDIF.
+    ENDIF.
+*----|END-OF-CHANGE|MMRobson|07/14/2011|CM_WFL_370|----*
+  WHEN 1. " foreign lock
+    EXIT_RETURN 9001 SPACE SPACE SPACE SPACE.
+  WHEN OTHERS.
+    EXIT_RETURN 9002 SPACE SPACE SPACE SPACE.
+ENDCASE.
+END_METHOD.
+
+BEGIN_METHOD CHANGEDIRECT2 CHANGING CONTAINER.
+***********************************************************************
+* Programmer:  Michael Robson  Date:      05/05/2010
+* Change:      CM159974        Transport: E2DK905598
+* Created as a wrapper to the Instln.ChangeDirect method. If a new
+* rate category is given without a billing class, then the billing
+* class is found for the given rate category and added to the changed
+* fields.
+***********************************************************************
+DATA: L_WA_FIELDS  TYPE ISU_INSTLN_CHANGE_DIRECT,
+      L_WA_FIELDSX TYPE ISU_INSTLN_CHANGE_DIRECT_X.
+
+DATA: L_KEYDATE             LIKE SYST-DATUM,
+      L_PRORATE             LIKE REGEN-KENNZX,
+      L_AUTHORIZATION_GROUP TYPE EANL-BEGRU.
+
+
+
+SWC_CONTAINER L_WA_CONT.
+
+SWC_GET_ELEMENT CONTAINER 'KeyDate'             L_KEYDATE.
+SWC_GET_ELEMENT CONTAINER 'Prorate'             L_PRORATE.
+SWC_GET_ELEMENT CONTAINER 'InstallationFields'  L_WA_FIELDS.
+SWC_GET_ELEMENT CONTAINER 'InstallationFieldsX' L_WA_FIELDSX.
+SWC_GET_ELEMENT CONTAINER 'AuthorizationGroup'  L_AUTHORIZATION_GROUP.
+
+IF L_WA_FIELDSX-TARIFTYP IS NOT INITIAL AND
+   L_WA_FIELDS-TARIFTYP  IS NOT INITIAL AND
+   L_WA_FIELDSX-AKLASSE  IS INITIAL.
+* A rate category change is being requested without specifying the
+* billing class. Add the billing class of the new rate category to
+* the fields and selection fields structures, in case the new rate
+* category is on a different billing class.
+  SELECT SINGLE AKLASSE
+    INTO L_WA_FIELDS-AKLASSE
+    FROM ETTA
+    WHERE TARIFTYP = L_WA_FIELDS-TARIFTYP.
+  IF SY-SUBRC = 0.
+    L_WA_FIELDSX-AKLASSE = 'X'.
+  ENDIF.
+ENDIF.
+
+SWC_SET_ELEMENT L_WA_CONT 'KeyDate'             L_KEYDATE.
+SWC_SET_ELEMENT L_WA_CONT 'Prorate'             L_PRORATE.
+SWC_SET_ELEMENT L_WA_CONT 'InstallationFields'  L_WA_FIELDS.
+SWC_SET_ELEMENT L_WA_CONT 'InstallationFieldsX' L_WA_FIELDSX.
+SWC_SET_ELEMENT L_WA_CONT 'AuthorizationGroup'  L_AUTHORIZATION_GROUP.
+
+SWC_CALL_METHOD SELF 'ChangeDirect' L_WA_CONT.
+
+CASE SY-SUBRC.
+  WHEN 0.      " success, do nothing
+  WHEN 1001.   " foreign lock
+    EXIT_RETURN 1001 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  WHEN 1002.   " not authorized
+    EXIT_RETURN 1002 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  WHEN 1003.   " other errors
+    EXIT_RETURN 1003 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  WHEN 1004.   " not found
+    EXIT_RETURN 1004 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  WHEN 1005.   " invalid key date
+    EXIT_RETURN 1005 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  WHEN 1006.   " input error
+    EXIT_RETURN 1006 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+ENDCASE.
+END_METHOD.
+
+BEGIN_METHOD CHANGEDIRECT3 CHANGING CONTAINER.
+
+TYPES: BEGIN OF TY_EANLH,
+         ANLAGE   TYPE ANLAGE,
+         BIS      TYPE BISZEITSCH,
+         AB       TYPE ABZEITSCH,
+         TARIFTYP TYPE TARIFTYP_ANL,
+       END OF TY_EANLH .
+
+DATA: L_WA_FIELDS  TYPE ISU_INSTLN_CHANGE_DIRECT,
+      L_WA_FIELDSX TYPE ISU_INSTLN_CHANGE_DIRECT_X.
+
+DATA: L_KEYDATE             LIKE SYST-DATUM,
+      L_RE_KEYDATE          TYPE SYST-DATUM,
+      L_PRORATE             LIKE REGEN-KENNZX,
+      L_AUTHORIZATION_GROUP TYPE EANL-BEGRU,
+      L_CONTRACT            TYPE VERTRAG.
+
+DATA: LI_EANLH  TYPE STANDARD TABLE OF TY_EANLH INITIAL SIZE 0,
+      LWA_EANLH TYPE TY_EANLH .
+* E2DK923261       BJAYARAM     RM00066791 - Add two variables
+DATA: W_CURRENT_CONTRACT LIKE EVER-VERTRAG ,      " Contract no.
+      W_CONTRACT_OBJECT  TYPE SWC_OBJECT .         " Ref Contract obj
+
+SWC_CONTAINER L_WA_CONT.
+
+SWC_GET_ELEMENT CONTAINER 'KeyDate'             L_KEYDATE.
+SWC_GET_ELEMENT CONTAINER 'RE_KEYDATE'          L_RE_KEYDATE.
+SWC_GET_ELEMENT CONTAINER 'Prorate'             L_PRORATE.
+SWC_GET_ELEMENT CONTAINER 'InstallationFields'  L_WA_FIELDS.
+SWC_GET_ELEMENT CONTAINER 'InstallationFieldsX' L_WA_FIELDSX.
+SWC_GET_ELEMENT CONTAINER 'AuthorizationGroup'  L_AUTHORIZATION_GROUP.
+
+* E2DK923261       BJAYARAM     RM00066791 - Read Contract#
+* Read the current contract no. from BOR object of installation instance
+SWC_GET_PROPERTY SELF 'CurrentContract'  W_CONTRACT_OBJECT.
+SWC_GET_PROPERTY W_CONTRACT_OBJECT 'Number' W_CURRENT_CONTRACT.
+
+
+IF L_WA_FIELDSX-TARIFTYP IS NOT INITIAL.
+* A rate category change is being requested. If the installation is
+* under a contract on the given key date, then we are not allowed
+* to do a direct rate category change.
+  SELECT VERTRAG UP TO 1 ROWS
+    INTO L_CONTRACT
+    FROM EVER
+    WHERE ANLAGE   = OBJECT-KEY-NUMBER
+      AND AUSZDAT >= L_KEYDATE
+      AND EINZDAT <= L_KEYDATE
+* E2DK923261       BJAYARAM     RM00066791 - Add two variables
+      AND VERTRAG <> W_CURRENT_CONTRACT.
+  ENDSELECT.
+  IF SY-SUBRC = 0.
+*   There is a contract, exit right away.
+    EXIT_RETURN 1007 L_CONTRACT OBJECT-KEY-NUMBER L_KEYDATE SPACE.
+  ENDIF.
+
+  IF L_WA_FIELDSX-AKLASSE  IS INITIAL.
+*   A rate category change is being requested without specifying the
+*   billing class. Add the billing class of the new rate category to
+*   the fields and selection fields structures, in case the new rate
+*   category is on a different billing class.
+    SELECT SINGLE AKLASSE
+      INTO L_WA_FIELDS-AKLASSE
+      FROM ETTA
+      WHERE TARIFTYP = L_WA_FIELDS-TARIFTYP.
+    IF SY-SUBRC = 0.
+      L_WA_FIELDSX-AKLASSE = 'X'.
+    ENDIF.
+  ENDIF.
+ENDIF.
+
+SELECT  ANLAGE
+        BIS
+        AB
+        TARIFTYP
+  FROM EANLH
+  INTO TABLE LI_EANLH
+   WHERE ANLAGE  = OBJECT-KEY
+   AND AB       >= L_KEYDATE
+   AND AB       <= L_RE_KEYDATE .
+IF SY-SUBRC = 0 .
+
+  LOOP AT LI_EANLH INTO LWA_EANLH .
+    SWC_SET_ELEMENT L_WA_CONT 'KeyDate'             LWA_EANLH-AB.
+    SWC_SET_ELEMENT L_WA_CONT 'Prorate'             L_PRORATE.
+    SWC_SET_ELEMENT L_WA_CONT 'InstallationFields'  L_WA_FIELDS.
+    SWC_SET_ELEMENT L_WA_CONT 'InstallationFieldsX' L_WA_FIELDSX.
+    SWC_SET_ELEMENT L_WA_CONT 'AuthorizationGroup'
+      L_AUTHORIZATION_GROUP.
+
+    SWC_CALL_METHOD SELF 'ChangeDirect' L_WA_CONT.
+
+    CASE SY-SUBRC.
+      WHEN 0.      " success, do nothing
+      WHEN 1001.   " foreign lock
+        EXIT_RETURN 1001 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+      WHEN 1002.   " not authorized
+        EXIT_RETURN 1002 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+      WHEN 1003.   " other errors
+        EXIT_RETURN 1003 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+      WHEN 1004.   " not found
+        EXIT_RETURN 1004 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+      WHEN 1005.   " invalid key date
+        EXIT_RETURN 1005 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+      WHEN 1006.   " input error
+        EXIT_RETURN 1006 SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+    ENDCASE.
+  ENDLOOP .
+ENDIF .
+END_METHOD.
+
+BEGIN_METHOD GETRECORDERCODECRM CHANGING CONTAINER.
+
+************************************************************************
+* Created by  : Vinay Gorrela
+* Created on  : 10/10/2011
+* Description : This is a copy of existing GETRECORDERCODE method
+*               Determine reconnect order code.  Assumption is a meter
+************************************************************************
+* Changed by  :
+* Change date :
+* Description :
+************************************************************************
+CONSTANTS: C_DISCON_STATUS TYPE EDISCDOC-STATUS VALUE '21',
+           C_MARKED        TYPE C VALUE 'X'.
+DATA:
+  LV_HARDSHIPFLAG TYPE ZTFO_REC_ORD_CD-HARDSHIP_FLAG,
+  MOVEINONLY      TYPE REGEN-KENNZX,
+  HARDSHIPFLAG    TYPE EBAGEN-ACTSTAT,
+  ORDERCODEDTLS   TYPE ZTFO_REC_ORD_CD,
+*     lv_discdocstatus TYPE ediscdoc-status,
+  LV_INSTSTATUS   TYPE EDISCOBJ-DISCSTATE,
+*     o_discdoc        TYPE swc_object OCCURS 0,
+  LV_DISCNO       TYPE EDISCDOC-DISCNO,
+  O_DIVISION      TYPE SWC_OBJECT,
+  O_CONTRACT      TYPE SWC_OBJECT OCCURS 0,
+  WA_CONTRACT     TYPE SWC_OBJECT,
+  WA_DISCDOC      TYPE SWC_OBJECT,
+  I_CONTAINER     TYPE TABLE OF SWCONT,
+  LV_DISCTYPE     TYPE EDISCPOS-DISCTYPE,
+  LV_DIVISION     TYPE TSPA-SPART,
+  LV_DISCREASON   TYPE EDISCDOC-DISCREASON,
+  LV_DUNNING_FLAG TYPE KENNZX,
+  LV_MOVEIN_DATE  TYPE EVER-EINZDAT.
+DATA : WA_ERR_MSG TYPE ZSFO_BAL_MSG,
+       IT_ERR_MSG TYPE STANDARD TABLE OF ZSFO_BAL_MSG.
+DATA : L_V_ANLAGE TYPE ANLAGE.
+SWC_GET_OBJECT_KEY SELF L_V_ANLAGE.
+SWC_GET_TABLE CONTAINER 'ErrMsg' IT_ERR_MSG.
+
+SWC_GET_ELEMENT CONTAINER 'HardshipFlag' HARDSHIPFLAG.
+SWC_GET_ELEMENT CONTAINER 'MoveInOnly' MOVEINONLY.
+* swc_get_property self 'DiscDocStatus' lv_discdocstatus. "ADE
+
+* CHECK lv_discdocstatus = c_discon_status. "ADE
+
+SWC_GET_PROPERTY SELF 'Division' O_DIVISION.
+SWC_GET_PROPERTY O_DIVISION 'Division' LV_DIVISION.
+* swc_get_table_property self 'ActDisconnectionDocuments' o_discdoc."ADE
+SWC_GET_TABLE_PROPERTY SELF 'CurrentContract' O_CONTRACT.
+CASE HARDSHIPFLAG.
+  WHEN '2'.
+    MOVE C_MARKED TO LV_HARDSHIPFLAG.
+  WHEN OTHERS.
+    CLEAR LV_HARDSHIPFLAG.
+ENDCASE.
+* Start of commenting by ADE
+* Loop at each disc activity for the one we want.
+*LOOP AT o_discdoc INTO wa_discdoc.
+*  swc_get_property wa_discdoc 'State' lv_discdocstatus.
+** In the event that more than one disconnect doc exist perform the
+** following check to ensure the status of 21.
+*  CHECK lv_discdocstatus = c_discon_status.
+*  swc_set_element container 'CURRDISCDOC' wa_discdoc.
+** Get the reconnect reason
+*  swc_get_property wa_discdoc 'Reason' lv_discreason.
+*  CLEAR lv_dunning_flag.
+** check if the reconnect should be dunning related.
+*  IF lv_discreason = '01' AND moveinonly IS INITIAL.
+*    LOOP AT o_contract INTO wa_contract.
+*      swc_get_property wa_contract 'MoveInDate' lv_movein_date.
+*      IF lv_movein_date < sy-datum.
+*        MOVE 'X' TO lv_dunning_flag.
+*        EXIT.
+*      ENDIF.
+*    ENDLOOP.
+*  ENDIF.
+**   Get the reconnect order type.
+*  swc_set_element i_container 'Installation' object-key.
+*  swc_call_method wa_discdoc 'DetermineDiscType' i_container.
+*  swc_get_element i_container 'DiscType' lv_disctype.
+*  SELECT * INTO ordercodedtls
+*    FROM ztfo_rec_ord_cd UP TO 1 ROWS
+*      WHERE hardship_flag = lv_hardshipflag
+*        AND dunning_flag  = lv_dunning_flag
+*        AND sparte        = lv_division
+*        AND discreason    = lv_discreason
+*        AND disctype      = lv_disctype.
+*  ENDSELECT.
+*  IF sy-subrc = 0.
+*    EXIT.
+*  ENDIF.
+*ENDLOOP.
+* End of commenting by ADE
+CALL FUNCTION 'Z_GET_INSTLN_DISCON_STATUS'
+  EXPORTING
+    X_ANLAGE       = L_V_ANLAGE
+  IMPORTING
+    Y_STATUS       = LV_INSTSTATUS
+    Y_DISCNO       = LV_DISCNO
+  EXCEPTIONS
+    INTERNAL_ERROR = 1
+    OTHERS         = 2.
+IF SY-SUBRC <> 0.
+  MOVE :  SY-MSGID TO WA_ERR_MSG-MSGID,
+          SY-MSGNO TO WA_ERR_MSG-MSGNO,
+          SY-MSGTY TO WA_ERR_MSG-MSGTY,
+          SY-MSGV1 TO WA_ERR_MSG-MSGV1,
+          SY-MSGV2 TO WA_ERR_MSG-MSGV2,
+          SY-MSGV3 TO WA_ERR_MSG-MSGV3,
+          SY-MSGV4 TO WA_ERR_MSG-MSGV4.
+  APPEND WA_ERR_MSG TO IT_ERR_MSG.
+  SWC_SET_TABLE CONTAINER 'ErrMsg' IT_ERR_MSG.
+  EXIT_RETURN 9002 SPACE SPACE SPACE SPACE.
+ENDIF.
+
+CHECK LV_INSTSTATUS = '03'. "Disconnection order generated
+
+SWC_CREATE_OBJECT WA_DISCDOC 'DISCONNECT' LV_DISCNO.
+SWC_SET_ELEMENT CONTAINER 'CURRDISCDOC' WA_DISCDOC.
+
+* Get the reconnect reason
+SWC_GET_PROPERTY WA_DISCDOC 'Reason' LV_DISCREASON.
+CLEAR LV_DUNNING_FLAG.
+* check if the reconnect should be dunning related.
+IF LV_DISCREASON = '01' AND MOVEINONLY IS INITIAL.
+  MOVE 'X' TO LV_DUNNING_FLAG.
+ENDIF.
+
+*   Get the reconnect order type.
+SWC_SET_ELEMENT I_CONTAINER 'Installation' OBJECT-KEY.
+SWC_CALL_METHOD WA_DISCDOC 'DetermineDiscType' I_CONTAINER.
+SWC_GET_ELEMENT I_CONTAINER 'DiscType' LV_DISCTYPE.
+SELECT * INTO ORDERCODEDTLS
+  FROM ZTFO_REC_ORD_CD UP TO 1 ROWS
+   WHERE HARDSHIP_FLAG = LV_HARDSHIPFLAG
+      AND DUNNING_FLAG  = LV_DUNNING_FLAG
+      AND SPARTE        = LV_DIVISION
+      AND DISCREASON    = LV_DISCREASON
+      AND DISCTYPE      = LV_DISCTYPE.
+ENDSELECT.
+
+IF ORDERCODEDTLS IS INITIAL.
+  MOVE : 'ZFO_PMI'   TO WA_ERR_MSG-MSGID,
+         '013'       TO WA_ERR_MSG-MSGNO,
+         'E'         TO WA_ERR_MSG-MSGTY,
+         LV_DIVISION TO WA_ERR_MSG-MSGV1,
+         LV_DISCTYPE TO WA_ERR_MSG-MSGV2,
+         ' '         TO WA_ERR_MSG-PROBCLASS.
+  APPEND WA_ERR_MSG TO IT_ERR_MSG.
+  SWC_SET_TABLE CONTAINER 'ErrMsg' IT_ERR_MSG.
+  EXIT_RETURN 9001 LV_DIVISION LV_DISCTYPE HARDSHIPFLAG SPACE.
+ENDIF.
+SWC_SET_ELEMENT CONTAINER 'OrderCodeDtls' ORDERCODEDTLS.
+
+
+END_METHOD.
+
+BEGIN_METHOD DEV_MODIF_ON_INSTL_CHANGE CHANGING CONTAINER.
+*----|START-OF-CHANGE|HMS|12/01/2014|Post Cutover Billing R4B|----*
+CONSTANTS : CO_DATE_INFINITE     TYPE ISU_TIMESL-AB              VALUE '99991231'.
+
+TYPES : BEGIN OF TY_INST_DET,
+          INST   TYPE ANLAGE,
+          SERNR  TYPE GERNR,
+          EQUNR  TYPE EQUNR,
+          DEVLOC TYPE DEVLOC,
+        END OF TY_INST_DET,
+
+        BEGIN OF TY_EQUI_DET,
+          EQUNR TYPE EQUNR,
+          SERNR TYPE GERNR,
+          MATNR TYPE MATNR,
+        END OF TY_EQUI_DET.
+
+DATA : LWA_INST_DET    TYPE TY_INST_DET,
+       LWA_EQUI_DET    TYPE TY_EQUI_DET,
+       LV_TARIFTYP     TYPE TARIFTYP,
+       LV_OLD_TARIFTYP TYPE TARIFTYP,
+       LV_ANLAGE       TYPE ANLAGE,
+       LV_ACTVTY_DT    TYPE DATS,
+       LV_DIVISION     TYPE SWC_OBJECT,
+       LV_SPARTE       TYPE SPARTE.
+
+CLEAR : LWA_INST_DET,
+        LWA_EQUI_DET,
+        LV_ANLAGE,
+        LV_ACTVTY_DT.
+
+
+
+SWC_GET_PROPERTY SELF 'Division' LV_DIVISION.
+SWC_GET_PROPERTY LV_DIVISION 'Division' LV_SPARTE.
+SWC_GET_ELEMENT CONTAINER 'Old_RateCategory' LV_OLD_TARIFTYP.
+SWC_GET_ELEMENT CONTAINER 'New_RateCategory' LV_TARIFTYP.
+
+SWC_GET_OBJECT_KEY SELF LV_ANLAGE.
+
+CHECK LV_SPARTE = '01'.
+*    lv_actvty_dt.
+SELECT SINGLE A~ANLAGE
+       B~LOGIKNR
+       B~EQUNR
+       B~DEVLOC
+INTO LWA_INST_DET
+FROM EASTL AS A
+INNER JOIN EGERH AS B ON A~LOGIKNR = B~LOGIKNR
+WHERE A~ANLAGE = LV_ANLAGE AND
+      A~BIS = CO_DATE_INFINITE AND
+      B~BIS = CO_DATE_INFINITE AND
+      B~KOMBINAT IN ('Z', 'M' ).
+IF SY-SUBRC IS INITIAL.
+  SELECT SINGLE EQUNR
+                SERNR
+                MATNR
+         INTO LWA_EQUI_DET
+         FROM EQUI
+         WHERE EQUNR = LWA_INST_DET-EQUNR.
+  IF SY-SUBRC IS INITIAL.
+    SELECT SINGLE AB
+                  TARIFTYP
+           INTO (LV_ACTVTY_DT, LV_TARIFTYP)
+           FROM EANLH
+           WHERE ANLAGE = LV_ANLAGE AND
+                 BIS = CO_DATE_INFINITE.
+    IF SY-SUBRC IS INITIAL.
+      CALL FUNCTION 'Z_REG_AMCG_PROFILE_UPDATE'
+        EXPORTING
+          IV_SERNR        = LWA_EQUI_DET-SERNR
+          IV_MATNR        = LWA_EQUI_DET-MATNR
+          IV_INSTALLATION = LV_ANLAGE
+          IV_DEVLOC       = LWA_INST_DET-DEVLOC
+          IV_TARIFTYP     = LV_TARIFTYP
+          IV_OLD_TARIFTYP = LV_OLD_TARIFTYP
+          IV_ACTVT_DATE   = LV_ACTVTY_DT
+          IV_DEVMODIF     = ABAP_TRUE
+          IV_SEND_EMAIL   = ABAP_TRUE.
+    ENDIF.
+  ENDIF.
+ENDIF.
+*----|END-OF-CHANGE|HMS|12/01/2014|Post Cutover Billing R4B|----*
+
+END_METHOD.
+
+BEGIN_METHOD GETDATATOUPDATEREGISTER CHANGING CONTAINER.
+
+CONSTANTS: CO_DATE_INFINITE TYPE ISU_TIMESL-AB VALUE '99991231'.
+CONSTANTS: LC_OPEN_MR       TYPE EABL-ABLSTAT  VALUE '0'.
+
+TYPES : BEGIN OF TY_INST_DET,
+          INST   TYPE ANLAGE,
+          SERNR  TYPE GERNR,
+          EQUNR  TYPE EQUNR,
+          DEVLOC TYPE DEVLOC,
+        END OF TY_INST_DET,
+
+        BEGIN OF TY_EQUI_DET,
+          EQUNR TYPE EQUNR,
+          SERNR TYPE GERNR,
+          MATNR TYPE MATNR,
+        END OF TY_EQUI_DET.
+
+DATA : LWA_INST_DET    TYPE TY_INST_DET,
+       LWA_EQUI_DET    TYPE TY_EQUI_DET,
+       LV_TARIFTYP     TYPE TARIFTYP,
+       LV_OLD_TARIFTYP TYPE TARIFTYP,
+       LV_ANLAGE       TYPE ANLAGE,
+       LV_ACTVTY_DT    TYPE DATS,
+       LV_DIVISION     TYPE SWC_OBJECT,
+       LV_SPARTE       TYPE SPARTE,
+       LV_OWNER_FLAG   TYPE CHAR1,
+       LV_OWNER_DT     TYPE DATS,
+       LV_MOVEIN_DT    TYPE DATS.
+
+DATA:  LV_NEW_RATE TYPE EANLH-TARIFTYP,
+       LV_OLD_RATE TYPE EANLH-TARIFTYP.
+
+CLEAR : LWA_INST_DET,
+        LWA_EQUI_DET,
+        LV_ANLAGE,
+        LV_ACTVTY_DT.
+
+SWC_GET_PROPERTY SELF 'Division' LV_DIVISION.
+SWC_GET_PROPERTY LV_DIVISION 'Division' LV_SPARTE.
+SWC_GET_ELEMENT CONTAINER 'OLD_RATE' LV_OLD_TARIFTYP.
+SWC_GET_ELEMENT CONTAINER 'NEW_RATE' LV_TARIFTYP.
+
+SWC_GET_OBJECT_KEY SELF LV_ANLAGE.
+
+CHECK LV_OLD_TARIFTYP <> LV_TARIFTYP.
+
+CHECK LV_SPARTE = '01'.
+
+SELECT SINGLE A~ANLAGE
+       B~LOGIKNR
+       B~EQUNR
+       B~DEVLOC
+INTO LWA_INST_DET
+FROM EASTL AS A
+INNER JOIN EGERH AS B ON A~LOGIKNR = B~LOGIKNR
+WHERE A~ANLAGE = LV_ANLAGE AND
+      A~BIS = CO_DATE_INFINITE AND
+      B~BIS = CO_DATE_INFINITE AND
+      B~KOMBINAT IN ('Z', 'M' ).
+IF SY-SUBRC IS INITIAL.
+  SELECT SINGLE EQUNR
+                SERNR
+                MATNR
+         INTO LWA_EQUI_DET
+         FROM EQUI
+         WHERE EQUNR = LWA_INST_DET-EQUNR.
+  IF SY-SUBRC IS INITIAL.
+    SELECT SINGLE AB
+                  TARIFTYP
+           INTO (LV_ACTVTY_DT, LV_TARIFTYP)
+           FROM EANLH
+           WHERE ANLAGE = LV_ANLAGE AND
+                 BIS = CO_DATE_INFINITE.
+    IF SY-SUBRC IS INITIAL.
+*      SELECT COUNT(*)
+*        FROM eablg
+*        WHERE anlage = lv_anlage
+*          AND ablesgr = '06'
+*          AND adatsoll = lv_actvty_dt.
+*      IF sy-subrc = 0.
+*        lv_actvty_dt = lv_actvty_dt + 1.
+*      ENDIF.
+
+      CLEAR: LV_MOVEIN_DT.
+      SELECT SINGLE EINZDAT
+        INTO LV_MOVEIN_DT
+        FROM EVER
+        WHERE ANLAGE = LV_ANLAGE
+          AND AUSZDAT = '99991231'.
+
+      SELECT COUNT(*)
+        FROM V_EABL
+       WHERE ABLESGR = '06'
+         AND EQUNR    EQ LWA_INST_DET-EQUNR
+         AND ABLSTAT  EQ LC_OPEN_MR
+         AND ADATSOLL = LV_MOVEIN_DT.
+      IF SY-SUBRC IS INITIAL.
+        LV_OWNER_FLAG = 'X'.
+        IF LV_MOVEIN_DT > SY-DATUM.
+          LV_OWNER_DT = LV_MOVEIN_DT + 1.
+        ELSE.
+          LV_OWNER_DT = LV_MOVEIN_DT + 2.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDIF.
+
+SWC_SET_ELEMENT CONTAINER 'ACTVTY_DT' LV_ACTVTY_DT.
+SWC_SET_ELEMENT CONTAINER 'TARIFTYP' LV_TARIFTYP.
+SWC_SET_ELEMENT CONTAINER 'DEVLOC' LWA_INST_DET-DEVLOC.
+SWC_SET_ELEMENT CONTAINER 'ANLAGE' LV_ANLAGE.
+SWC_SET_ELEMENT CONTAINER 'MATNR' LWA_EQUI_DET-MATNR.
+SWC_SET_ELEMENT CONTAINER 'SERNR' LWA_EQUI_DET-SERNR.
+SWC_SET_ELEMENT CONTAINER 'OWNER_FLG' LV_OWNER_FLAG.
+SWC_SET_ELEMENT CONTAINER 'OWNER_DT' LV_OWNER_DT.
+
+END_METHOD.
+
+BEGIN_METHOD UPDATEREGISTER CHANGING CONTAINER.
+DATA:  LV_SERNR        TYPE GERNR,
+       LV_DEVLOC       TYPE DEVLOC,
+       LV_MATNR        TYPE MATNR,
+       LV_NEW_TARIFTYP TYPE TARIFTYP,
+       LV_OLD_TARIFTYP TYPE TARIFTYP,
+       LV_TARIFTYP     TYPE TARIFTYP,
+       LV_ANLAGE       TYPE ANLAGE,
+       LV_ACTVTY_DT    TYPE DATS.
+DATA:  LT_CONTAINER TYPE TABLE OF SWR_CONT,
+       LW_CONTAINER TYPE SWR_CONT,
+       LV_OBJKEY    TYPE SWO_TYPEID,
+       LT_RETURN    TYPE BAPIRET2_T.
+CONSTANTS: C_INSTLN   TYPE SWO_OBJTYP VALUE 'INSTLN',
+           C_UPD_COMP TYPE SWO_EVENT VALUE 'DeviceRegupdate_completed',
+           C_COMMIT   TYPE FLAG VALUE 'X'.
+
+CLEAR : LV_SERNR, LV_DEVLOC, LV_MATNR, LV_OLD_TARIFTYP, LV_ANLAGE, LV_ACTVTY_DT.
+
+SWC_GET_ELEMENT CONTAINER 'OLD_RATE' LV_OLD_TARIFTYP.
+SWC_GET_ELEMENT CONTAINER 'NEW_RATE' LV_TARIFTYP.
+SWC_GET_ELEMENT CONTAINER 'ACTVTY_DT' LV_ACTVTY_DT.
+SWC_GET_ELEMENT CONTAINER 'TARIFTYP' LV_TARIFTYP.
+SWC_GET_ELEMENT CONTAINER 'DEVLOC' LV_DEVLOC.
+SWC_GET_ELEMENT CONTAINER 'ANLAGE' LV_ANLAGE.
+SWC_GET_ELEMENT CONTAINER 'MATNR' LV_MATNR.
+SWC_GET_ELEMENT CONTAINER 'SERNR' LV_SERNR.
+
+CALL FUNCTION 'Z_REG_AMCG_PROFILE_UPDATE'
+  EXPORTING
+    IV_SERNR        = LV_SERNR
+    IV_MATNR        = LV_MATNR
+    IV_INSTALLATION = LV_ANLAGE
+    IV_DEVLOC       = LV_DEVLOC
+    IV_TARIFTYP     = LV_TARIFTYP
+    IV_OLD_TARIFTYP = LV_OLD_TARIFTYP
+    IV_ACTVT_DATE   = LV_ACTVTY_DT
+    IV_DEVMODIF     = ABAP_TRUE
+    IV_SEND_EMAIL   = ABAP_TRUE
+  IMPORTING
+    ET_RETURN       = LT_RETURN.
+
+* Check for Errors.
+LOOP AT LT_RETURN TRANSPORTING NO FIELDS WHERE TYPE CA 'AEX'.
+ENDLOOP.
+* if there was atleast one error or abort message dont raise the event
+IF SY-SUBRC <> 0.
+
+* Raise Event Device Reg update completed which will be recieved by
+* Workflow WS93200342 to update the Backend processing update to
+* the enrollment table
+
+* Key
+  LV_OBJKEY = LV_ANLAGE.
+  LW_CONTAINER-ELEMENT = 'New_RateCategory'.
+  LW_CONTAINER-VALUE   = LV_TARIFTYP.
+  APPEND LW_CONTAINER TO LT_CONTAINER.
+
+  LW_CONTAINER-ELEMENT = 'Old_RateCategory'.
+  LW_CONTAINER-VALUE   = LV_OLD_TARIFTYP.
+  APPEND LW_CONTAINER TO LT_CONTAINER.
+
+  LW_CONTAINER-ELEMENT = 'DevLoc'.
+  LW_CONTAINER-VALUE   = LV_DEVLOC.
+  APPEND LW_CONTAINER TO LT_CONTAINER.
+
+* Raise the Event
+  CALL FUNCTION 'SAP_WAPI_CREATE_EVENT'
+    EXPORTING
+      OBJECT_TYPE     = C_INSTLN
+      OBJECT_KEY      = LV_OBJKEY
+      EVENT           = C_UPD_COMP
+      COMMIT_WORK     = 'X'
+*     EVENT_LANGUAGE  = SY-LANGU
+*     LANGUAGE        = SY-LANGU
+*     USER            = SY-UNAME
+*     IFS_XML_CONTAINER       =
+* IMPORTING
+*     RETURN_CODE     =
+*     EVENT_ID        =
+    TABLES
+      INPUT_CONTAINER = LT_CONTAINER
+*     MESSAGE_LINES   =
+*     MESSAGE_STRUCT  =
+    .
+
+  IF SY-SUBRC = 0.
+    COMMIT WORK AND WAIT.
+  ENDIF.
+
+ENDIF.
+END_METHOD.
+
+BEGIN_METHOD GETMETERREADS CHANGING CONTAINER.
+CONSTANTS c_periodic TYPE ablesgr VALUE '01'.
+* 04/07/2009 PM847082 GCHONG END
+* 04/24/2009 PM847082 GCHONG BEGIN
+* Constants
+CONSTANTS : c_billable TYPE ablstat VALUE '1',
+            c_released TYPE ablstat VALUE '4'.
+
+data: lv_anlage type anlage,
+      l_key_date type dats,
+      wa_BAPIRETURN type BAPIRETURN1,
+      i_MRDATA type TABLE OF BAPIEABL,
+      i_MRREASON type TABLE OF BAPIEABLG,
+      wa_mrdata like LINE OF i_mrdata,
+      wa_mrreason like LINE OF i_mrreason.
+
+SWC_GET_OBJECT_KEY SELF LV_ANLAGE.
+SWC_GET_ELEMENT CONTAINER 'KeyDate'          L_KEY_DATE.
+
+SWC_SET_ELEMENT CONTAINER 'ExitLoopFlag' ' '.
+
+  CALL FUNCTION 'BAPI_MTRREADDOC_GETLIST'
+    EXPORTING
+      INSTALLATION = lv_anlage
+      MRDATEFROM = l_key_date
+      MRDATETO = sy-datum
+      MRDOCUMENTTYPE = '2'
+      NO_REG_RELSHIP = SPACE
+    IMPORTING
+      RETURN = wa_bapireturn
+    TABLES
+      MRDOCUMENTDATA =  i_mrdata
+      MRDOCUMENTREASONS = i_mrreason
+    EXCEPTIONS
+      OTHERS = 01.
+  CASE SY-SUBRC.
+    WHEN 0.            " OK
+
+LOOP AT i_mrdata INTO wa_mrdata
+  WHERE allocationdate GE l_key_date
+* 04/24/2009 PM847082 GCHONG BEGIN
+*  AND   allocationdate LE lv_alloc_bis.
+    AND allocationdate LE sy-datum.
+*    AND ( meterreadingstatus EQ c_billable OR
+*         meterreadingstatus EQ c_released ).
+* 04/24/2009 PM847082 GCHONG END
+
+* 04/07/2009 PM847082 GCHONG BEGIN
+* Only recognise meter read if it is not control read (reason 10) nor
+* move-out read
+*  LOOP AT i_mrreason INTO wa_mrreason
+*                     WHERE mridnumber EQ wa_mrdata-mridnumber
+*                       AND mrreason   EQ c_periodic.
+*  ENDLOOP.
+** Refresh object if found
+*  IF sy-subrc EQ 0.
+*    swc_set_objectkey wa_mrdata-mridnumber.
+*    swc_refresh_object self.
+  SWC_SET_ELEMENT CONTAINER 'ExitLoopFlag' 'X'.
+    EXIT.
+*  ELSE.
+*    swc_set_objectkey space.
+*    swc_refresh_object self.
+*  ENDIF.
+ENDLOOP.
+
+    WHEN OTHERS.       " to be implemented
+  ENDCASE.
+END_METHOD.

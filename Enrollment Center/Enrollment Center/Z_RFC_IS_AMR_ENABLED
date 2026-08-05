@@ -1,0 +1,26 @@
+FUNCTION Z_RFC_IS_AMR_ENABLED .
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IM_AMS) TYPE  EGERH-AMS
+*"     VALUE(IM_AMCG_CAP_GROUP) TYPE  EGERH-AMCG_CAP_GRP
+*"  EXCEPTIONS
+*"      NOT_AMR
+*"      NOT_ENABLED
+*"----------------------------------------------------------------------
+
+
+*{   INSERT         ECDK974621                                        1
+  CALL FUNCTION 'Z_RFC_GET_AMR_AMS_AMCG'.
+
+  IF im_ams NOT IN r_amr_ams_range->*.
+    RAISE not_amr.
+  ELSEIF im_amcg_cap_group NOT IN r_amr_amcg_cap_grp_range->*.
+    RAISE not_enabled.
+  ENDIF.
+*}   INSERT
+
+
+
+ENDFUNCTION.
+

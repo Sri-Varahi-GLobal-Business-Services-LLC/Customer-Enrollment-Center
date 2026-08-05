@@ -1,0 +1,93 @@
+FUNCTION z_change_rate_category.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(X_ANLAGE) TYPE  ANLAGE
+*"     VALUE(X_KEYDATE) TYPE  DATUM DEFAULT SY-DATUM
+*"     VALUE(X_NEW_RATECAT) TYPE  TARIFTYP
+*"     VALUE(X_NO_DIALOG) TYPE  CHAR01 DEFAULT 'X'
+*"  EXCEPTIONS
+*"      PROVIDE_ERROR
+*"      CHANGE_ERROR
+*"----------------------------------------------------------------------
+
+  DATA:
+    l_auto   TYPE  isu01_instln_auto,
+    l_obj    TYPE  isu01_instln.
+
+  FIELD-SYMBOLS: <fs_eanlh>   TYPE  eanlh.
+
+  DATA:
+    lwa_eanlh   TYPE  eanlh.
+
+  CALL FUNCTION 'ISU_S_INSTLN_PROVIDE'
+    EXPORTING
+      x_anlage              = x_anlage
+      x_keydate             = x_keydate
+      x_wmode               = '2'
+      x_prorate             = 'X'
+      x_no_dialog           = x_no_dialog
+*   X_CALLED_BY           =
+   IMPORTING
+     y_obj                 = l_obj
+     y_auto                = l_auto
+   EXCEPTIONS
+     not_found             = 1
+     invalid_keydate       = 2
+     foreign_lock          = 3
+     not_authorized        = 4
+     invalid_wmode         = 5
+     general_fault         = 6
+     OTHERS                = 7
+            .
+  IF sy-subrc <> 0.
+    MESSAGE e030(zccs_int) WITH x_new_ratecat x_anlage
+    RAISING provide_error.
+  ENDIF.
+
+  l_auto-data-tariftyp    = x_new_ratecat.
+  l_auto-contr-use-data   = 'X'.
+  l_auto-contr-use-okcode = 'X'.
+  l_auto-contr-okcode     = 'SAVE'.
+
+  LOOP AT l_obj-eanlh ASSIGNING <fs_eanlh>.
+    IF <fs_eanlh>-bis EQ '99991231'.
+      <fs_eanlh>-tariftyp =  x_new_ratecat.
+    ENDIF.
+  ENDLOOP.
+
+  l_obj-contr-auto_done-data = 'X'.
+
+  CALL FUNCTION 'ISU_S_INSTLN_CHANGE'
+    EXPORTING
+      x_anlage                 = x_anlage
+      x_keydate                = x_keydate
+      x_prorate                = 'X'
+      x_upd_online             = 'X'
+      x_no_dialog              = x_no_dialog
+      x_auto                   = l_auto
+      x_obj                    = l_obj
+*   X_NO_OTHER               =
+*   X_MASS_CHANGE_INST       =
+* IMPORTING
+*   Y_DB_UPDATE              =
+*   Y_EXIT_TYPE              =
+* TABLES
+*   YT_NEW_EANL              =
+   EXCEPTIONS
+     not_found                = 1
+     foreign_lock             = 2
+     not_authorized           = 3
+     cancelled                = 4
+     input_error              = 5
+     general_fault            = 6
+     OTHERS                   = 7
+            .
+  IF sy-subrc <> 0.
+    MESSAGE e030(zccs_int) WITH x_new_ratecat x_anlage
+    RAISING change_error.
+  ENDIF.
+
+  COMMIT WORK AND WAIT.
+
+ENDFUNCTION.

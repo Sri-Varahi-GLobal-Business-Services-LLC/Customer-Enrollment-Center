@@ -1,0 +1,387 @@
+FUNCTION z_dla_rate_change.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(HEADER_GUID) TYPE  GUID_16
+*"     VALUE(ITEM_GUID) TYPE  GUID_16
+*"     VALUE(PRODUCT_GUID) TYPE  GUID_16
+*"     VALUE(CRM_PRODUCT) TYPE  CRMT_ORDERED_PROD_DB
+*"     VALUE(PROD_CHG_DATE) TYPE  ECRM_ISU_CONTSTART
+*"     VALUE(REPEAT_CALL) TYPE  BOOLE_D
+*"     VALUE(CALLER) TYPE  ZCALLERNAME OPTIONAL
+*"     VALUE(OLD_CRM_PRODUCT) TYPE  CRMT_ORDERED_PROD_DB OPTIONAL
+*"  EXPORTING
+*"     VALUE(OLD_ITEM_GUID) TYPE  GUID_16
+*"     VALUE(NEW_ITEM_GUID) TYPE  GUID_16
+*"     VALUE(RATE_CHANGE) TYPE  BOOLE_D
+*"     VALUE(IR_CREATED) TYPE  BOOLE_D
+*"     VALUE(IR_NUMBER) TYPE  CRMT_OBJECT_ID_DB
+*"  EXCEPTIONS
+*"      PROCESS_NOT_EXECUTABLE
+*"      PROCESS_NOT_COMPLETED
+*"      IR_NOT_CREATED
+*"      BUS_AGR_REL_ERROR
+*"      BUS_AGR_SET_NOTFOUND
+*"      CONTRACT_NOT_SAVED
+*"      PROD_CHANGE_FAILED
+*"----------------------------------------------------------------------
+
+  DATA: lr_process_mgr         TYPE REF TO if_crm_iu_process_mgr,
+        lr_entity              TYPE REF TO cl_crm_bol_entity,
+        lt_itm_saved           TYPE crmt_object_guid_tab_unsorted,
+        lv_bool                TYPE abap_bool,
+        lv_new_it_guid         TYPE guid_16,
+        lv_dup_guid            TYPE guid_16,
+        lt_created_tab         TYPE TABLE OF crmt_object_guid,
+        lt_ord_i_wrk           TYPE TABLE OF crmt_orderadm_i_wrk,
+        ls_guid                TYPE crmt_object_guid,
+        lv_bp                  TYPE bu_partner,
+        lv_app_id              TYPE char20,
+        lv_text                TYPE string,
+        lv_buag                TYPE char12,
+        lv_buag_guid           TYPE crmt_buag_guid,
+        lv_product             TYPE crmt_ordered_prod_db,
+        lv_contract            TYPE crm_isu_contract,
+        lv_prod_chg_date       TYPE rstxtlg,
+        lv_cont_end_date       TYPE ecrm_isu_contend,
+        lv_cont_start_date     TYPE ecrm_isu_contstart,
+        lt_objects_to_save     TYPE crmt_object_guid_tab,
+        lt_saved_objects       TYPE crmt_return_objects,
+        oref                   TYPE REF TO cx_root,
+        lv_exp_text            TYPE string,
+        lr_isucontract_query   TYPE REF TO cl_crm_bol_dquery_service,         " Referance to Isucontract Query
+        lr_isucontract_result  TYPE REF TO if_bol_entity_col,                " Result collection
+        lr_install             TYPE REF TO cl_crm_bol_entity,
+        lv_anlage              TYPE crm_isu_anlage,                          " Installation
+        lv_value               TYPE string,
+        lr_isuorderitem        TYPE REF TO cl_crm_bol_entity,
+        ls_record_db           TYPE crmd_isuexta4,
+        lr_core                TYPE REF TO cl_crm_bol_core,
+        lt_record_db           TYPE crmt_isuexta4_dut,
+        lt_crmv_isu_index_i    TYPE STANDARD TABLE OF crmv_isu_index_i,
+        ls_crmv_isu_index_i    TYPE crmv_isu_index_i,
+        ls_product             TYPE comm_product,
+        lt_guid                TYPE crmt_object_guid_tab,
+        lt_initialized_objects TYPE crmt_object_guid_tab.
+
+  CLEAR: lr_process_mgr,lr_entity,lt_itm_saved,lv_bool, lv_new_it_guid, lv_dup_guid,
+         lt_created_tab,lt_ord_i_wrk,ls_guid,lv_app_id,lv_text,lv_buag,lv_buag_guid,
+         lv_product,lv_contract, lr_isuorderitem,lv_prod_chg_date, ir_created,lv_bp,
+         lt_objects_to_save, lt_saved_objects,lv_exp_text,rate_change,old_item_guid,
+         new_item_guid,oref, lv_cont_end_date, lt_guid.
+
+*    CLEAR lr_process_mgr. FREE lr_process_mgr.
+*  DO. DATA lv_debug TYPE char1 VALUE 'X'. IF lv_debug IS INITIAL. EXIT. ENDIF. ENDDO.
+  cl_crm_iu_order_agent=>class_init( ).
+*  cl_crm_ui_profile=>get_instance( )->set_profile( 'ZIC_CSR3' ).
+  cl_crm_ui_profile=>get_instance( )->set_profile( 'ZCRM7_TEAM' ).
+
+  TRY.
+      lr_process_mgr = cl_crm_iu_process_mgr=>get_instance( item_guid   = item_guid
+*                                                           header_guid = header_guid
+                                                            profile_id  = 'ZDEFAULT' ).
+
+      IF lr_process_mgr IS NOT BOUND.
+        RAISE process_not_completed.
+      ENDIF.
+
+*** Checks whether the process is executable
+      lv_bool = lr_process_mgr->is_executable( definition_id = 'ZDLA_PROD_CHANGE' buffer_only = abap_false item_guid = item_guid ).
+
+      IF lv_bool NE 'X'.
+        RAISE process_not_executable.
+      ENDIF.
+
+      TRY.
+*** Starts the Process Manager
+          lr_process_mgr->start( definition_id = 'ZDLA_PROD_CHANGE' ).
+
+          CLEAR: oref,lv_exp_text.
+        CATCH cx_crm_iu_process_exec_failed INTO oref.
+          lv_exp_text = oref->get_text( ).
+          IF lv_exp_text IS NOT INITIAL.
+            RAISE process_not_completed.
+          ENDIF.
+      ENDTRY.
+
+      lt_created_tab = cl_crm_isu_order_info=>gt_created_tab.
+
+      SORT lt_created_tab.
+
+      READ TABLE lt_created_tab INTO ls_guid INDEX 1.
+
+      lv_new_it_guid = ls_guid.
+
+      CALL FUNCTION 'CRM_ISUEXT_READ_DB'
+        EXPORTING
+          iv_guid              = item_guid
+*         iv_guid              = header_guid
+        IMPORTING
+          es_isuext_db         = ls_record_db
+*         et_isuext_db         = lt_record_db
+        EXCEPTIONS
+          parameter_error      = 1
+          entry_does_not_exist = 2
+          OTHERS               = 3.
+
+      IF sy-subrc = 0 AND ls_record_db IS NOT INITIAL.
+
+        lv_value = ls_record_db-a4isucontr.
+
+        SELECT * FROM crmv_isu_index_i
+          INTO TABLE lt_crmv_isu_index_i
+          WHERE isucontract = ls_record_db-a4isucontr
+          AND   header      = header_guid.
+
+        IF sy-subrc = 0.
+          READ TABLE lt_crmv_isu_index_i INTO ls_crmv_isu_index_i WITH KEY guid = item_guid
+                                                                        contend = '99991231'.
+          IF ls_crmv_isu_index_i IS NOT INITIAL.
+            lv_cont_start_date = ls_crmv_isu_index_i-contstart.
+            lv_cont_end_date   = ls_crmv_isu_index_i-contend.
+          ENDIF.
+        ENDIF.
+
+        lr_core = cl_crm_bol_core=>get_instance( ).
+        lr_core->load_component_set( 'IUICALL' ).
+
+*   Get a Reference to the query
+        lr_isucontract_query  = cl_crm_bol_dquery_service=>get_instance( 'IsuMdContractQuery$Adv' ).
+
+        CALL METHOD lr_isucontract_query->add_selection_param
+          EXPORTING
+            iv_attr_name = 'V_VERTRAG'
+            iv_sign      = 'I'
+            iv_option    = 'EQ'
+            iv_low       = lv_value.
+
+        lr_isucontract_result  = lr_isucontract_query->get_query_result( ).
+        CHECK lr_isucontract_result IS BOUND.
+
+* Get the first entity
+        lr_install ?= lr_isucontract_result->get_first( ).
+
+        CHECK lr_install IS BOUND.
+
+* Get the Installation Number
+        lr_install->get_property_as_value(
+                      EXPORTING iv_attr_name = 'ANLAGE'
+                      IMPORTING ev_result    = lv_anlage ). "#EC NOTEXT
+      ENDIF.
+
+*    Get Product Guid
+      IF product_guid IS INITIAL.
+        SELECT SINGLE *
+          FROM comm_product
+          INTO ls_product
+        WHERE product_id = crm_product.
+        product_guid = ls_product-product_guid.
+      ENDIF.
+
+*** Call item Product/Rate change method
+      TRY.
+          CALL METHOD zcl_crm_iu_pr_prod_chng_item=>prod_chng_item
+            EXPORTING
+              header_guid     = header_guid
+              item_guid       = item_guid
+              product_id      = crm_product
+              product_guid    = product_guid
+              lr_process_mgr  = lr_process_mgr
+              new_item_guid   = lv_new_it_guid
+              prod_chg_date   = prod_chg_date
+              installation_id = lv_anlage
+              cont_end_date   = lv_cont_end_date
+              cont_start_date = lv_cont_start_date
+            IMPORTING
+              rate_change     = rate_change.
+
+        CATCH zcx_product_not_set INTO oref.
+          lv_exp_text = oref->get_text( ).
+          IF lv_exp_text IS NOT INITIAL.
+            RAISE prod_change_failed.
+          ENDIF.
+
+          CLEAR: oref,lv_exp_text.
+        CATCH zcx_prod_date_lt_cont_start INTO oref.
+          lv_exp_text = oref->get_text( ).
+          IF lv_exp_text IS NOT INITIAL.
+            RAISE prod_change_failed.
+          ENDIF.
+
+          CLEAR: oref,lv_exp_text.
+        CATCH zcx_status_not_set INTO oref .
+          lv_exp_text = oref->get_text( ).
+          IF lv_exp_text IS NOT INITIAL.
+            RAISE prod_change_failed.
+          ENDIF.
+
+          CLEAR: oref,lv_exp_text.
+        CATCH zcx_ext_obj_not_set INTO oref.
+          lv_exp_text = oref->get_text( ).
+          IF lv_exp_text IS NOT INITIAL.
+            RAISE prod_change_failed.
+          ENDIF.
+
+          CLEAR: oref,lv_exp_text.
+        CATCH zcx_date_not_set INTO oref.
+          lv_exp_text = oref->get_text( ).
+          IF lv_exp_text IS NOT INITIAL.
+            RAISE prod_change_failed.
+          ENDIF.
+
+          CLEAR: oref,lv_exp_text.
+        CATCH zcx_prod_change_failed INTO oref.
+          lv_exp_text = oref->get_text( ).
+          IF lv_exp_text IS NOT INITIAL.
+            RAISE prod_change_failed.
+          ENDIF.
+
+      ENDTRY.
+
+**       Move old and new item guids
+      IF item_guid IS NOT INITIAL.
+        APPEND item_guid      TO lt_itm_saved.
+        old_item_guid = item_guid.
+      ENDIF.
+      IF lv_new_it_guid IS NOT INITIAL.
+        APPEND lv_new_it_guid TO lt_itm_saved.
+        new_item_guid = lv_new_it_guid.
+      ENDIF.
+
+      TRY.
+*** Save data and ends the process
+          lr_process_mgr->finish( EXPORTING definition_id     = 'ZDLA_PROD_CHANGE'
+                                  IMPORTING items_to_be_saved = lt_itm_saved ).
+
+          CLEAR: oref,lv_exp_text.
+        CATCH cx_crm_iu_process_exec_failed INTO oref.
+          lv_exp_text = oref->get_text( ).
+          IF lv_exp_text IS NOT INITIAL.
+            RAISE process_not_completed.
+          ENDIF.
+      ENDTRY.
+
+      APPEND header_guid TO lt_objects_to_save.
+
+*     Save the order(Contract)
+      CALL FUNCTION 'CRM_ORDER_SAVE'
+        EXPORTING
+          it_objects_to_save = lt_objects_to_save
+        IMPORTING
+          et_saved_objects   = lt_saved_objects
+        EXCEPTIONS
+          document_not_saved = 1
+          OTHERS             = 2.
+
+      IF sy-subrc = '0'.
+*       Commit and wait
+        COMMIT WORK.
+
+*       Since we are not using the BOl to update the contract we have to initialize
+*       the contract to release the locks on the contracts and IBASE.
+        CALL FUNCTION 'CRM_ORDER_INITIALIZE'
+          EXPORTING
+            it_guids_to_init       = lt_objects_to_save
+            iv_init_frame_log      = abap_true
+            iv_keep_lock           = abap_false
+          IMPORTING
+            et_initialized_objects = lt_initialized_objects
+          EXCEPTIONS
+            error_occurred         = 1
+            OTHERS                 = 2.
+        IF sy-subrc <> 0.ENDIF.
+        rate_change = 'X'.
+      ELSE.
+        RAISE contract_not_saved.
+      ENDIF.
+
+      TRY.
+          lr_process_mgr->destroy( ).
+
+          CLEAR: oref,lv_exp_text.
+        CATCH cx_crm_iu_process_exec_failed.
+      ENDTRY.
+
+*** Get BP, product and buag guid
+      SELECT SINGLE partner isucontract ordered_prod buag_guid
+        FROM crmv_isu_index_h
+        INTO (lv_bp, lv_contract, lv_product, lv_buag_guid)
+      WHERE guid   = item_guid
+      AND header = header_guid.
+
+***  Get CA
+      SELECT SINGLE buag_id
+        FROM crmm_buag
+        INTO lv_buag
+      WHERE buag_guid = lv_buag_guid.
+
+      lv_prod_chg_date = prod_chg_date.
+
+      CALL FUNCTION 'ZFS_CONVERT_DATE_FORMAT'
+        EXPORTING
+          i_sys_date = lv_prod_chg_date
+        IMPORTING
+          e_date     = lv_prod_chg_date.
+
+**** Rate Change to DLA rates (RS_1005 or GS_1005)
+      IF crm_product = 'RS_1005' OR crm_product = 'GS_1005'.
+        CONCATENATE 'Contract' lv_contract '; Product Changed from' lv_prod_chg_date ';' lv_product 'to' crm_product INTO lv_text SEPARATED BY space.
+        lv_app_id = 'SE_DLA_PC_IN'.
+      ELSEIF crm_product = 'RS_1007'.
+        CONCATENATE 'Enrollment completed to' 'CPP' 'for' 'Contract' lv_contract 'from caller' caller INTO lv_text SEPARATED BY space.
+        lv_app_id = 'SE_DPP_CPP_ENROLLED'.
+      ELSEIF crm_product = 'RS_1008'.
+        CONCATENATE 'Enrollment completed to' 'PTR' 'for' 'Contract' lv_contract 'from caller' caller INTO lv_text SEPARATED BY space.
+        lv_app_id = 'SE_DPP_PTR_ENROLLED'.
+      ELSE.
+        IF old_crm_product = 'RS_1007'.
+          CONCATENATE 'De-Enrollment completed from' 'CPP' 'for' 'Contract' lv_contract INTO lv_text SEPARATED BY space.
+          lv_app_id = 'SE_DPP_CPP_DEENROLL'.
+        ELSEIF old_crm_product = 'RS_1008'.
+          CONCATENATE 'De-Enrollment completed from' 'PTR' 'for' 'Contract' lv_contract INTO lv_text SEPARATED BY space.
+          lv_app_id = 'SE_DPP_PTR_DEENROLL'.
+        ELSE.
+          CONCATENATE 'Contract' lv_contract '; Product Changed from' lv_prod_chg_date ';' lv_product 'to' crm_product INTO lv_text SEPARATED BY space.
+          lv_app_id = 'SE_DLA_PC_OUT'.
+        ENDIF.
+      ENDIF.
+
+      IF rate_change = 'X'.
+
+        CALL FUNCTION 'Z_SE_IR_CREATE'
+          EXPORTING
+            i_bp                  = lv_bp
+            i_app_id              = lv_app_id
+            i_text                = lv_text
+            i_buag                = lv_buag
+          IMPORTING
+            ir_created            = ir_created
+            ir_number             = ir_number
+          EXCEPTIONS
+            ir_not_created        = 1
+            no_bp_passed          = 2
+            no_business_agreement = 4
+            no_confirmed_bp       = 5
+            no_application_id     = 6
+            bus_agr_rel_error     = 7
+            bus_agr_set_notfound  = 8
+            OTHERS                = 9.
+
+        IF sy-subrc = 1.
+          RAISE ir_not_created.
+        ELSEIF sy-subrc = 7.
+          RAISE bus_agr_rel_error.
+        ELSEIF sy-subrc = 8.
+          RAISE bus_agr_set_notfound.
+        ENDIF.
+      ENDIF.
+
+  ENDTRY.
+
+* If we call more than one time, the created guid has to be cleared.
+  IF lv_new_it_guid IS NOT INITIAL.
+    DELETE TABLE cl_crm_isu_order_info=>gt_created_tab WITH TABLE KEY table_line = lv_new_it_guid.
+
+  ENDIF.
+
+ENDFUNCTION.

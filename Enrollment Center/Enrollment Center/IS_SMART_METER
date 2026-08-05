@@ -1,0 +1,48 @@
+METHOD is_smart_meter.
+
+  DATA: lv_ams             TYPE e_ami_ams,
+        lv_amcg            TYPE e_ami_amcg_cap_grp,
+        li_amicapabilities TYPE tab_eami_smart_meter_capa.
+
+  CLEAR : li_amicapabilities,
+          lv_ams,
+          lv_amcg.
+
+  "Check  meter is smart meter or not
+  CALL METHOD cl_isu_ami_dm_manager=>determine_ami_relevant_data
+    EXPORTING
+      x_equnr        = my_equnr
+      x_from         = my_date
+    IMPORTING
+      y_ams          = lv_ams
+      y_amcg_cap_grp = lv_amcg
+    EXCEPTIONS
+      not_found      = 1
+      OTHERS         = 2.
+  IF sy-subrc <> 0.
+    populate_status_return sy-msgid sy-msgty sy-msgno sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    rv_is_capablemeter = space.
+  ELSE.
+    IF NOT my_amcg_cap_grp IS INITIAL.
+      lv_amcg = my_amcg_cap_grp.
+    ENDIF.
+    CALL METHOD cl_isu_ami_dm_manager=>get_ams_amcg_capa
+      EXPORTING
+        x_from              = my_date
+        x_ams               = lv_ams
+        x_amcg_cap_grp      = lv_amcg
+      IMPORTING
+        yt_ami_capabilities = li_amicapabilities.
+
+    LOOP AT li_amicapabilities TRANSPORTING NO FIELDS WHERE capabilities = co_value3 AND
+                                                            amcg_relevant = co_flag.
+      rv_is_capablemeter = co_flag.
+      EXIT.
+    ENDLOOP.
+    IF rv_is_capablemeter NE co_flag.
+      populate_status_return space CO_WARNING co_value_22 my_gernr space space space.
+    ENDIF.
+  ENDIF.
+
+ENDMETHOD.
+
