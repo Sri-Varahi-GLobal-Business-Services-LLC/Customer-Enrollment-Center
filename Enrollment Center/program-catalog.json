@@ -1,0 +1,937 @@
+{
+  "programCatalog": [
+    {
+      "programId": "PTR",
+      "version": 1,
+      "name": "Peak-Time Rebate (PTR)",
+      "category": "Demand Response / Rate",
+      "recipeType": "RECIPE_RATE",
+      "terms": "Earn bill credits by reducing usage during called peak events (max 12 events/season). Requires an AMI meter and residential rate class. Credits appear on the next bill cycle.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "PTR_TERMS_V3",
+        "fields": [
+          {
+            "key": "startDate",
+            "label": "Requested Start Date",
+            "type": "date",
+            "required": true
+          },
+          {
+            "key": "notifChannel",
+            "label": "Event Notification Channel",
+            "type": "select",
+            "options": [
+              "SMS",
+              "Email",
+              "Voice call"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "CPP",
+      "version": 1,
+      "name": "Critical Peak Pricing (CPP)",
+      "category": "Demand Response / Rate",
+      "recipeType": "RECIPE_RATE",
+      "terms": "Discounted base rates in exchange for significantly higher prices during called critical peak events (max 15 events/year). Requires an AMI meter. Rate change effective next billing cycle.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "CPP_TERMS_V3",
+        "fields": [
+          {
+            "key": "startDate",
+            "label": "Requested Start Date",
+            "type": "date",
+            "required": true
+          },
+          {
+            "key": "notifChannel",
+            "label": "Event Notification Channel",
+            "type": "select",
+            "options": [
+              "SMS",
+              "Email",
+              "Voice call"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "TOU",
+      "version": 1,
+      "name": "Time-of-Use Rate (TOU)",
+      "category": "Demand Response / Rate",
+      "recipeType": "RECIPE_RATE",
+      "terms": "Lower rates overnight and weekends, higher 3-8 PM weekdays. 12-month minimum participation. Rate change effective next billing cycle.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "TOU_TERMS_V3",
+        "fields": [
+          {
+            "key": "startDate",
+            "label": "Requested Start Date",
+            "type": "date",
+            "required": true
+          },
+          {
+            "key": "ratePlan",
+            "label": "TOU Rate Plan",
+            "type": "select",
+            "options": [
+              "TOU-Standard",
+              "TOU-EV Owner",
+              "TOU-Solar",
+              "TOU-Commercial"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "PPS",
+      "version": 1,
+      "name": "Peak Power Savers (AC Cycling)",
+      "category": "Demand Response / Device",
+      "recipeType": "RECIPE_DEVICE",
+      "terms": "Utility-installed switch cycles the air-conditioning compressor during peak events (choose 50% or 100% cycling). Seasonal bill credit; override allowed twice per season.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "PPS_TERMS_V3",
+        "fields": [
+          {
+            "key": "cyclingOption",
+            "label": "Cycling Option",
+            "type": "select",
+            "options": [
+              "50% cycling",
+              "100% cycling"
+            ],
+            "required": true
+          },
+          {
+            "key": "acUnits",
+            "label": "Number of AC Units",
+            "type": "number",
+            "min": 1,
+            "max": 5,
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "THERM",
+      "version": 1,
+      "name": "Smart Thermostat Program",
+      "category": "Device / Service",
+      "recipeType": "RECIPE_DEVICE",
+      "terms": "Free smart thermostat plus installation. Utility may adjust setpoint by up to 2 degrees during peak events (override allowed twice per season).",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "THERM_TERMS_V3",
+        "fields": [
+          {
+            "key": "deviceModel",
+            "label": "Thermostat Model",
+            "type": "select",
+            "options": [
+              "EcoStat 3",
+              "EcoStat 3 Pro",
+              "ComfortHub X"
+            ],
+            "required": true
+          },
+          {
+            "key": "installDate",
+            "label": "Preferred Installation Date",
+            "type": "date",
+            "required": true
+          },
+          {
+            "key": "homeWifi",
+            "label": "Wi-Fi available at premise?",
+            "type": "select",
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "CSDD",
+      "version": 1,
+      "name": "Customer Selects Due Date (CSDD)",
+      "category": "Billing Preference",
+      "recipeType": "RECIPE_CSDD",
+      "terms": "Pick a fixed monthly bill due date (1st-28th). One change per 12 months.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "CSDD_TERMS_V3",
+        "fields": [
+          {
+            "key": "dueDay",
+            "label": "Preferred Due Day of Month (1-28)",
+            "type": "number",
+            "min": 1,
+            "max": 28,
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "EBILL",
+      "version": 1,
+      "name": "eBill / Paperless Billing",
+      "category": "Billing Preference",
+      "recipeType": "RECIPE_EBILL",
+      "terms": "Bills delivered electronically with email notification; paper bill suppressed. Can be combined with any payment program.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "EBILL_TERMS_V3",
+        "fields": [
+          {
+            "key": "email",
+            "label": "Delivery Email Address",
+            "type": "text",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "DPA",
+      "version": 1,
+      "name": "Payment Plan / Deferred Payment Arrangement (DPA)",
+      "category": "Payment",
+      "recipeType": "RECIPE_DPP",
+      "terms": "Spread an outstanding balance over equal monthly installments billed alongside the current charges. Dunning is suppressed while the plan is kept; default terminates the plan and reinstates collections.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "DPA_TERMS_V3",
+        "fields": [
+          {
+            "key": "downPayment",
+            "label": "Down Payment",
+            "type": "select",
+            "options": [
+              "0%",
+              "25%",
+              "50%"
+            ],
+            "required": true
+          },
+          {
+            "key": "numInstallments",
+            "label": "Number of Installments",
+            "type": "select",
+            "options": [
+              "6",
+              "12",
+              "18"
+            ],
+            "required": true
+          },
+          {
+            "key": "startDate",
+            "label": "First Installment Date",
+            "type": "date",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "DPP",
+      "version": 1,
+      "name": "Dynamic Peak Pricing (DPP)",
+      "category": "Demand Response / Rate",
+      "recipeType": "RECIPE_RATE",
+      "terms": "Time-varying rate: lower base prices year-round in exchange for significantly higher prices during called peak events (typically summer weekday afternoons). Requires an AMI meter. Fulfilled as a rate/product change on the utilities contract (legacy: product change to the residential DPP/RCPP rate).",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "DPP_TERMS_V3",
+        "fields": [
+          {
+            "key": "startDate",
+            "label": "Requested Start Date",
+            "type": "date",
+            "required": true
+          },
+          {
+            "key": "notifChannel",
+            "label": "Event Notification Channel",
+            "type": "select",
+            "options": [
+              "SMS",
+              "Email",
+              "Voice call"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "BB",
+      "version": 1,
+      "name": "Budget Billing",
+      "category": "Payment",
+      "recipeType": "RECIPE_BB",
+      "terms": "Levelized monthly payment based on the 12-month rolling average; trued up at annual review. Requires 12 months of billing history at the premise.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "BB_TERMS_V3",
+        "fields": [
+          {
+            "key": "startDate",
+            "label": "Requested Start Date",
+            "type": "date",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "PREPAY",
+      "version": 1,
+      "name": "PrePay (Prepayment Program)",
+      "category": "Payment",
+      "recipeType": "RECIPE_PREPAY",
+      "terms": "Pay-as-you-go service: no deposit, no late fees. Balance decremented daily from usage; low-balance alerts at your chosen threshold; disconnection at zero balance per tariff. Not available for premises with an active Medical Alert / life-support flag.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "PREPAY_TERMS_V3",
+        "fields": [
+          {
+            "key": "initialCredit",
+            "label": "Initial Credit Purchase",
+            "type": "select",
+            "options": [
+              "$25",
+              "$50",
+              "$100"
+            ],
+            "required": true
+          },
+          {
+            "key": "lowBalanceThreshold",
+            "label": "Low-Balance Alert Threshold",
+            "type": "select",
+            "options": [
+              "$10",
+              "$15",
+              "$25"
+            ],
+            "required": true
+          },
+          {
+            "key": "notifChannel",
+            "label": "Alert Channel",
+            "type": "select",
+            "options": [
+              "SMS",
+              "Email",
+              "Voice call"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "CARE",
+      "version": 1,
+      "name": "CARE / FERA Income-Qualified Discount",
+      "category": "Assistance",
+      "recipeType": "RECIPE_ASSIST",
+      "terms": "Monthly bill discount for income-qualified households (CARE ~30%, FERA ~18%). Self-certification at enrollment; post-enrollment income verification may be requested. Residential rate class only.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "CARE_TERMS_V3",
+        "fields": [
+          {
+            "key": "program",
+            "label": "Program",
+            "type": "select",
+            "options": [
+              "CARE",
+              "FERA"
+            ],
+            "required": true
+          },
+          {
+            "key": "householdSize",
+            "label": "Household Size",
+            "type": "number",
+            "min": 1,
+            "max": 12,
+            "required": true
+          },
+          {
+            "key": "incomeBracket",
+            "label": "Annual Household Income",
+            "type": "select",
+            "options": [
+              "Below $40,000",
+              "$40,000-$55,000",
+              "$55,000-$70,000"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "MED",
+      "version": 1,
+      "name": "Medical Alert Program",
+      "category": "Assistance",
+      "recipeType": "RECIPE_ASSIST",
+      "terms": "Flags the account for life-support / medical equipment at premise: advance outage notification and dunning protection. Physician certification required within 30 days.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "MED_TERMS_V3",
+        "fields": [
+          {
+            "key": "contactPhone",
+            "label": "24h Contact Phone",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "equipment",
+            "label": "Medical Equipment Type",
+            "type": "select",
+            "options": [
+              "Oxygen concentrator",
+              "Dialysis",
+              "CPAP/Ventilator",
+              "Other"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "CDR",
+      "version": 1,
+      "name": "Commercial Demand Response (C&I)",
+      "category": "Demand Response / Commercial",
+      "recipeType": "RECIPE_RATE",
+      "terms": "Curtailment credits for reducing load on utility dispatch. Minimum 50 kW curtailable load; interval telemetry required. Season: June-September.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "CDR_TERMS_V3",
+        "fields": [
+          {
+            "key": "curtailableLoad",
+            "label": "Curtailable Load (kW)",
+            "type": "number",
+            "min": 50,
+            "max": 5000,
+            "required": true
+          },
+          {
+            "key": "opsContact",
+            "label": "Operations Contact (24h)",
+            "type": "text",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "EVMC",
+      "version": 1,
+      "name": "EV Managed Charging",
+      "category": "Demand Response / DER",
+      "recipeType": "RECIPE_DER",
+      "terms": "Enroll an electric vehicle or networked charger via telematics or the charger network. Charging shifts to off-peak windows; per-session or monthly incentives. You can always override for immediate charging.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "EVMC_TERMS_V3",
+        "fields": [
+          {
+            "key": "enrollMethod",
+            "label": "Enrollment Method",
+            "type": "select",
+            "options": [
+              "Vehicle telematics",
+              "Networked charger"
+            ],
+            "required": true
+          },
+          {
+            "key": "vehicleModel",
+            "label": "Vehicle / Charger Model",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "startDate",
+            "label": "Requested Start Date",
+            "type": "date",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "EEREB",
+      "version": 1,
+      "name": "Energy-Efficiency Rebates",
+      "category": "Energy Efficiency",
+      "recipeType": "RECIPE_EE",
+      "terms": "Rebates for qualifying efficiency purchases (heat pumps, HVAC, insulation, appliances). Instant or mail-in; permanently lower bills. Rebate tiers per measure and efficiency rating.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "EEREB_TERMS_V3",
+        "fields": [
+          {
+            "key": "measure",
+            "label": "Measure",
+            "type": "select",
+            "options": [
+              "Heat pump",
+              "HVAC replacement",
+              "Insulation",
+              "Appliance",
+              "Smart controls"
+            ],
+            "required": true
+          },
+          {
+            "key": "purchaseDate",
+            "label": "Purchase Date",
+            "type": "date",
+            "required": true
+          },
+          {
+            "key": "invoiceAmount",
+            "label": "Invoice Amount ($)",
+            "type": "number",
+            "min": 50,
+            "max": 50000,
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "AUTOPAY",
+      "version": 1,
+      "name": "AutoPay / Recurring Payment",
+      "category": "Payment",
+      "recipeType": "RECIPE_PAYMENT",
+      "terms": "Automatic draft of the bill amount from a bank account or tokenized card each cycle. Never miss a payment; combines with any billing program.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "AUTOPAY_TERMS_V3",
+        "fields": [
+          {
+            "key": "payMethod",
+            "label": "Payment Method on File",
+            "type": "select",
+            "options": [
+              "Bank account (direct debit)",
+              "Card (tokenized)"
+            ],
+            "required": true
+          },
+          {
+            "key": "startCycle",
+            "label": "Start With Bill Cycle",
+            "type": "select",
+            "options": [
+              "Next bill",
+              "Following bill"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "PEXT",
+      "version": 1,
+      "name": "Payment Extension",
+      "category": "Payment",
+      "recipeType": "RECIPE_PAYMENT",
+      "terms": "A short one-time grace period past the due date for an account in good standing. Does not suppress dunning beyond the extension date.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "PEXT_TERMS_V3",
+        "fields": [
+          {
+            "key": "extensionDays",
+            "label": "Extension",
+            "type": "select",
+            "options": [
+              "5 days",
+              "10 days",
+              "15 days"
+            ],
+            "required": true
+          },
+          {
+            "key": "reason",
+            "label": "Reason",
+            "type": "select",
+            "options": [
+              "Income timing",
+              "Temporary hardship",
+              "Other"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "SUMBILL",
+      "version": 1,
+      "name": "Summary / Consolidated Billing",
+      "category": "Billing Preference",
+      "recipeType": "RECIPE_BILLCONFIG",
+      "terms": "Combines multiple accounts or meters on one statement (joint invoicing / collective bill). For customers with many premises: C&I, landlords, agencies.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "SUMBILL_TERMS_V3",
+        "fields": [
+          {
+            "key": "masterAccount",
+            "label": "Master Contract Account",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "billCycle",
+            "label": "Consolidated Bill Cycle",
+            "type": "select",
+            "options": [
+              "Monthly - 1st",
+              "Monthly - 15th"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "TPN",
+      "version": 1,
+      "name": "Third-Party / Duplicate Bill Notification",
+      "category": "Assistance",
+      "recipeType": "RECIPE_CORR",
+      "terms": "Sends a copy of bills or shutoff notices to a designated third party (relative, caregiver, agency) so protected customers are not disconnected unnoticed.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "TPN_TERMS_V3",
+        "fields": [
+          {
+            "key": "thirdPartyName",
+            "label": "Third-Party Name",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "thirdPartyContact",
+            "label": "Third-Party Email / Phone",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "relationship",
+            "label": "Relationship",
+            "type": "select",
+            "options": [
+              "Relative",
+              "Caregiver",
+              "Agency",
+              "Other"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "LIHEAP",
+      "version": 1,
+      "name": "LIHEAP Energy Assistance",
+      "category": "Assistance",
+      "recipeType": "RECIPE_ASSIST",
+      "terms": "Federal energy-bill assistance grant for income-qualified households, applied to the account balance; crisis assistance available. Agency verification follows enrollment.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "LIHEAP_TERMS_V3",
+        "fields": [
+          {
+            "key": "householdSize",
+            "label": "Household Size",
+            "type": "number",
+            "min": 1,
+            "max": 12,
+            "required": true
+          },
+          {
+            "key": "incomeBracket",
+            "label": "Annual Household Income",
+            "type": "select",
+            "options": [
+              "Below $30,000",
+              "$30,000-$45,000",
+              "$45,000-$60,000"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "PIPP",
+      "version": 1,
+      "name": "Percentage of Income Payment Plan (PIPP)",
+      "category": "Assistance",
+      "recipeType": "RECIPE_ASSIST",
+      "terms": "Caps the monthly bill at a fixed percentage of verified household income. Income re-verification annually; missed payments can end the cap.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "PIPP_TERMS_V3",
+        "fields": [
+          {
+            "key": "householdIncome",
+            "label": "Monthly Household Income ($)",
+            "type": "number",
+            "min": 1,
+            "max": 20000,
+            "required": true
+          },
+          {
+            "key": "percentCap",
+            "label": "Payment Cap",
+            "type": "select",
+            "options": [
+              "2% of income",
+              "4% of income",
+              "6% of income"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "AMP",
+      "version": 1,
+      "name": "Arrearage Management / Forgiveness (AMP)",
+      "category": "Assistance",
+      "recipeType": "RECIPE_PAYMENT",
+      "terms": "Forgives a portion of past-due debt for each month the current bill is paid on time, until the arrears are cleared. Default removes remaining forgiveness.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "AMP_TERMS_V3",
+        "fields": [
+          {
+            "key": "commitTerm",
+            "label": "Commitment Term",
+            "type": "select",
+            "options": [
+              "12 months",
+              "18 months"
+            ],
+            "required": true
+          },
+          {
+            "key": "startDate",
+            "label": "First On-Time Bill Month",
+            "type": "date",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "GREEN",
+      "version": 1,
+      "name": "Green Power / Renewable Choice",
+      "category": "Rate / Sustainability",
+      "recipeType": "RECIPE_RATE",
+      "terms": "Purchase 50-100% renewable energy for a small premium per kWh, applied as a product option / surcharge on the rate.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "GREEN_TERMS_V3",
+        "fields": [
+          {
+            "key": "renewableShare",
+            "label": "Renewable Share",
+            "type": "select",
+            "options": [
+              "50%",
+              "100%"
+            ],
+            "required": true
+          },
+          {
+            "key": "startDate",
+            "label": "Requested Start Date",
+            "type": "date",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "CSOL",
+      "version": 1,
+      "name": "Community Solar Subscription",
+      "category": "Rate / Sustainability",
+      "recipeType": "RECIPE_RATE",
+      "terms": "Subscribe to a share of a community solar array and receive bill credits for its output - solar savings without rooftop panels. Subject to array availability; low-income capacity reserved.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "CSOL_TERMS_V3",
+        "fields": [
+          {
+            "key": "subscriptionShare",
+            "label": "Subscription Share",
+            "type": "select",
+            "options": [
+              "1 kW block",
+              "2 kW blocks",
+              "5 kW blocks"
+            ],
+            "required": true
+          },
+          {
+            "key": "startDate",
+            "label": "Requested Start Date",
+            "type": "date",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "ALERTS",
+      "version": 1,
+      "name": "Usage / High-Bill Alerts",
+      "category": "Account Management",
+      "recipeType": "RECIPE_NOTIF",
+      "terms": "Notifies you when usage or the projected bill crosses your threshold (requires AMI meter). Avoid bill surprises; choose your channel.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "ALERTS_TERMS_V3",
+        "fields": [
+          {
+            "key": "alertType",
+            "label": "Alert Type",
+            "type": "select",
+            "options": [
+              "Usage threshold",
+              "Projected high bill",
+              "Both"
+            ],
+            "required": true
+          },
+          {
+            "key": "threshold",
+            "label": "Threshold ($ projected bill)",
+            "type": "number",
+            "min": 25,
+            "max": 2000,
+            "required": true
+          },
+          {
+            "key": "channel",
+            "label": "Channel",
+            "type": "select",
+            "options": [
+              "SMS",
+              "Email",
+              "Push"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "INTR",
+      "version": 1,
+      "name": "Interruptible / Firm Service Level Tariff",
+      "category": "Demand Response / Commercial",
+      "recipeType": "RECIPE_RATE",
+      "terms": "Year-round discounted rate for large customers who contractually agree to interrupt load down to a firm service level on utility request. Penalties apply for non-performance.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "INTR_TERMS_V3",
+        "fields": [
+          {
+            "key": "firmServiceLevel",
+            "label": "Firm Service Level (kW)",
+            "type": "number",
+            "min": 100,
+            "max": 50000,
+            "required": true
+          },
+          {
+            "key": "contractTerm",
+            "label": "Contract Term",
+            "type": "select",
+            "options": [
+              "12 months",
+              "36 months",
+              "60 months"
+            ],
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "programId": "ADR",
+      "version": 1,
+      "name": "Automated Demand Response (OpenADR)",
+      "category": "Demand Response / Commercial",
+      "recipeType": "RECIPE_DER",
+      "terms": "Additional incentives for automating curtailment through a building/energy management system that receives OpenADR dispatch signals; includes rebates on control equipment.",
+      "active": true,
+      "captureForm": {
+        "consentStatementId": "ADR_TERMS_V3",
+        "fields": [
+          {
+            "key": "bmsVendor",
+            "label": "BMS / EMS Vendor",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "openadrVersion",
+            "label": "OpenADR Version",
+            "type": "select",
+            "options": [
+              "2.0a",
+              "2.0b",
+              "3.0"
+            ],
+            "required": true
+          }
+        ]
+      }
+    }
+  ],
+  "_source": "extracted from enrollment-center-demo (tools/extract_catalog.py); seed data for the CAP ProgramCatalog entity per TDD section 8.1"
+}
