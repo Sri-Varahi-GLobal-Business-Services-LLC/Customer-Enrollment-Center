@@ -74,7 +74,7 @@ p("Application ZEC_PROGRAM_ELIGIBILITY — data objects, expressions, decision t
 for _ in range(7): doc.add_paragraph()
 table(["Attribute","Value"], [
  ["Document","BRFplus Detailed Configuration (companion to TDD v1.1 Section 6 / Config Guide D-16)"],
- ["Version / Status","1.1 (adds Section 11 object inventory; consolidated decision-table model; companion configuration workbook)"],
+ ["Version / Status","1.2 (adds medical dynamic-pricing rule 053, DER asset context element, device-status refinement; 34 messages)"],
  ["Date","08 July 2026"],
  ["Legacy Migration","FUNC_PGMENRL_PRECHECK invocation pattern and ruleset RS_DPP_INT_VALIDATION (Dynamic Peak Pricing) migrated into this application"],
  ["Audience","ABAP/BRFplus developers, business rule owners, QA"],
@@ -109,6 +109,7 @@ table(["Element","Type (DDIC)","Description"], [
  ["T_CA","Table of CTX_EC_CA (2.2)","One row per contract account in scope"],
  ["T_HISTORY","Table of CTX_EC_HIST (2.3)","Program participation history"],
  ["T_ACTIVE","Table of ZEC_PROGRAM_ID + CA","Currently active participations (for exclusion rules)"],
+ ["T_DER_ASSETS","Table of (ASSET_TYPE, STATUS)","Customer DER equipment from the DER platform (EV charger, BESS, solar, standby gen) — feeds EVMC/ADR/BESS rules; supplied by the wrapper, empty when platform unavailable (rules degrade to warning)"],
  ["REQUEST_DATE","DATS","Evaluation date (sy-datum default)"],
 ], widths=[1.7,1.7,3.1])
 doc.add_heading("2.2 Per-Contract-Account Structure CTX_EC_CA", level=2)
@@ -199,9 +200,9 @@ doc.add_heading("5.4 Per-Program Rule Content (hard stops / warnings / not-yet-e
 p("Complete rule content by program. Column 'P-mode' marks rules that EX_SEVERITY_MODE downgrades to "
   "I (not yet eligible) during Move-In pre-active evaluation. Message numbers refer to ZEC_ELIG (Section 7).")
 table(["Program","Hard Stops (E)","Warnings (W)","P-mode"], [
- ["DPP Dynamic Peak Pricing","No AMI (044); RATE_CLASS≠RES (002); waiting period (045); active CPP (058)","—","—"],
- ["PTR Peak-Time Rebate","No AMI (044); AMI comm disabled (018); ≠RES (002); waiting (045)","—","—"],
- ["CPP Critical Peak Pricing","No AMI (044); ≠RES (002); waiting (045); active DPP (058)","—","—"],
+ ["DPP Dynamic Peak Pricing","No AMI (044); RATE_CLASS≠RES (002); waiting period (045); active CPP (058); MEDICAL_FLAG (053)","—","—"],
+ ["PTR Peak-Time Rebate","No AMI (044); AMI comm disabled (018); ≠RES (002); waiting (045). Note: rebate-only DR — NOT medical-blocked","—","—"],
+ ["CPP Critical Peak Pricing","No AMI (044); ≠RES (002); waiting (045); active DPP (058); MEDICAL_FLAG (053)","—","—"],
  ["TOU Time-of-Use","No AMI (044)","Replaces active dynamic rate (340)","—"],
  ["PPS Peak Power Savers","≠RES (002); waiting (045)","—","Device install after activation (093)"],
  ["THERM Smart Thermostat","≠RES (002)","No Wi-Fi at premise (342)","—"],
@@ -265,7 +266,7 @@ p("Note: the legacy ruleset's device rule (legacy RU_DPP_CHECK_NOAIRDIV pattern)
   "specifications.")
 
 # ============ 7 MESSAGES ============
-doc.add_heading("7. Message Class ZEC_ELIG — Catalog", level=1)
+doc.add_heading("7. Message Class ZEC_ELIG — Catalog (34 messages)", level=1)
 table(["No.","Sev","Text (EN) — & = placeholder"], [
  ["002","E","Program &1 is restricted to residential rate class"],
  ["003","E","Program &1 is restricted to commercial rate class"],
@@ -275,6 +276,7 @@ table(["No.","Sev","Text (EN) — & = placeholder"], [
  ["045","E","Re-enrollment waiting period active until &1 (previous participation ended &2)"],
  ["046","E","Waiting period after plan default active until &1"],
  ["052","E","Prepayment not permitted — active Medical Alert / life-support equipment at premise"],
+ ["053","E","Dynamic peak-event pricing not permitted — Medical Baseline / life-support protection"],
  ["055","E","Not compatible with active Prepay service"],
  ["056","E","Prepay and Budget Billing are mutually exclusive"],
  ["057","E","Prepay requires settlement of the active payment plan first"],
@@ -359,11 +361,11 @@ table(["Object Type","Count","Objects"], [
  ["Decision tables","7","DT_RATECLASS_MATRIX; DT_PROGRAM_CRITERIA (criteria matrix, 28 rows, drives all generic hard stops); DT_PROGRAM_EXCLUSIONS; DT_WAITING_PERIODS; DT_PROGRAM_WARNINGS (16 warning rows); DT_PREACTIVE_INFO; DT_EXIT_RULES"],
  ["Reusable expressions","7","EX_RATE_CLASS, EX_WAITING_PERIOD, EX_PROGRAM_EXCLUSION, EX_AMI_CHECK, EX_HIST_MONTHS_OK, EX_SEVERITY_MODE, EX_MSG_APPEND"],
  ["Data objects","4","CTX_EC_ELIG, CTX_EC_CA, CTX_EC_HIST, RES_EC_ELIG"],
- ["Message class","1 (33 messages)","ZEC_ELIG"],
+ ["Message class","1 (34 messages)","ZEC_ELIG"],
 ], widths=[1.6,1.0,3.9], font_size=8.5)
 p("Mapping note: rule RU_<PGM>_020_HARDSTOPS evaluates the program's row of DT_PROGRAM_CRITERIA through a "
   "shared generic expression — each violated criterion appends its fixed ZEC_ELIG message (rate class → "
-  "002/003, AMI → 044, AMI comm → 018, prepay/medical/BB/DPA blocks → 052–057, arrears → 071/072, history → "
+  "002/003, AMI → 044, AMI comm → 018, prepay/medical/BB/DPA blocks → 052–057, medical dynamic-pricing block → 053, arrears → 071/072, history → "
   "062, load → 080, CA count → 074, extension → 073). Program-specific one-off conditions that do not fit the "
   "matrix (e.g., dynamic-rate mutual exclusion 058) remain in DT_PROGRAM_EXCLUSIONS.")
 

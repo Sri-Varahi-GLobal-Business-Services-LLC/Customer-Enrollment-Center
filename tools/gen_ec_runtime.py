@@ -78,7 +78,7 @@ p("SAP Service Cloud V2 ↔ SAP BTP ↔ SAP S/4HANA Utilities — action-by-acti
 for _ in range(7): doc.add_paragraph()
 table(["Attribute","Value"], [
  ["Document","Runtime Service Interactions & Data Exchange"],
- ["Version / Status","1.0 (Draft for Review)"],
+ ["Version / Status","1.1 (per-utility device model, DER assets in context, combo CA patterns)"],
  ["Date","08 July 2026"],
  ["Related Documents","Solution Design v2.0 (flows, status model); TDD v1.1 (APIs, CDS, tables); Config Guide v1.0 (destinations, iFlows); BRFplus Config v1.1"],
  ["Audience","Integration developers, CAP developers, S/4HANA developers, testers"],
@@ -131,7 +131,7 @@ action("A1.","Agent opens Enrollment Center (work center / Customer 360)",
   ["1","SC V2 → UI","V2-01 mashup launch","sync","⇢ signed context: agentId, businessPartnerId, contractAccountId (opt), caseId, mode=STANDALONE, exp 300 s"],
   ["2","UI → IAS","V2-04 OIDC","sync","Silent auth; ⇠ JWT with ec.Agent scope"],
   ["3","UI → CAP","EC-01 GET /context/{bp}","sync","⇢ bp, mode ⇠ header (name, verified), T_CA[] (CA, division, premise, contract, rate, AMI flags, financial flags), participation[], history[]"],
-  ["4","CAP → IF_EC_Context_Read → S/4","S4-01 + S4-02 (parallel $batch)","sync","⇢ bp ⇠ BP header; per CA: FKKVKP facts, EVER contract, EANLH rate, premise, installed device incl. I_UtilsAdvncdMeteringSystem AMI flag, dunning level, returned payments, arrears, locks"],
+  ["4","CAP → IF_EC_Context_Read → S/4","S4-01 + S4-02 (parallel $batch)","sync","⇢ bp ⇠ BP header; per CA x division: FKKVKP facts, EVER contract, EANLH rate, premise, installed device (device no., meter no., AMI/AMR type, connection status) incl. I_UtilsAdvncdMeteringSystem, dunning level, returned payments, arrears, locks; DER assets fetched in parallel from the DER platform API"],
   ["5","CAP → HANA Cloud","internal","sync","⇠ in-flight EnrollmentRequests (status not final) merged over S4-06 participation"],
   ["6","UI → CAP","EC-02 POST /eligibility:evaluate","sync","⇢ bp, T_CA keys, mode=S ⇠ RES_EC_ELIG rows: per program/CA eligible|E|W|I + message text + waiting end"],
   ["7","CAP → IF_EC_Eligibility → S/4","S4-03 RFC","sync","⇢ CTX_EC_ELIG (pre-fetched context) ⇠ RES_EC_ELIG; CAP caches for the interaction (TTL 5 min, invalidated on any write)"],
@@ -241,9 +241,14 @@ doc.add_heading("3. Key Payload Structures (abbreviated)", level=1)
 p("EC-01 context response:", bold=True)
 mono('{ "bp":"1000004711", "name":"…", "mode":"S", "cas":[ { "ca":"300000123456", "division":"01",')
 mono('   "premise":{...}, "contract":{"id":"…","active":true,"rateCategory":"RS_1000"},')
-mono('   "device":{"ami":true,"amiCommOk":true}, "fica":{"dunningLevel":1,"arrears":342.50,')
+mono('   "device":{"deviceNo":"10004481","meterNo":"1KA-88213045","type":"AMI","status":"CONNECTED",')
+mono('             "model":"…","lastReadDate":"2026-07-05","lastReadValue":41208},')
+mono('   "fica":{"dunningLevel":1,"arrears":342.50,')
 mono('   "returnedPayments12m":0,"activeInstallmentPlan":true,"budgetBilling":true,"prepay":false,')
-mono('   "medicalFlag":false,"billingHistoryMonths":26} } ], "participation":[...], "history":[...] }')
+mono('   "medicalFlag":false,"billingHistoryMonths":26} } ],')
+mono('  "derAssets":[{"type":"EV_CHARGER_L2","capacityKw":11,"status":"ACTIVE"}],')
+mono('  "participation":[...], "history":[...] }')
+p("Note: cas[] carries one entry per contract account x division — both combo patterns (CA per utility, or a single CA spanning divisions) are represented by this shape; device data is per division. derAssets come from the DER platform (empty array when unavailable).", bold=False)
 p("EC-02 eligibility response row:", bold=True)
 mono('{ "programId":"CSDD", "ca":"300000123456", "eligible":"N", "severity":"W",')
 mono('  "msg":{"id":"ZEC_ELIG","no":"031","text":"2 returned payments…"}, "waitingEnd":null }')

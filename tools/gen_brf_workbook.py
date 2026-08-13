@@ -56,7 +56,7 @@ inv = [
  ("Decision tables","7","DT_RATECLASS_MATRIX; DT_PROGRAM_CRITERIA; DT_PROGRAM_EXCLUSIONS; DT_WAITING_PERIODS; DT_PROGRAM_WARNINGS; DT_PREACTIVE_INFO; DT_EXIT_RULES","01–07"),
  ("Reusable expressions","7","EX_RATE_CLASS, EX_WAITING_PERIOD, EX_PROGRAM_EXCLUSION, EX_AMI_CHECK, EX_HIST_MONTHS_OK, EX_SEVERITY_MODE, EX_MSG_APPEND","—"),
  ("Data objects (structures/tables)","4","CTX_EC_ELIG, CTX_EC_CA, CTX_EC_HIST, RES_EC_ELIG","—"),
- ("Message class","1 (33 messages)","ZEC_ELIG","12_Messages"),
+ ("Message class","1 (34 messages)","ZEC_ELIG","12_Messages"),
 ]
 for ri, row in enumerate(inv):
     for ci, v in enumerate(row, 1):
@@ -88,9 +88,9 @@ sheet("01_DT_RATECLASS_MATRIX", "DT_RATECLASS_MATRIX",
 
 # ---------- 02 DT_PROGRAM_CRITERIA ----------
 crit_rows = [
- ["DPP","Dynamic Peak Pricing","RES","X","","","","","","", "","","","","Y"],
+ ["DPP","Dynamic Peak Pricing","RES","X","","","X","","","","","","","","Y"],
  ["PTR","Peak-Time Rebate","RES","X","X","","","","","","","","","","Y"],
- ["CPP","Critical Peak Pricing","RES","X","","","","","","","","","","","Y"],
+ ["CPP","Critical Peak Pricing","RES","X","","","X","","","","","","","","Y"],
  ["TOU","Time-of-Use Rate","","X","","","","","","","","","","","Y"],
  ["PPS","Peak Power Savers (AC Cycling)","RES","","","","","","","","","","","","I"],
  ["THERM","Smart Thermostat","RES","","","","","","","","","","","","Y"],
@@ -118,7 +118,7 @@ crit_rows = [
  ["CDR","C&I Demand Response","COM","","","","","","","","","50","","","N"],
 ]
 sheet("02_DT_PROGRAM_CRITERIA", "DT_PROGRAM_CRITERIA (criteria matrix — one row per program)",
- "Generic hard-stop rules read this matrix: each violated criterion appends its fixed message — RATE_CLASS→002/003, AMI→044, AMI_COMM→018, PREPAY block→055/056, MEDICAL→052, BB→056, DPA→012/057, ARREARS→071/072, HISTORY→062(I), LOAD→080, CA_COUNT→074, EXT_ACTIVE→073. PREACTIVE: Y=enrollable at move-in, I=informational only (DT_PREACTIVE_INFO), N=hidden in move-in mode.",
+ "Generic hard-stop rules read this matrix: each violated criterion appends its fixed message — RATE_CLASS→002/003, AMI→044, AMI_COMM→018, PREPAY block→055/056, MEDICAL→052 (payment) / 053 (dynamic pricing), BB→056, DPA→012/057, ARREARS→071/072, HISTORY→062(I), LOAD→080, CA_COUNT→074, EXT_ACTIVE→073. PREACTIVE: Y=enrollable at move-in, I=informational only (DT_PREACTIVE_INFO), N=hidden in move-in mode.",
  ["PROGRAM_ID","PROGRAM_NAME","REQ_RATE_CLASS","REQ_AMI","REQ_AMI_COMM","BLOCK_IF_PREPAY","BLOCK_IF_MEDICAL","BLOCK_IF_BB","BLOCK_IF_DPA","REQ_ARREARS","MIN_HISTORY_MONTHS","MIN_LOAD_KW","MIN_CA_COUNT","BLOCK_IF_EXT_ACTIVE","PREACTIVE"],
  crit_rows,
  [10, 26, 12, 8, 11, 12, 13, 9, 10, 11, 14, 11, 12, 14, 10])
@@ -232,6 +232,7 @@ msgs = [
  ("045","E","Re-enrollment waiting period active until &1 (previous participation ended &2)"),
  ("046","E","Waiting period after plan default active until &1"),
  ("052","E","Prepayment not permitted — active Medical Alert / life-support equipment at premise"),
+ ("053","E","Dynamic peak-event pricing not permitted — Medical Baseline / life-support protection"),
  ("055","E","Not compatible with active Prepay service"),
  ("056","E","Prepay and Budget Billing are mutually exclusive"),
  ("057","E","Prepay requires settlement of the active payment plan first"),
@@ -257,7 +258,7 @@ msgs = [
  ("341","W","Review stacking with active subscription &1"),
  ("342","W","No Wi-Fi at premise — installation survey required"),
 ]
-sheet("12_Messages", "Message Class ZEC_ELIG (33 messages)",
+sheet("12_Messages", "Message Class ZEC_ELIG (34 messages)",
  "Severity is applied by the rules (EX_SEVERITY_MODE may downgrade E to I in pre-active mode); & = placeholder.",
  ["MSGNO","SEV","TEXT (EN)"],
  [[a, b, c] for a, b, c in msgs],

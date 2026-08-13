@@ -19,13 +19,16 @@ Output paths are hardcoded inside each script — adjust if the folder structure
 
 ## One-shot patch scripts (already applied — do NOT re-run)
 
-`add_demo_link.py`, `add_sdd_appendix.py`, `fix_xrefs.py`, `update_sdd_programs.py` performed
-in-place edits on the Solution Design v2.0 docx. Re-running would duplicate content.
+`add_demo_link.py`, `add_sdd_appendix.py`, `fix_xrefs.py`, `update_sdd_programs.py`,
+`patch_deck_and_sdd.py` performed in-place edits on the Solution Design v2.0 docx and the
+Client Presentation pptx. Re-running would duplicate content.
 
 ## Not recoverable
 
-The original generators for Solution Design v1.0/v2.0 base document and the CS-01/CS-02 BPDs
-were lost before this folder existed; those documents are maintained directly in Word from now on.
+Generators for the Solution Design v1.0/v2.0 base document, the CS-01/CS-02 BPDs and the
+Client Presentation were lost to scratchpad wipes; those files are maintained directly in
+Word/PowerPoint (or via one-shot patch scripts) from now on. **This tools/ folder is the canonical home for all generators — never keep the
+only copy in a session scratchpad.**
 
 ## Workflow
 

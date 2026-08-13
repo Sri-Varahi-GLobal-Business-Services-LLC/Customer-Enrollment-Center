@@ -70,7 +70,7 @@ p("S/4HANA Utilities Data Sources, Standard APIs, CDS Views, BRFplus Application
 for _ in range(7): doc.add_paragraph()
 table(["Attribute","Value"], [
  ["Document","Enrollment Center – Technical Design (TDD)"],
- ["Version / Status","1.1 (program catalog extended from the U.S. Utility Customer Programs Reference)"],
+ ["Version / Status","1.2 (adds per-utility device model, combo account patterns, DER asset context, medical dynamic-pricing rule)"],
  ["Date","08 July 2026"],
  ["Related Documents","Enrollment Center – SAP Service Cloud V2 Solution Design v2.0; CS-01 / CS-02 BPDs; U.S. Utility Customer Programs Reference Catalog (Aug 2026); interactive demo (3 URLs)"],
  ["Grounding Sources","SAP S/4HANA Utilities CDS view catalog and API guide (client reference library); legacy CRM Enrollment Center FS/TS (FUNC_PGMENRL_PRECHECK, RS_DPP_INT_VALIDATION, ZRFC_GET_RATE_CATEGORY); U.S. Utility Customer Programs Reference (program groups, SAP representation model)"],
@@ -148,7 +148,8 @@ table(["Data Need (UI element)","CDS View / API Source","Underlying Tables (refe
  ["Utilities contract (active/history, move-in date)","I_UtilitiesContract, I_UtilitiesContractHistory, I_UtilsContractChangeHistory","EVER"],
  ["Move-out / move-in context","I_UtilitiesMoveOutDocument + move-in APIs (Section 5)","EVER/EANLH change docs"],
  ["Point of delivery","I_UtilsAllocOfInstToPoD, external PoD mapping","EUIHEAD, EUITRANS, EUIINSTLN"],
- ["Installed device + AMI capability (PTR/CPP/PrePay checks)","I_UtilsInstalledDevice, I_UtilitiesDeviceHeader/History, I_UtilsAdvncdMeteringSystem, C_UtilsInstalledDeviceQuery","EQUI, EQKT, EGERH, ETDZ"],
+ ["Installed device per utility: device no., meter no., AMI/AMR type, connection status (Connected / Comm fault / Manual read / Disconnected) — drives PTR/CPP/DPP/PrePay/Alerts checks and the UI device block","I_UtilsInstalledDevice, I_UtilitiesDeviceHeader/History, I_UtilsAdvncdMeteringSystem, C_UtilsInstalledDeviceQuery; disconnection status via device/contract status","EQUI, EQKT, EGERH, ETDZ"],
+ ["DER assets associated with the customer (EV charger, battery/BESS, solar, standby generation) — shown in context header; feeds EVMC/ADR/BESS eligibility","DER platform API (BTP-to-BTP read; TDD 2.2 group 6 — platform-owned lifecycle)","None in S/4HANA (participation reference only in ZEC_ENROLL_HDR)"],
  ["Meter reading context (validation prompts)","I_MeterReadingDocument, C_MeterReadingDocumentQuery","EABL, EABLG"],
  ["Billing history (eligibility rules: 12-month history, high-bill context)","I_ActualUtilsBillingDocument, C_UtilsContractToBeBilledQ","ERCH, ERDK, DBERCHZ*"],
  ["Owner allocation (landlord scenarios)","I_UtilitiesOwnerAllocation, I_AllocOfInstToOwnership","EVBS/EIGENTUM structures"],
@@ -159,6 +160,12 @@ table(["Data Need (UI element)","CDS View / API Source","Underlying Tables (refe
 p("Note: table names are for orientation and debugging; where a released CDS view exists it is the mandated "
   "interface. Objects marked custom (Z…) are specified in Section 6. Names of FI-CA function-module-based "
   "checks are finalized during realization against the installed release.")
+p("Account model (combo customers): the context service supports both combo patterns per CS-02 — (a) one "
+  "contract account per utility division (separate CAs for electricity and gas under the same business "
+  "partner) and (b) a single contract account spanning multiple divisions (joint invoicing). The context "
+  "aggregate therefore keys devices and contracts by CA × division, and eligibility is evaluated per "
+  "contract account and division — a program can be eligible on the electric service and blocked on the gas "
+  "service of the same customer (e.g., AMI electric meter with AMR gas index).")
 
 # ============ 4 CDS LIST ============
 doc.add_heading("4. CDS View Inventory (from the S/4HANA Utilities catalog)", level=1)

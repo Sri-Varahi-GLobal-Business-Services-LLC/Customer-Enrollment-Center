@@ -18,9 +18,7 @@ TEMPLATE = r"""<!doctype html>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;}
   .shell{background:var(--sap-shell);color:#fff;padding:10px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-  .shell .logo{font-weight:700;font-size:16px}
-  .shell .logo span{color:#7bb8ff}
-  .shell .crumb{opacity:.75;font-size:12px}
+  .shell .apptitle{font-weight:700;font-size:16px;color:#fff;letter-spacing:.2px}
   .shell .right{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12px}
   .badge-demo{background:#ffb300;color:#3b2a00;font-weight:700;padding:2px 8px;border-radius:10px;font-size:11px}
   .badge-mode{background:var(--sap-blue);color:#fff;font-weight:700;padding:3px 12px;border-radius:14px;font-size:12px}
@@ -37,6 +35,9 @@ TEMPLATE = r"""<!doctype html>
   .pill.blue{background:#e3f0ff;color:var(--sap-blue-dark)}
   .pill.orange{background:var(--chip-orange);color:var(--orange)}
   .pill.grey{background:#eceff2;color:var(--muted)}
+  .pill.green{background:var(--chip-green);color:var(--green)}
+  .pill.red{background:var(--chip-red);color:var(--red)}
+  .ctx .kv .dev{display:block;margin-top:2px}
   .wrap{max-width:1380px;margin:14px auto;padding:0 16px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:980px){.wrap{grid-template-columns:1fr}}
   .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
@@ -107,8 +108,7 @@ TEMPLATE = r"""<!doctype html>
 <body>
 
 <div class="shell">
-  <div class="logo">SAP <span>Service Cloud V2</span></div>
-  <div class="crumb" id="crumb"></div>
+  <div class="apptitle">Customer Enrollment Center</div>
   <div class="right">
     <span class="badge-demo">DEMO / SANDBOX</span>
     <span id="modeControls"></span>
@@ -147,22 +147,16 @@ TEMPLATE = r"""<!doctype html>
   </div>
 </div>
 
-<div class="logwrap">
+<div class="logwrap" style="text-align:right;padding-top:2px">
+  <button class="btn ghost" id="logToggle" onclick="toggleLog()" style="font-size:11px">&#9656; Show integration monitor (technical view)</button>
+</div>
+<div class="logwrap" id="logwrap" style="display:none">
   <div class="loghead">
     <h3>&#128268; Integration Monitor &mdash; API calls &amp; Event Mesh (simulated)</h3>
     <button class="btn ghost" style="margin-left:auto" onclick="LOG.innerHTML=''">Clear</button>
   </div>
   <div class="log" id="log"></div>
 </div>
-
-<footer class="page">
-  <b>Demo environment.</b> This static page simulates the BTP-hosted Enrollment Center described in the
-  <i>Customer Enrollment Center for SAP Service Cloud V2 &mdash; Solution Design v2.0</i>.
-  In the target architecture this UI is a SAPUI5 app on SAP BTP embedded in SC V2 (work center mashup / Move-In guided step).
-  Program catalog drawn from the legacy Customer Programs Enrollment Center scope (PTR, CPP, CSDD, DPP, PrePay, Peak Power Savers, CARE/FERA)
-  and the U.S. Utility Customer Programs Reference Catalog (DER/DR, energy efficiency, billing, payment, assistance and sustainability programs).
-  All customers and data are fictitious; no real systems are called; data resets on page reload.
-</footer>
 
 <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
@@ -262,9 +256,17 @@ const CATALOG = {
 /* =================== CUSTOMER PERSONAS =================== */
 const CUSTOMERS = {
   "1000004711": {
-    name:"Maria Gonzalez", initials:"MG", type:"Residential",
+    name:"Maria Gonzalez", initials:"MG", type:"Residential", tag:"(combo &middot; CA per utility)",
     premise:"1420 Alamo Heights Blvd, San Antonio, TX 78209",
-    cas:[{id:"300000123456",div:"Electricity"},{id:"300000123457",div:"Gas"}],
+    cas:[
+      {id:"300000123456", div:"Electricity",
+       device:{deviceNo:"10004481", meterNo:"1KA-88213045", model:"Landis+Gyr E360", type:"AMI",
+               status:"Connected", lastRead:"2026-07-05", lastValue:"41,208 kWh"}},
+      {id:"300000123457", div:"Gas",
+       device:{deviceNo:"10004482", meterNo:"5MG-30447126", model:"Honeywell BK-G4 (AMR)", type:"AMR",
+               status:"Manual read", lastRead:"2026-06-22", lastValue:"1,884 therms"}}
+    ],
+    der:[{name:"Level-2 EV charger 11 kW (networked)", status:"Active"}],
     caseId:"CAS-2026-018233",
     seed(){ return {
       participating:[
@@ -286,9 +288,14 @@ const CUSTOMERS = {
       ]};}
   },
   "1000007322": {
-    name:"Robert Chen", initials:"RC", type:"Residential",
+    name:"Robert Chen", initials:"RC", type:"Residential", tag:"(credit &middot; AMI fault)",
     premise:"312 Mission Street Apt 2, San Antonio, TX 78210",
-    cas:[{id:"300000129876",div:"Electricity"}],
+    cas:[
+      {id:"300000129876", div:"Electricity",
+       device:{deviceNo:"10007702", meterNo:"1KA-77419320", model:"Itron OpenWay", type:"AMI",
+               status:"Comm fault", lastRead:"2026-05-18", lastValue:"9,842 kWh (estimated since)",
+               note:"Open meter ticket MT-4471"}}
+    ],
     caseId:"CAS-2026-018377",
     seed(){ return {
       participating:[
@@ -306,9 +313,17 @@ const CUSTOMERS = {
       ]};}
   },
   "1000001188": {
-    name:"Dorothy Wilson", initials:"DW", type:"Residential",
+    name:"Dorothy Wilson", initials:"DW", type:"Residential", tag:"(combo &middot; single CA &middot; medical)",
     premise:"97 Elm Grove Lane, San Antonio, TX 78212",
-    cas:[{id:"300000110234",div:"Electricity"},{id:"300000110235",div:"Gas"}],
+    cas:[
+      {id:"300000110234", div:"Electricity",
+       device:{deviceNo:"10001192", meterNo:"AMR-30918744", model:"Sensus iConA (AMR)", type:"AMR",
+               status:"Manual read", lastRead:"2026-06-28", lastValue:"22,540 kWh",
+               note:"On AMI exchange candidate list"}},
+      {id:"300000110234", div:"Gas",
+       device:{deviceNo:"10001193", meterNo:"5MG-11209384", model:"Elster BK-G4 (AMR)", type:"AMR",
+               status:"Manual read", lastRead:"2026-06-28", lastValue:"2,102 therms"}}
+    ],
     caseId:"CAS-2026-018395",
     seed(){ return {
       participating:[
@@ -324,9 +339,16 @@ const CUSTOMERS = {
       history:[]};}
   },
   "2000003456": {
-    name:"Harborview Apartments LLC", initials:"HA", type:"Commercial",
+    name:"Harborview Apartments LLC", initials:"HA", type:"Commercial", tag:"(C&amp;I interval &middot; BESS)",
     premise:"2100 Broadway Commercial Plaza, San Antonio, TX 78215",
-    cas:[{id:"300000201188",div:"Electricity"}],
+    cas:[
+      {id:"300000201188", div:"Electricity",
+       device:{deviceNo:"10009915", meterNo:"3PH-55120087", model:"Elster A1800 (interval)", type:"AMI",
+               status:"Connected", lastRead:"2026-07-06", lastValue:"184,320 kWh",
+               note:"15-min interval telemetry &middot; 480 V CT metering"}}
+    ],
+    der:[{name:"Battery storage 250 kWh (BESS)", status:"Interconnected"},
+         {name:"Standby generator 500 kW (diesel)", status:"Registered"}],
     caseId:"CAS-2026-018410",
     seed(){ return {
       participating:[
@@ -342,6 +364,81 @@ const CUSTOMERS = {
       history:[
         {id:"CDR", start:"2024-05-01", end:"2024-09-30", outcome:"Completed (curtailment credits: $2,140.00)"}
       ]};}
+  },
+  "1000005566": {
+    name:"Frank Torres", initials:"FT", type:"Residential", tag:"(non-AMI meter)",
+    premise:"740 Pecan Valley Dr, San Antonio, TX 78223",
+    cas:[
+      {id:"300000131111", div:"Electricity",
+       device:{deviceNo:"10005520", meterNo:"AMR-22084517", model:"Sensus iConA (AMR)", type:"AMR",
+               status:"Manual read", lastRead:"2026-06-30", lastValue:"15,772 kWh",
+               note:"Drive-by monthly read &middot; not on AMI exchange list yet"}}
+    ],
+    caseId:"CAS-2026-018421",
+    seed(){ return {
+      participating:[
+        {id:"EBILL",status:"Enrolled", reqDate:"2023-04-12", enrDate:"2023-04-12", ca:"300000131111"}
+      ],
+      available:["CSDD","AUTOPAY","BB","THERM","GREEN","EEREB"],
+      messages:[
+        {prog:"CPP",   sev:"hard", code:"EC_ELIG/044", txt:"Requires AMI meter &mdash; premise has AMR device."},
+        {prog:"TOU",   sev:"hard", code:"EC_ELIG/044", txt:"Requires AMI meter &mdash; premise has AMR device."},
+        {prog:"DPP",   sev:"hard", code:"EC_ELIG/044", txt:"Requires AMI meter &mdash; premise has AMR device."},
+        {prog:"PTR",   sev:"hard", code:"EC_ELIG/044", txt:"Requires AMI meter &mdash; premise has AMR device."},
+        {prog:"ALERTS",sev:"hard", code:"EC_ELIG/044", txt:"Requires AMI meter &mdash; usage alerts need interval data."},
+        {prog:"PREPAY",sev:"hard", code:"EC_ELIG/044", txt:"Requires AMI meter &mdash; prepay needs remote balance metering."}
+      ],
+      history:[]};}
+  },
+  "1000002244": {
+    name:"Elena Vasquez", initials:"EV", type:"Residential", tag:"(medical &middot; AMI)",
+    premise:"1512 Olmos Creek Way, San Antonio, TX 78230",
+    cas:[
+      {id:"300000114499", div:"Electricity",
+       device:{deviceNo:"10002261", meterNo:"1KA-66120988", model:"Landis+Gyr E360", type:"AMI",
+               status:"Connected", lastRead:"2026-07-06", lastValue:"33,914 kWh",
+               note:"Life-support equipment registered at premise"}}
+    ],
+    caseId:"CAS-2026-018435",
+    seed(){ return {
+      participating:[
+        {id:"MED",  status:"Enrolled", reqDate:"2024-09-20", enrDate:"2024-09-22", ca:"300000114499"},
+        {id:"EBILL",status:"Enrolled", reqDate:"2024-09-20", enrDate:"2024-09-20", ca:"300000114499"}
+      ],
+      available:["PTR","TOU","CSDD","AUTOPAY","TPN","GREEN","EEREB"],
+      messages:[
+        {prog:"PREPAY", sev:"hard", code:"EC_ELIG/052", txt:"Prepayment not permitted &mdash; active Medical Alert / life-support equipment at premise."},
+        {prog:"CPP",    sev:"hard", code:"EC_ELIG/053", txt:"Dynamic peak-event pricing not permitted &mdash; Medical Baseline / life-support protection."},
+        {prog:"DPP",    sev:"hard", code:"EC_ELIG/053", txt:"Dynamic peak-event pricing not permitted &mdash; Medical Baseline / life-support protection."}
+      ],
+      history:[]};}
+  },
+  "1000008833": {
+    name:"Tom Becker", initials:"TB", type:"Residential", tag:"(prepay active)",
+    premise:"233 Blue Star St Apt 12, San Antonio, TX 78204",
+    cas:[
+      {id:"300000140022", div:"Electricity",
+       device:{deviceNo:"10008144", meterNo:"1KA-81430276", model:"Itron OpenWay", type:"AMI",
+               status:"Connected", lastRead:"2026-07-07 (daily prepay read)",
+               lastValue:"6,204 kWh &middot; balance $18.60", note:"Remote disconnect/reconnect enabled"}}
+    ],
+    caseId:"CAS-2026-018448",
+    seed(){ return {
+      participating:[
+        {id:"PREPAY",status:"Enrolled", reqDate:"2025-02-01", enrDate:"2025-02-03", ca:"300000140022",
+         exitBlock:"Prepay balance below zero: -$12.40 must be settled before de-enrollment (EC_EXIT/014)"},
+        {id:"ALERTS",status:"Enrolled", reqDate:"2025-02-03", enrDate:"2025-02-03", ca:"300000140022"},
+        {id:"EBILL", status:"Enrolled", reqDate:"2025-02-01", enrDate:"2025-02-01", ca:"300000140022"}
+      ],
+      available:["PTR","TOU","THERM","EVMC","GREEN","EEREB"],
+      messages:[
+        {prog:"BB",  sev:"hard", code:"EC_ELIG/056", txt:"Prepay and Budget Billing are mutually exclusive."},
+        {prog:"CSDD",sev:"hard", code:"EC_ELIG/055", txt:"Not compatible with active Prepay service &mdash; prepay has no due date."},
+        {prog:"DPA", sev:"hard", code:"EC_ELIG/057", txt:"Payment plans require settlement of the active Prepay service first."}
+      ],
+      history:[
+        {id:"DPA", start:"2023-06-10", end:"2024-01-15", outcome:"Completed &mdash; balance cleared, converted to Prepay"}
+      ]};}
   }
 };
 
@@ -351,6 +448,9 @@ const MOVEIN = {
   moveInId:"MI-2026-00811",
   premise:"88 Riverwalk Terrace Apt 4B, San Antonio, TX 78205",
   start:"2026-08-15", caseId:"CAS-2026-018402",
+  device:{deviceNo:"10009051", meterNo:"1KA-90551133", model:"Landis+Gyr E360", type:"AMI",
+          status:"Connected", lastRead:"2026-07-31 (final read, previous occupant)", lastValue:"7,455 kWh",
+          note:"Premise device verified at move-in survey"},
   seed(){ return {
     participating:[],
     available:["PTR","CPP","DPP","TOU","THERM","CSDD","EBILL","AUTOPAY","ALERTS","GREEN","EVMC","PREPAY","CARE"],
@@ -366,6 +466,12 @@ let participating, available, messages, history, mode, currentBP="1000004711", s
 
 /* =================== LOG / TOAST =================== */
 const LOG=document.getElementById("log");
+function toggleLog(){
+  const w=document.getElementById("logwrap"), b=document.getElementById("logToggle");
+  const show = w.style.display==="none";
+  w.style.display = show ? "block":"none";
+  b.innerHTML = show ? "&#9662; Hide integration monitor" : "&#9656; Show integration monitor (technical view)";
+}
 function ts(){return new Date().toLocaleTimeString("en-US",{hour12:false})}
 function log(kind,msg){
   const cls=kind==="API"?"api":kind==="EVT"?"evt":kind==="ERR"?"err":"t";
@@ -385,20 +491,42 @@ function statusChip(s){
   return `<span class="status ${map[s]||"st-request"}">${s}</span>`;
 }
 function cust(){ return CUSTOMERS[currentBP]; }
+/* Contract accounts — supports both combo patterns: CA per utility, or one CA for all utilities */
+function caKv(cas){
+  const byId = {};
+  cas.forEach(c => { (byId[c.id] = byId[c.id] || []).push(c.div); });
+  return Object.entries(byId).map(([id, divs]) =>
+    `${id} ${divs.map(d=>`<span class="pill blue">${d}</span>`).join(" ")}`).join("<br>");
+}
+/* Per-utility device block — device no., meter no., AMI/AMR + connection status; drives eligibility rules */
+function statusPill(d){
+  const cls = d.status==="Connected"?"green": d.status==="Comm fault"?"orange": d.status==="Disconnected"?"red":"grey";
+  return `<span class="pill ${cls}">${d.type} &middot; ${d.status}</span>`;
+}
+function devicesKv(cas){
+  const rows = cas.filter(c=>c.device).map(c => {
+    const d = c.device;
+    return `<span class="dev"><u>${c.div}</u> &nbsp;Device ${d.deviceNo} &middot; Meter ${d.meterNo} &nbsp;${statusPill(d)}</span>` +
+           `<span class="dev muted">${d.model} &middot; last read ${d.lastRead} &middot; ${d.lastValue}${d.note?` &middot; ${d.note}`:""}</span>`;
+  });
+  return rows.length ? `<div class="kv"><b>Meter / Device (per utility)</b>${rows.join("")}</div>` : "";
+}
+/* DER equipment associated with the customer (feeds DER program eligibility) */
+function derKv(der){
+  if(!der || !der.length) return "";
+  return `<div class="kv"><b>DER Equipment</b>${der.map(a =>
+    `<span class="dev">&#9889; ${a.name} <span class="pill ${a.status==="Interconnected"||a.status==="Active"?"green":"grey"}">${a.status}</span></span>`).join("")}</div>`;
+}
 function render(){
   const C=cust();
-  document.getElementById("crumb").innerHTML = mode==="movein"
-    ? `Move-In ${MOVEIN.moveInId} &nbsp;&rsaquo;&nbsp; <b style="color:#fff">Customer Programs step</b>`
-    : `Case ${C.caseId} &nbsp;&rsaquo;&nbsp; <b style="color:#fff">Enrollment Center</b>`;
-
   document.getElementById("ctxbar").innerHTML = mode!=="movein" ? `
     <div class="avatar">${C.initials}</div>
     <div><div class="name">${C.name} <span class="pill ${C.type==="Commercial"?"grey":"blue"}">${C.type}</span></div>
       <div class="muted">Business Partner ${currentBP} &middot; identity confirmed &#10004;</div></div>
-    <div class="kv"><b>Contract Accounts</b>${C.cas.map(c=>`${c.id} <span class="pill blue">${c.div}</span>`).join("<br>")}</div>
+    <div class="kv"><b>Contract Accounts</b>${caKv(C.cas)}</div>
     <div class="kv"><b>Premise</b>${C.premise}</div>
-    <div class="kv"><b>Case</b>${C.caseId}</div>
-    <div class="kv"><b>Context</b>Standalone work center<br><span class="muted">signed context token &#10004; (exp 300s)</span></div>`
+    ${devicesKv(C.cas)}
+    ${derKv(C.der)}`
   : `
     <div class="avatar">${MOVEIN.initials}</div>
     <div><div class="name">${MOVEIN.name} <span class="pill blue">Residential</span></div>
@@ -406,7 +534,7 @@ function render(){
     <div class="kv"><b>Move-In Document</b>${MOVEIN.moveInId} <span class="pill orange">Pre-active</span></div>
     <div class="kv"><b>Prospective Premise</b>${MOVEIN.premise}</div>
     <div class="kv"><b>Requested Start</b>${MOVEIN.start}</div>
-    <div class="kv"><b>Context</b>Move-In guided process (embedded step)</div>`;
+    ${devicesKv([{div:"Electricity", device:MOVEIN.device}])}`;
 
   document.getElementById("moveinBanner").classList.toggle("on", mode==="movein");
   const sel=document.getElementById("custSel");
@@ -432,7 +560,7 @@ function render(){
     <td class="muted">${CATALOG[id].cat}</td>
     <td><button class="btn primary" onclick="openEnroll('${id}')">Enroll</button></td>
   </tr>`).join("")+"</table>" +
-  `<div class="muted" style="margin-top:8px">Eligibility evaluated in one call for all programs across ${mode==="movein"?"prospective move-in data":cust().cas.length+" contract account(s)"} &middot; rule set v2026.06.2</div>`;
+  `<div class="muted" style="margin-top:8px">Eligibility evaluated in one call for all programs across ${mode==="movein"?"prospective move-in data":new Set(cust().cas.map(c=>c.id)).size+" contract account(s)"} &middot; rule set v2026.06.2</div>`;
 
   const M=document.getElementById("panel-msg");
   document.getElementById("cnt-msg").textContent=messages.length;
@@ -659,7 +787,8 @@ function today(){return new Date().toISOString().slice(0,10)}
   }
   const sel=document.getElementById("custSel");
   sel.innerHTML=Object.entries(CUSTOMERS).map(([bp,c])=>
-    `<option value="${bp}">${c.name} &mdash; ${c.type}${bp==="1000007322"?" (credit)":bp==="1000001188"?" (medical)":""}</option>`).join("");
+    `<option value="${bp}">${c.name} &mdash; ${c.type} ${c.tag||""}</option>`).join("");
+  sel.value = currentBP;   /* keep the selector in sync with the rendered customer (browsers restore form state on reload) */
   log("API",`Signed context token validated (agent A.Rivera) &mdash; no re-identification (US-01)`);
   setMode(PAGE_MODE==="movein"?"movein":"standalone");
 })();
@@ -674,8 +803,11 @@ pages = [
     ("workcenter.html", "standalone", "Enrollment Center — Work Center (Demo)"),
     ("movein.html",     "movein",     "Enrollment Center — Move-In Embedded (Demo)"),
 ]
+DOCS = os.path.join(OUT, "docs")          # mirror: GitHub Pages may publish from / or /docs
+os.makedirs(DOCS, exist_ok=True)
 for fname, pmode, title in pages:
     html = TEMPLATE.replace("__PAGEMODE__", pmode).replace("__TITLE__", title)
-    with io.open(os.path.join(OUT, fname), "w", encoding="utf-8") as f:
-        f.write(html)
-    print("wrote", fname, len(html), "bytes")
+    for target in (OUT, DOCS):
+        with io.open(os.path.join(target, fname), "w", encoding="utf-8") as f:
+            f.write(html)
+    print("wrote", fname, len(html), "bytes (root + docs)")
