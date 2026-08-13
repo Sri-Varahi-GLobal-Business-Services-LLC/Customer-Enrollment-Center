@@ -13,3 +13,7 @@ desktop.ini
 /DRMS/
 /Implementation and Business Process/
 *.mp4
+
+# embedded repo copies - not tracked here
+/Enrollment Center/enrollment-center-app/
+/enrollment-center-demo/
