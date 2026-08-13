@@ -17,3 +17,6 @@ desktop.ini
 # embedded repo copies - not tracked here
 /Enrollment Center/enrollment-center-app/
 /enrollment-center-demo/
+/Enrollment Center/enrollment-center-demo/
+# real customer extracts - never push
+/DER Programs/
