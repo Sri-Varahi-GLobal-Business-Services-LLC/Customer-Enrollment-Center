@@ -21,7 +21,7 @@ Output paths are hardcoded inside each script — adjust if the folder structure
 ## One-shot patch scripts (already applied — do NOT re-run)
 
 `add_demo_link.py`, `add_sdd_appendix.py`, `fix_xrefs.py`, `update_sdd_programs.py`,
-`patch_deck_and_sdd.py`, `patch_sdd_ai_deck.py`, `patch_deck_scorecalc.py` performed in-place edits on the Solution Design v2.0 docx and the
+`patch_deck_and_sdd.py`, `patch_sdd_ai_deck.py`, `patch_deck_scorecalc.py`, `patch_deck_demolinks.py` performed in-place edits on the Solution Design v2.0 docx and the
 Client Presentation pptx. Re-running would duplicate content.
 
 ## Not recoverable
