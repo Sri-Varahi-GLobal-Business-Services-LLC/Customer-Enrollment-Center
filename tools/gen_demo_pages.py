@@ -162,6 +162,14 @@ TEMPLATE = r"""<!doctype html>
   <div class="log" id="log"></div>
 </div>
 
+<div class="logwrap" style="padding-bottom:24px;text-align:center;font-size:11.5px;color:var(--muted)">
+  Customer Enrollment Center demo &nbsp;&middot;&nbsp;
+  <a class="prog" href="https://sri-varahi-global-business-services-llc.github.io/enrollment-center-demo/">Combined</a> &nbsp;&middot;&nbsp;
+  <a class="prog" href="https://sri-varahi-global-business-services-llc.github.io/enrollment-center-demo/workcenter.html">Work Center</a> &nbsp;&middot;&nbsp;
+  <a class="prog" href="https://sri-varahi-global-business-services-llc.github.io/enrollment-center-demo/movein.html">Move-In</a> &nbsp;&middot;&nbsp;
+  <a class="prog" href="https://sri-varahi-global-business-services-llc.github.io/enrollment-center-demo/ai-roadmap.html">&#10024; AI/ML methodology</a>
+</div>
+
 <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
 
@@ -660,7 +668,7 @@ function openScoreInfo(){
     </ol>
     <p class="muted" style="line-height:1.5">At go-live, before enough history exists, the same experience runs on weighted business rules (e.g., registered EV charger strongly favors EV Managed Charging) and is swapped for the trained model after 3&ndash;6 months of outcomes. Eligibility decisions are never made by the model &mdash; they remain in the BRFplus rules engine.</p>
   </div>
-  <footer><button class="btn primary" onclick="closeModal()">Got it</button></footer>`);
+  <footer><a class="prog" style="margin-right:auto;font-size:12px" href="https://sri-varahi-global-business-services-llc.github.io/enrollment-center-demo/ai-roadmap.html" target="_blank">Full methodology &rarr; AI/ML Roadmap</a><button class="btn primary" onclick="closeModal()">Got it</button></footer>`);
   log("API",`GET /enrollment/v1/recommendations:explain &rarr; 200 (scoring methodology, AI/ML Roadmap section 3)`);
 }
 
@@ -863,6 +871,56 @@ pages = [
     ("workcenter.html", "standalone", "Enrollment Center — Work Center (Demo)"),
     ("movein.html",     "movein",     "Enrollment Center — Move-In Embedded (Demo)"),
 ]
+AI_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Enrollment Center — AI/ML Methodology</title>
+<style>
+ body{font-family:"Segoe UI",Arial,sans-serif;background:#f5f6f7;color:#1d2d3e;font-size:14px;margin:0}
+ .shell{background:#12233f;color:#fff;padding:12px 20px;font-weight:700;font-size:16px}
+ .shell a{color:#ffb300;text-decoration:none;font-weight:600;font-size:12px;float:right;margin-top:2px}
+ .wrap{max-width:900px;margin:20px auto;padding:0 16px}
+ .card{background:#fff;border:1px solid #d9d9d9;border-radius:10px;padding:18px 22px;margin-bottom:14px;box-shadow:0 1px 4px rgba(29,45,62,.12)}
+ h1{font-size:22px;margin:0 0 6px} h2{font-size:15px;margin:0 0 10px;color:#0057d2}
+ p,li{line-height:1.6} .muted{color:#556b82;font-size:12.5px}
+ ol li{margin-bottom:6px}
+ .banner{background:#12233f;color:#cadcfc;border-radius:10px;padding:14px 18px;line-height:1.6}
+ table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+ th{background:#12233f;color:#fff;text-align:left;padding:6px 8px;font-size:11px}
+ td{border-bottom:1px solid #eef1f4;padding:7px 8px;vertical-align:top}
+ .pill{display:inline-block;padding:1px 8px;border-radius:9px;font-size:11px;font-weight:700;background:#f0eafd;color:#6c32a9}
+</style></head><body>
+<div class="shell">Customer Enrollment Center — AI/ML Methodology <a href="index.html">&larr; back to demo</a></div>
+<div class="wrap">
+ <div class="card"><h1>&#10024; ML recommends — the rules engine decides</h1>
+  <p class="muted">Summary of the AI/ML Roadmap v1.1 for the Customer Enrollment Center (SAP Service Cloud V2 + SAP BTP + S/4HANA Utilities).
+  Hard eligibility always comes from auditable BRFplus decision tables; AI ranks, explains and predicts — with the agent in the loop. Demo scores are illustrative seed values.</p></div>
+ <div class="card"><h2>How the AI score is calculated</h2>
+  <p>The percentage is a <b>calibrated enrollment probability</b> — the likelihood this customer enrolls in the program if offered:</p>
+  <ol>
+   <li><b>Training data</b> — the system labels its own examples: every offer shown plus the outcome (enrolled within 30 days or not).</li>
+   <li><b>Features</b> — meter type and status, DER equipment, payment behavior, arrears, program history, usage pattern.</li>
+   <li><b>Model</b> — classification (SAP HANA Cloud PAL/APL) turns features into a raw probability.</li>
+   <li><b>Calibration</b> — adjusted so the number means what it says: of customers scored 87%, about 87% actually enroll.</li>
+   <li><b>Reason</b> — the explanation under the badge comes from the model&rsquo;s top contributing factors, never free text.</li>
+   <li><b>Ranking</b> — sort order weighs probability &times; program value.</li>
+  </ol>
+  <p class="muted">Cold start: go-live runs on weighted business rules, swapped for the trained model after 3&ndash;6 months of outcomes.</p></div>
+ <div class="card"><h2>Use case portfolio</h2>
+  <table><tr><th>Use case</th><th>What it does</th><th>Phase</th></tr>
+   <tr><td><span class="pill">AI-1</span> Recommend</td><td>Next-best-program ranking with reasons (live preview in this demo)</td><td>1</td></tr>
+   <tr><td><span class="pill">AI-2</span> Explain</td><td>Grounded plain-language program explanations for the customer at hand (live preview)</td><td>1</td></tr>
+   <tr><td><span class="pill">AI-3</span> Verify savings</td><td>Bill-impact simulation on interval data before rate enrollment</td><td>2</td></tr>
+   <tr><td><span class="pill">AI-4</span> Default risk</td><td>Payment-plan breakage prediction; proactive outreach</td><td>2</td></tr>
+   <tr><td><span class="pill">AI-5</span> Documents</td><td>Income-proof extraction for assistance programs</td><td>2</td></tr>
+   <tr><td><span class="pill">AI-6</span> Triage</td><td>Exception classification learned from supervisor actions</td><td>3</td></tr>
+   <tr><td><span class="pill">AI-7</span> DER forecasting</td><td>Baselines and fleet yield on the DER platform</td><td>3</td></tr>
+  </table></div>
+ <div class="banner"><b>Governance:</b> no model can enroll, reject or override — a regulator asking &ldquo;why was this customer denied?&rdquo; always gets a deterministic rules answer.
+  AI outputs are labeled, explainable and monitored (calibration drift, acceptance rate) with bias review for assistance programs.</div>
+ <p class="muted" style="text-align:center;margin:16px 0">All customers and data in the demo are fictitious.</p>
+</div></body></html>
+"""
+
 DOCS = os.path.join(OUT, "docs")          # mirror: GitHub Pages may publish from / or /docs
 os.makedirs(DOCS, exist_ok=True)
 for fname, pmode, title in pages:
@@ -871,3 +929,7 @@ for fname, pmode, title in pages:
         with io.open(os.path.join(target, fname), "w", encoding="utf-8") as f:
             f.write(html)
     print("wrote", fname, len(html), "bytes (root + docs)")
+for target in (OUT, DOCS):
+    with io.open(os.path.join(target, "ai-roadmap.html"), "w", encoding="utf-8") as f:
+        f.write(AI_PAGE)
+print("wrote ai-roadmap.html", len(AI_PAGE), "bytes (root + docs)")
