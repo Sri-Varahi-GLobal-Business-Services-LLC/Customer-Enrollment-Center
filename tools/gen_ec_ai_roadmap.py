@@ -68,7 +68,7 @@ p("Machine learning and generative AI on top of the Enrollment Center — use ca
 for _ in range(7): doc.add_paragraph()
 table(["Attribute","Value"], [
  ["Document","AI/ML Roadmap (extends Solution Design v2.0, Appendix B)"],
- ["Version / Status","1.0 (Draft for Review)"],
+ ["Version / Status","1.1 (adds Section 3: propensity score calculation)"],
  ["Date","13 August 2026"],
  ["Governing principle","ML recommends — BRFplus decides. Hard eligibility remains deterministic and auditable."],
  ["Audience","Business stakeholders, architects, data science / AI teams"],
@@ -100,18 +100,36 @@ table(["#","Use Case","What It Does","Data","SAP Technology","Phase"], [
 ], widths=[0.4,1.35,2.5,1.5,2.2,0.45], font_size=7.5)
 
 # ===== 3 GOVERNANCE =====
-doc.add_heading("3. Governance: ML Recommends, BRFplus Decides", level=1)
+doc.add_heading("3. How the Recommendation Score (AI-1) Is Calculated", level=1)
+p("The percentage shown next to a recommended program is a CALIBRATED ENROLLMENT PROBABILITY: "
+  "P(customer enrolls in program X if offered). In the interactive demo the scores are illustrative seed "
+  "values previewing the experience; in production they are produced by the following pipeline.")
+table(["Step","What Happens","Detail"], [
+ ["1. Training data","The Enrollment Center labels its own examples","Every display of the Available panel plus the outcome (enrolled within 30 days: yes/no) forms one example — accumulated in EnrollmentRequest / ZEC_ENROLL_HIST plus AI_RECO_shown/accepted telemetry from day one"],
+ ["2. Features","Same context already fetched for EC-01","Device type and status, DER assets, arrears and payment behavior, billing history length, current participation, program history (prior de-enrollments), usage aggregates from interval data, rate class, tenure, season"],
+ ["3. Model","Classification","Gradient boosting or logistic regression via HANA Cloud APL/PAL (in-database, automated); per-program models or one multi-program model with the program as a feature; output = raw probability"],
+ ["4. Calibration","Raw probability becomes a trustworthy %","Platt scaling / isotonic regression so that ~87% of customers scored 87% actually enroll when offered — the property that makes the number defensible"],
+ ["5. Reason line","Feature attribution, not free text","Top contributing features (APL variable contributions / SHAP) mapped to human-readable templates — the agent always sees WHY (governance requirement, Section 4)"],
+ ["6. Ranking","Not the % alone","Sort order = propensity x expected program value, so a 60% chance at a high-value DR enrollment can outrank a 90% chance at eBill; the displayed % remains the propensity component"],
+], widths=[1.1,1.9,3.8], font_size=8)
+bullets([
+ ("Cold start","at go-live there is no outcome history: Phase 1 begins with rules-based heuristic scoring (weighted business rules, e.g. registered EV charger adds strongly to EV Managed Charging) presented identically in the UI, swapped for the trained model after ~3-6 months of outcomes."),
+ ("Quality monitoring","calibration drift and recommendation acceptance rate reviewed quarterly (Section 5 KPIs); models retrained on a schedule, versioned in AI Launchpad."),
+ ("One-sentence answer for stakeholders","'The percentage is a calibrated enrollment probability learned from our own enrollment outcomes, with the driving factors shown to the agent — in the demo it is illustrative seed data.'"),
+])
+
+doc.add_heading("4. Governance: ML Recommends, BRFplus Decides", level=1)
 bullets([
  ("Decision boundary","hard eligibility (E), warnings (W) and pre-active behavior remain exclusively BRFplus decision-table outcomes — auditable, transportable, regulator-facing. No model score can enroll, reject or override; a regulator asking 'why was this medical customer denied PrePay?' always gets message 052 from a decision table."),
  ("AI operating zone","ranking, ordering, explaining, predicting, drafting and extracting — always with the agent in the loop and always labeled as AI-generated in the UI."),
- ("Explainability","recommendation reasons shown to the agent (feature-based, e.g., 'EV charger registered'); generative outputs grounded on the catalog with source attribution; no free hallucination surface."),
+ ("Explainability","recommendation reasons shown to the agent (feature-based, per Section 3 step 5); generative outputs grounded on the catalog with source attribution; no free hallucination surface."),
  ("Data protection","features minimized to identifiers + behavioral aggregates; PII never leaves the BTP subaccount boundary; generative prompts contain no bank/payment data; retention aligned with the ILM policy (CS-02)."),
  ("Model lifecycle","AI Launchpad for versioning/monitoring; drift alerts; quarterly business review of recommendation acceptance rate alongside the BRFplus governance meeting."),
  ("Bias safeguard","assistance-program recommendations (CARE/LIHEAP/PIPP) reviewed for demographic bias before go-live; recommendation may only ADD assistance offers, never suppress them."),
 ])
 
 # ===== 4 ARCHITECTURE =====
-doc.add_heading("4. Architecture Integration (no redesign required)", level=1)
+doc.add_heading("5. Architecture Integration (no redesign required)", level=1)
 table(["Component","Addition","Fits Where"], [
  ["EC-10 Scoring API (new)","POST /enrollment/v1/recommendations:score - returns per-program propensity + reason codes","New CAP endpoint beside EC-01..09; called by the UI after EC-02; scores cached per interaction"],
  ["Feature layer","Aggregated features (usage, payment behavior, participation) refreshed daily","HANA Cloud (existing instance) — calculation views over EnrollmentRequest/history + replicated FI-CA aggregates; SAP Datasphere if the client standardizes there"],
@@ -122,7 +140,7 @@ table(["Component","Addition","Fits Where"], [
 ], widths=[1.6,2.6,2.6], font_size=8.5)
 
 # ===== 5 PHASING =====
-doc.add_heading("5. Phasing and KPIs", level=1)
+doc.add_heading("6. Phasing and KPIs", level=1)
 table(["Phase","Scope","Entry Condition","Success KPI"], [
  ["AI-Phase 1 (with Increment 2)","AI-1 recommendation + AI-2 grounded explanations; CX AI Toolkit call summaries","Enrollment Center live; 3+ months of history OR cold-start rules-based ranking","Recommendation acceptance rate >25%; program-per-call uplift; AHT reduction on program calls"],
  ["AI-Phase 2","AI-3 bill-impact advisor; AI-4 default risk; AI-5 document extraction","Interval data access via EDM/MDMS; document volume justifies automation","Rate-program regret rate <5%; DPA default reduction; verification backlog days"],
