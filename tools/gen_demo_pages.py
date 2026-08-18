@@ -575,11 +575,11 @@ function render(){
   `<table><tr><th>Program</th><th>Category</th><th></th></tr>` +
   availSorted.map(id=>`<tr>
     <td><a class="prog" onclick="openTerms('${id}')">${CATALOG[id].name}</a>
-      ${reco[id]?` <span class="pill ai">&#10024; AI ${reco[id].score}%</span><span class="aireason">${reco[id].reason}</span>`:""}</td>
+      ${reco[id]?` <span class="pill ai" style="cursor:pointer" title="How is this calculated?" onclick="event.stopPropagation();openScoreInfo()">&#10024; AI ${reco[id].score}%</span><span class="aireason">${reco[id].reason}</span>`:""}</td>
     <td class="muted">${CATALOG[id].cat}</td>
     <td><button class="btn primary" onclick="openEnroll('${id}')">Enroll</button></td>
   </tr>`).join("")+"</table>" +
-  `<div class="muted" style="margin-top:8px">Eligibility evaluated in one call for all programs across ${mode==="movein"?"prospective move-in data":new Set(cust().cas.map(c=>c.id)).size+" contract account(s)"} &middot; rule set v2026.06.2<br>&#10024; AI ranking assists the agent &mdash; eligibility decisions remain rules-based (BRFplus)</div>`;
+  `<div class="muted" style="margin-top:8px">Eligibility evaluated in one call for all programs across ${mode==="movein"?"prospective move-in data":new Set(cust().cas.map(c=>c.id)).size+" contract account(s)"} &middot; rule set v2026.06.2<br>&#10024; AI ranking assists the agent &mdash; eligibility decisions remain rules-based (BRFplus) &middot; <a class="prog" onclick="openScoreInfo()">How is the % calculated?</a></div>`;
 
   const M=document.getElementById("panel-msg");
   document.getElementById("cnt-msg").textContent=messages.length;
@@ -642,6 +642,26 @@ function openTerms(id,fromPart){
     ${!fromPart && c.fields?`<button class="btn primary" onclick="openEnroll('${id}')">Start Enrollment &rsaquo;</button>`:""}
   </footer>`);
   log("API",`GET /enrollment/v1/programs?programId=${id} &rarr; 200 (catalog + input definitions)`);
+}
+
+/* =================== AI SCORE EXPLAINER (per AI/ML Roadmap v1.1, Section 3) =================== */
+function openScoreInfo(){
+  openModal(`<header>How the AI score is calculated<button class="x" onclick="closeModal()">&#10005;</button></header>
+  <div class="mbody">
+    <div class="notice info" style="margin-bottom:12px"><b>In this demo</b> the scores are illustrative seed values that preview the agent experience. In production the number is computed as described below.</div>
+    <p style="line-height:1.6;margin-bottom:10px">The percentage is a <b>calibrated enrollment probability</b> &mdash; the likelihood that this customer enrolls in this program if the agent offers it:</p>
+    <ol style="margin:0 0 10px 18px;line-height:1.7;font-size:12.5px">
+      <li><b>Training data</b> &mdash; the Enrollment Center labels its own examples: every offer shown plus the outcome (enrolled within 30 days or not).</li>
+      <li><b>Features</b> &mdash; the same context on this screen: meter type and status, DER equipment, payment behavior, arrears, program history, usage pattern.</li>
+      <li><b>Model</b> &mdash; a classification model (SAP HANA Cloud PAL/APL) turns those features into a raw probability.</li>
+      <li><b>Calibration</b> &mdash; adjusted so the number means what it says: of customers scored 87%, about 87% actually enroll.</li>
+      <li><b>Reason</b> &mdash; the line under the badge comes from the model&rsquo;s top contributing factors &mdash; never free text.</li>
+      <li><b>Ranking</b> &mdash; sort order weighs probability &times; program value, so high-value programs can outrank easy wins.</li>
+    </ol>
+    <p class="muted" style="line-height:1.5">At go-live, before enough history exists, the same experience runs on weighted business rules (e.g., registered EV charger strongly favors EV Managed Charging) and is swapped for the trained model after 3&ndash;6 months of outcomes. Eligibility decisions are never made by the model &mdash; they remain in the BRFplus rules engine.</p>
+  </div>
+  <footer><button class="btn primary" onclick="closeModal()">Got it</button></footer>`);
+  log("API",`GET /enrollment/v1/recommendations:explain &rarr; 200 (scoring methodology, AI/ML Roadmap section 3)`);
 }
 
 /* =================== AI EXPLAIN (AI-2 preview: grounded on catalog + customer facts) =================== */
