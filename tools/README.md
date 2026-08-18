@@ -15,12 +15,13 @@ Output paths are hardcoded inside each script — adjust if the folder structure
 | `gen_brf_workbook.py` | BRFplus Configuration Workbook (xlsx) |
 | `gen_ec_runtime.py` | Runtime Service Interactions and Data Exchange |
 | `gen_ui_eval.py` | UI Technology Evaluation |
+| `gen_ec_ai_roadmap.py` | AI/ML Roadmap |
 | `extract_catalog.py` | `Enrollment Center/program-catalog.json` from the demo CATALOG (CAP seed data) |
 
 ## One-shot patch scripts (already applied — do NOT re-run)
 
 `add_demo_link.py`, `add_sdd_appendix.py`, `fix_xrefs.py`, `update_sdd_programs.py`,
-`patch_deck_and_sdd.py` performed in-place edits on the Solution Design v2.0 docx and the
+`patch_deck_and_sdd.py`, `patch_sdd_ai_deck.py` performed in-place edits on the Solution Design v2.0 docx and the
 Client Presentation pptx. Re-running would duplicate content.
 
 ## Not recoverable

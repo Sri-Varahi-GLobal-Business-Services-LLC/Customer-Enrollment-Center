@@ -37,6 +37,10 @@ TEMPLATE = r"""<!doctype html>
   .pill.grey{background:#eceff2;color:var(--muted)}
   .pill.green{background:var(--chip-green);color:var(--green)}
   .pill.red{background:var(--chip-red);color:var(--red)}
+  .pill.ai{background:linear-gradient(90deg,#f0eafd,#e3f0ff);color:#6c32a9;border:1px solid #d8c9f5}
+  .aireason{display:block;font-size:11px;color:#6c32a9;margin-top:2px}
+  .aibox{background:linear-gradient(180deg,#faf8ff,#f4f8fd);border:1px solid #d8c9f5;border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.5;margin-top:10px}
+  .ailabel{font-size:10px;color:#8a7aa8;letter-spacing:.4px;font-weight:700}
   .ctx .kv .dev{display:block;margin-top:2px}
   .wrap{max-width:1380px;margin:14px auto;padding:0 16px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:980px){.wrap{grid-template-columns:1fr}}
@@ -267,6 +271,8 @@ const CUSTOMERS = {
                status:"Manual read", lastRead:"2026-06-22", lastValue:"1,884 therms"}}
     ],
     der:[{name:"Level-2 EV charger 11 kW (networked)", status:"Active"}],
+    reco:{EVMC:{score:92,reason:"Level-2 EV charger registered &mdash; high fit for managed charging"},
+          DPP:{score:78,reason:"AMI meter and high summer peak usage pattern"}},
     caseId:"CAS-2026-018233",
     seed(){ return {
       participating:[
@@ -296,6 +302,8 @@ const CUSTOMERS = {
                status:"Comm fault", lastRead:"2026-05-18", lastValue:"9,842 kWh (estimated since)",
                note:"Open meter ticket MT-4471"}}
     ],
+    reco:{DPA:{score:88,reason:"Qualifying arrears &mdash; a payment plan prevents disconnection"},
+          AUTOPAY:{score:64,reason:"Reduces returned-payment risk after bank issue"}},
     caseId:"CAS-2026-018377",
     seed(){ return {
       participating:[
@@ -324,6 +332,7 @@ const CUSTOMERS = {
        device:{deviceNo:"10001193", meterNo:"5MG-11209384", model:"Elster BK-G4 (AMR)", type:"AMR",
                status:"Manual read", lastRead:"2026-06-28", lastValue:"2,102 therms"}}
     ],
+    reco:{TPN:{score:81,reason:"Protected customer &mdash; caregiver notification adds a safety net"}},
     caseId:"CAS-2026-018395",
     seed(){ return {
       participating:[
@@ -349,6 +358,8 @@ const CUSTOMERS = {
     ],
     der:[{name:"Battery storage 250 kWh (BESS)", status:"Interconnected"},
          {name:"Standby generator 500 kW (diesel)", status:"Registered"}],
+    reco:{ADR:{score:90,reason:"BMS-ready premises and 250 kWh BESS &mdash; automation incentives apply"},
+          INTR:{score:72,reason:"Interval telemetry supports a firm-service-level tariff"}},
     caseId:"CAS-2026-018410",
     seed(){ return {
       participating:[
@@ -374,6 +385,7 @@ const CUSTOMERS = {
                status:"Manual read", lastRead:"2026-06-30", lastValue:"15,772 kWh",
                note:"Drive-by monthly read &middot; not on AMI exchange list yet"}}
     ],
+    reco:{EEREB:{score:76,reason:"High usage on a non-AMI premise &mdash; efficiency rebates give best value today"}},
     caseId:"CAS-2026-018421",
     seed(){ return {
       participating:[
@@ -399,6 +411,7 @@ const CUSTOMERS = {
                status:"Connected", lastRead:"2026-07-06", lastValue:"33,914 kWh",
                note:"Life-support equipment registered at premise"}}
     ],
+    reco:{PTR:{score:85,reason:"Rebate-only demand response is medical-safe; AMI meter qualifies"}},
     caseId:"CAS-2026-018435",
     seed(){ return {
       participating:[
@@ -422,6 +435,7 @@ const CUSTOMERS = {
                status:"Connected", lastRead:"2026-07-07 (daily prepay read)",
                lastValue:"6,204 kWh &middot; balance $18.60", note:"Remote disconnect/reconnect enabled"}}
     ],
+    reco:{THERM:{score:70,reason:"Prepay customer with AMI &mdash; a smart thermostat lowers the daily balance burn"}},
     caseId:"CAS-2026-018448",
     seed(){ return {
       participating:[
@@ -451,6 +465,8 @@ const MOVEIN = {
   device:{deviceNo:"10009051", meterNo:"1KA-90551133", model:"Landis+Gyr E360", type:"AMI",
           status:"Connected", lastRead:"2026-07-31 (final read, previous occupant)", lastValue:"7,455 kWh",
           note:"Premise device verified at move-in survey"},
+  reco:{EBILL:{score:75,reason:"New account &mdash; paperless from day one avoids setup mail"},
+        AUTOPAY:{score:70,reason:"AutoPay from the first bill prevents early-tenure misses"}},
   seed(){ return {
     participating:[],
     available:["PTR","CPP","DPP","TOU","THERM","CSDD","EBILL","AUTOPAY","ALERTS","GREEN","EVMC","PREPAY","CARE"],
@@ -553,14 +569,17 @@ function render(){
 
   const A=document.getElementById("panel-avail");
   document.getElementById("cnt-avail").textContent=available.length;
+  const reco = (mode==="movein"?MOVEIN.reco:cust().reco) || {};
+  const availSorted = [...available].sort((a,b)=>(reco[b]?.score||0)-(reco[a]?.score||0));
   A.innerHTML = available.length===0 ? `<div class="empty">No further eligible programs.</div>` :
   `<table><tr><th>Program</th><th>Category</th><th></th></tr>` +
-  available.map(id=>`<tr>
-    <td><a class="prog" onclick="openTerms('${id}')">${CATALOG[id].name}</a></td>
+  availSorted.map(id=>`<tr>
+    <td><a class="prog" onclick="openTerms('${id}')">${CATALOG[id].name}</a>
+      ${reco[id]?` <span class="pill ai">&#10024; AI ${reco[id].score}%</span><span class="aireason">${reco[id].reason}</span>`:""}</td>
     <td class="muted">${CATALOG[id].cat}</td>
     <td><button class="btn primary" onclick="openEnroll('${id}')">Enroll</button></td>
   </tr>`).join("")+"</table>" +
-  `<div class="muted" style="margin-top:8px">Eligibility evaluated in one call for all programs across ${mode==="movein"?"prospective move-in data":new Set(cust().cas.map(c=>c.id)).size+" contract account(s)"} &middot; rule set v2026.06.2</div>`;
+  `<div class="muted" style="margin-top:8px">Eligibility evaluated in one call for all programs across ${mode==="movein"?"prospective move-in data":new Set(cust().cas.map(c=>c.id)).size+" contract account(s)"} &middot; rule set v2026.06.2<br>&#10024; AI ranking assists the agent &mdash; eligibility decisions remain rules-based (BRFplus)</div>`;
 
   const M=document.getElementById("panel-msg");
   document.getElementById("cnt-msg").textContent=messages.length;
@@ -593,6 +612,7 @@ function setMode(m){
   const who = m==="movein"?MOVEIN.bp:currentBP;
   log("API",`GET /enrollment/v1/context/${who} &rarr; 200 (aggregate: header, participations, history) &middot; ${m==="movein"?"contextMode=MOVE_IN":"contextMode=STANDALONE"}`);
   log("API",`POST /enrollment/v1/eligibility:evaluate &rarr; 200 &middot; ${Object.keys(CATALOG).length} programs, one round trip (Z_EC_ELIGIBILITY_PRECHECK, parallel BRF+)`);
+  log("API",`POST /enrollment/v1/recommendations:score &rarr; 200 &middot; propensity ranking (HANA Cloud PAL model v0.9, EC-10)`);
   render();
 }
 function setCustomer(bp){
@@ -614,12 +634,32 @@ function openTerms(id,fromPart){
   <div class="mbody">
     <div class="muted" style="margin-bottom:8px">${c.cat} &middot; fulfillment recipe <b>${c.recipe}</b></div>
     <p style="line-height:1.6">${c.terms||"Program terms and description (see program catalog)."}</p>
+    <button class="btn" style="margin-top:10px" onclick="aiExplain('${id}')">&#10024; Explain for this customer</button>
+    <div id="aiExplainBox"></div>
   </div>
   <footer>
     <button class="btn ghost" onclick="closeModal()">Close</button>
     ${!fromPart && c.fields?`<button class="btn primary" onclick="openEnroll('${id}')">Start Enrollment &rsaquo;</button>`:""}
   </footer>`);
   log("API",`GET /enrollment/v1/programs?programId=${id} &rarr; 200 (catalog + input definitions)`);
+}
+
+/* =================== AI EXPLAIN (AI-2 preview: grounded on catalog + customer facts) =================== */
+function aiExplain(id){
+  const c=CATALOG[id];
+  const C = mode==="movein" ? MOVEIN : cust();
+  const rec = ((mode==="movein"?MOVEIN.reco:cust().reco)||{})[id];
+  const first = (c.terms||"").split(". ")[0] + ".";
+  const dev = mode==="movein" ? MOVEIN.device : (cust().cas.find(x=>x.device)||{}).device;
+  const angle = rec ? rec.reason
+    : (dev ? `their ${dev.type} meter (${dev.status.toLowerCase()}) supports this program` : "this fits their current account setup");
+  const name = C.name.split(" ")[0];
+  log("API",`POST /ai/v1/explain (Generative AI Hub, grounded on program catalog) &rarr; 200`);
+  document.getElementById("aiExplainBox").innerHTML =
+    `<div class="aibox"><span class="ailabel">&#10024; AI-GENERATED &middot; GROUNDED ON PROGRAM CATALOG &middot; VERIFY WITH TERMS</span><br>
+     In simple terms: ${first} For ${name}, this is worth discussing because ${angle}.
+     ${rec?`Our model ranks this a <b>${rec.score}%</b> fit for this customer.`:""}
+     Enrollment takes about a minute and ${name} can leave the program per its exit rules.</div>`;
 }
 
 /* =================== ENROLL WIZARD =================== */
